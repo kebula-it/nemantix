@@ -1,0 +1,20 @@
+# Tests inclusion of other deliberates and undefined plans.
+
+from deliberate Stairs use step
+from deliberate Sidewalk use step
+
+action run_example >> print example <<:
+    body:
+        do print using ["example, do nothing"]
+    __body
+__action
+
+deliberate IncludedTest when >> test included imports <<:
+
+    @completion: undefined->frozen
+     plan:
+        body:
+            do action run_example
+        __
+    __plan
+__deliberate

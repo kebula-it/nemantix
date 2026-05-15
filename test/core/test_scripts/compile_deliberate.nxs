@@ -1,0 +1,46 @@
+from toolset Inventor use:
+        build_platform_ladder
+__
+@intent.completion: none->undefined 
+action assemble_ladder >> create a platform ladder validating constraints <<:
+    in:
+        request >> user request
+    out:
+        ladder >> ladder object
+    body:
+        >> check that the request respects the constraints
+        >> if respected, start building the ladder and return the built object
+    __body
+__action
+
+@completion: frozen
+action list_constraints >> print list of constraints <<:
+    body:
+        repeat 3 times as [idx]:
+        __
+        do print using ["constraints"]
+    __body
+__action
+
+@completion: frozen
+action check_constraints >> check the constraints given the request <<:
+    in:
+        request >> user request to be checked
+    out:
+        passed_list >> list of booleans, one for each
+    body:
+        return [true, true, true]
+    __body
+__action
+
+@breakdown: true
+@completion: _->frozen
+deliberate AssemblePlatformLadder when >> Assemble a platform ladder <<:
+
+
+    guidelines:
+        >> Assemble the platform ladder respecting the constraints
+    __
+    
+__deliberate
+

@@ -1,0 +1,82 @@
+@completion: frozen
+action preprocess_ticket >> clean the ticket text and extract key signals for downstream steps. <<:
+    in:
+        raw_ticket (required) >> raw support ticket text <<
+    __in
+    out:
+        structured_ticket >> structured record with cleaned text, language, and content <<
+    __out
+
+    body:
+        [ [text] = [raw_ticket] ?? "Ticket-XYZ <no_content>" ]
+        [ [prefix_size] = size("Ticket") + 1]
+
+        do llm using ["Provide the language of the ticket: " | [text]]
+               producing [[lang]]
+
+        do llm using ["Extract the ticket content: " | [text]]
+               producing [[content]]
+
+        [ [structured_ticket] = (
+            "code": substring([text], [prefix_size], [prefix_size] + 3),
+            "lang": [lang],
+            "content": [content]
+        )]
+
+        return [structured_ticket]
+    __body
+__action
+
+@breakdown: true
+deliberate SummarizeSupportTicket when >>> the user provides a raw support ticket and asks for a short summary. <<<:
+    guidelines:
+    >>> Given a description ticket with format Ticket-XXX (where XXX) is the code plus the
+        description, extract useful information about the ticket, and return a summary.
+    <<<
+    __
+
+    @completion: _->frozen
+    plan:
+        in:
+            raw_ticket (required) >> raw support ticket text from user: like Ticket-XYZ "<....>" <<
+        __in
+        out:
+            internal_summary >> summary of the user ticket <<
+            reply_message >> concise, polite user-facing reply <<
+        __out
+        body:
+            do action summarize_support_ticket using [[raw_ticket]]
+                                               producing [[a], [b]]
+            return [[internal_summary] = [a], [reply_message] = [b]]
+        __
+    __plan
+__deliberate
+
+@breakdown: true
+deliberate GenerateTicket when >>> create a new ticket for the user support <<<:
+
+    guidelines:
+    >>> Given a description of an issue, generate a ticket:
+        - format: Ticket-XXX, where XXX is the code
+        - fields: name, code, lang, and issue.
+    <<<
+    __
+
+    @completion: _->frozen
+    plan:
+        in:
+            error_code (required) >> short error code or identifier, non-empty
+            description (required) >> human-readable problem description
+            user_id (optional) >> reporter identifier if available
+        __in
+        out:
+            ticket >> structured ticket payload <<
+        __out
+        body:
+            do action generate_ticket
+                using [[error_code], [description], [user_id]]
+                producing [[ticket]]
+            return [[ticket]]
+        __
+    __plan
+__deliberate

@@ -1,0 +1,68 @@
+# global actions
+@completion: frozen
+action sign >> action that returns the sign of the value <<:
+  in:
+    x (required)
+  __
+
+  out: the_sign
+
+  body:
+    # to_num is a builtin that forces the argument to be a number
+    [[num] = to_num([x])]
+
+    if [[num] >= 0]:
+        return [1]
+    __
+
+    return [-1]
+  __
+__action
+
+deliberate do_example when >> Examples about the do-statement <<:
+
+  # deliberate-private actions
+  action pow3 >> computes the power of three <<:
+    in:
+      x (required)
+    __
+    body:
+        return [to_num([x])^3]
+    __
+  __action
+
+  @completion: frozen
+  plan:
+      in:
+        x (default [1])
+      __in
+
+      out:
+        y
+      __out
+
+      body:
+          # the do statement can call built-in functions, tools, and actions.
+
+          # builtin call:
+          # - specify "using" to provide arguments
+          do print using ["hello world"]
+
+          # builtins can be called without the do-statement block
+          [[test] = llm("give a random number")]
+          do print using ["random num: " | [test]]
+
+          # global action call
+          do action sign using ["42"] producing [[sign]]
+          do print using ["the sign is: " | to_str([sign])]
+
+          # private action call
+          do action pow3 using [2] producing [[result]]
+          do print using ["2^3 is: " | to_str([result])]
+
+          return [to_num([x]) * 10]
+      __body
+  __plan
+__deliberate
+
+

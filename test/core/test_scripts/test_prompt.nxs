@@ -1,0 +1,177 @@
+{Demo}
+@intent.goal: "normalization and preparation"  # intentable prefix on an action (label + metadata)
+# each action declaration needs a name and a microprompt that explains the purpose of the action
+action NormalizeInput >> Demonstrate prompts, variables, calls, structures, and metadata. <<:
+    in:
+        raw_text (required) >> text input, may contain extra spaces <<
+        users (default [()]) >> optional input user list <<
+    __in
+
+    out:
+        clean_text >> normalized text <<
+        prepared_users >> prepared user list <<
+        trace >> trace string <<
+    __out
+
+    body:
+        # PROMPTS INSIDE CODE:
+        # - Inline prompt: `>> ... <<` (single line, explicitly closed)
+        # - Block prompt:  `>>> ... <<<` (multiline, explicitly closed)
+        # Prompts may be completion prompts (implement their meaning, while preserving the original text)
+        # or verification prompts (must remain unchanged).
+
+        # COMPLETION PROMPT:
+        # - This prompt must remain exactly as written for traceability.
+        # - Its meaning must also be implemented in valid NXS code.
+        >> Normalize the input text and remove extra surrounding spaces. <<
+
+        # VARIABLES:
+        # - Variables are in square brackets: [x]
+        # - Accessors use `:` for keys/indices/expressions: [m:key], [arr:0], [x:<expr>]
+        # - You can also embed a micro-prompt in a variable token (prompt runs until `]`) for verification
+        [ [clean_text >> cleaned text <<] = [raw_text] ?? "" ]  # EXPRESSIONS: outer [] wraps an expression; `??` is fallback
+
+        # DO CALLS:
+        # - Inline: `do optional_callable_type q.name using <args> producing <args> >> note or details`
+        # - Block:  `do optional_callable_type q.name: ... __do`
+        # Here we show the inline form:
+        # - args are assignment expressions ( [arg_name]=[variable] or [arg_name]=value ).
+        # - output is an assignment with a variable [[variable]] or a list of variables [ [var1], [var2]]
+        # - optional_callable_type is the type of callable (one of action, tool or deliberate)
+        # There are built-in functions (to be called without any optional_callable_type) that can be invoked using the do clause; see below for the full list.
+        do tool trim using [ [text] = [clean_text], [max_char] = 0 ] producing [ [clean_text] ] >> producing the trimmed string
+        do print using [ [text] = "text cleaned" ] >> debug print (example of built-in function)
+        do action action_name using [ [value] = [result] ] producing [ [action_result] ] >> example call of action
+
+        # LISTS + KEY:VALUE:
+        # - List literals use parentheses: (a, b, c)
+        # - Key:value entries: ("k": v) or (k: v)
+        [ [user] = ( name: "alice", age: 30, tags: ("dev", "ops") ) ]
+        [ [user:student] = false ]
+        [ [user:worker] = true ]
+        [ [prepared_users] = [users] ?? ([user]) ]
+
+        # STRUCTURE / FRAME APPLY:
+        # - Apply a frame to a list literal with {Qualified.Name} (before or after the list).
+        # Prefix application requires the Structured Collection to conform to the frame definition;
+        # Postfix application interprets the structure in the context of the frame, even if it is partial or incomplete.
+        [ [constrained] = {PERSON}( name: "alice", age: 30, tags: ("dev", "ops") ) ]
+        [ [partial] = ( name: "bob", tags: ("ml", "ai") ){PERSON} ]
+
+        # META EXPRESSIONS:
+        # - {{Name@qualified.path}} can appear in expressions/metadata to inject runtime/meta values.
+        [ [trace] = "trace=" | {{Run@demo.two_action}} ]  # `|` is concatenation
+
+        return [ [clean_text], [prepared_users], [trace] ] # CONTROL FLOW: return with multiple values
+    __body
+__action
+
+{Demo}
+@semantics: "analysis-and-reporting"  # intentable prefix on an action (label + metadata)
+# each action declaration needs a name and a microprompt that explains the purpose of the action
+action AnalyzeUsers >> Demonstrate conditionals, loops, semantic comparisons, and final output building. <<:
+    in:
+        clean_text (required) >> normalized text <<
+        users (default [()]) >> list of users <<
+        threshold (default [2]) >> the threshold, int >= 0 <<
+        trace (default [""]) >> trace string <<
+    __in
+
+    out:
+        report_text >> final output string, non-empty <<   # example of VERIFICATION PROMPT in output declaration
+    __out
+
+    body:
+        # CONDITIONALS:
+        # - if/elif/else blocks end with `__if`
+        # - Conditions can be an expression or a prompted condition that must be completed
+        if [ [threshold] <= 0 ]:
+            [ [threshold] = 1 ]
+        __if
+
+        # LOOPS (`repeat`):
+        # Variants include:
+        # - intent-driven: `repeat >>> intent <<<: ... __repeat` that must be completed
+        # - each/as:       `repeat each <iterable> as <i>,<item> where <cond>: ... __repeat`
+        # - times:         `repeat <n> times as <i>: ... __repeat`
+        # - while/until:   `repeat while/until <cond> max <n>: ... __repeat`
+        # We show ONE variant here: `repeat each ... where ...`
+        [ [stats] = ("user_count": 0, "tag_count": 0) ]
+
+        repeat each [users] as [i], [u]:
+            # where >> user is valid << must be replaced with nxs code (completion prompt)
+            [ [stats] = ("user_count": ([stats:user_count] + 1), "tag_count": [stats:tag_count]) ]
+
+            # SEMANTIC COMPARISONS:
+            # It is used only when you need a semantic comparison via embedding of string.
+            # - Similarity: a ~ b  (optionally qualified: a ~ close ~ b, or with a numeric qualifier)
+            # - Inclusion:  a ~> b and reverse inclusion: a <~ b
+            if [ [u:role] ~ close ~ "admin" ]:
+                [ [stats] = ("user_count": [stats:user_count], "tag_count": ([stats:tag_count] + 2)) ]
+                continue  # CONTROL FLOW: continue
+            __if
+
+            # Demonstrate break via a small inner condition (still within the loop)
+            if [ [stats:user_count] >= [threshold] ]:
+                break  # CONTROL FLOW: break
+            __if
+        __repeat
+
+        # BUILD FINAL OUTPUT STRING
+        [ [report_text] =
+           "text=" | [clean_text] | ", users=" | [stats:user_count] | ", tags=" | [stats:tag_count] | ", " | [trace]
+        ]
+
+        return [report_text] # CONTROL FLOW: return with expression. For multiple values: [[v1], [v2]]
+    __body
+__action
+
+deliberate DemoMain when >>> Run this deliberate when the user asks for a two-action syntax showcase. <<<:
+    # deliberate declaration needs a name and a short microprompt showing its purpose
+
+    guidelines:
+        # PROMPTS (LANGUAGE TOKENS):
+        # - Inline prompt: `>> ... <<` (single line, explicitly closed)
+        # - Block prompt:  `>>> ... <<<` (multiline, explicitly closed)
+        # Some prompts are completion prompts (implement their meaning while preserving the original text),
+        # others are verification prompts (MUST stay unchanged).
+        >> Keep verification prompts unchanged; implement completion prompts without removing their original text. <<
+    __guidelines
+
+    plan:
+        # The plan aggregates and coordinates multiple actions to achieve the desired outcome
+        # while following the deliberate guidelines.
+
+        in:
+            raw_text (required) >> text input, may contain extra spaces <<
+            users (default [()]) >> list of users to analyze <<
+            threshold (default [2]) >> the threshold, int >= 0 <<
+        __in
+
+        out:
+            report_text >> final output string, non-empty <<
+        __out
+
+        body:
+            [ [clean_text] = "" ]
+            [ [prepared_users] = () ]
+            [ [trace] = "" ]
+
+            # DO CALLS:
+            # Here the plan uses both actions.
+            # First we show the inline form.
+            do action NormalizeInput using [ [raw_text] = [raw_text], [users] = [users] ] producing [ [clean_text], [prepared_users], [trace] ] >> normalize input and prepare user data
+
+            # Then we show the block form.
+            do action AnalyzeUsers:
+                using [ [clean_text] = [clean_text], [users] = [prepared_users], [threshold] = [threshold], [trace] = [trace] ]
+                producing [ [report_text] ]
+                >> build the final report
+            __do
+
+            do tool create_doc using [ [text] = [report_text] ]
+
+            return [report_text] # CONTROL FLOW: return with expression
+        __body
+    __plan
+__deliberate

@@ -1,0 +1,56 @@
+
+action preprocess_ticket >> clean the ticket text and extract key signals for downstream steps. <<:
+    body:
+    __body
+__action
+
+action generate_reply >>> generate a concise reply draft and a short internal summary from the structured ticket. <<<:
+    body:
+    __body
+__action
+
+{Example} @version: 1
+deliberate SummarizeSupportTicket when >>> run when the user provides a raw support ticket and asks for a short summary. <<<:
+    guidelines:
+    >>> Takes a raw support ticket, cleans and normalizes its text, extracts key signals (language, entities, salient points),
+    and produces two outputs: (1) a short internal summary with an issue label and a few key bullets, and (2) a concise,
+    polite reply message for the user based on those points. <<<
+    __guidelines
+
+    @completion: drafted->frozen
+    plan:
+        body:
+        __
+    __plan
+__deliberate
+
+action aux_audit_action >> emit an audit note <<:
+    body:
+    __body
+__action
+
+deliberate GenerateTicket when >>> create a new ticket for the user support <<<:
+    guidelines:
+        >>> Consider the error code and description and generate a consistent ticket for
+        the user support team. Then submit it to the support team website. <<<
+    __
+    plan:
+        body:
+        __
+    __plan
+__deliberate
+
+action prepare_summary_note >> prepare a summary note <<:
+    body:
+    __body
+__action
+
+deliberate AssembleStaircase when >>> user requires to assemble a staircase <<<:
+    guidelines:
+        >>> Consider the number of steps, the width, height, along with the user instructions. <<<
+    __
+    plan:
+       body:
+       __
+    __plan
+__deliberate

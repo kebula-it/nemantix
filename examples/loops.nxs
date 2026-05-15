@@ -1,0 +1,43 @@
+deliberate loop_examples when >> Examples about loop types <<:
+
+  @completion: frozen
+  plan:
+      body:
+        do print using ["Repeat N times:"]
+        repeat 3 times:
+          # ?? is the fallback operator
+          [[a] = ([a] ?? 0) + 1]
+          do print using ["  a: " | to_str([a])]
+        __
+
+        do print using ["Repeat each over a list"]
+        [[list] = (1, 2, 3, value: 0.5)]
+        [[sum] = 0]
+
+        # loops over a structure, yielding the current index and value
+        repeat each [list] as [idx], [x]:
+          [[sum] = [sum] + [x]]
+          if [[sum] > 2]:
+            break
+          __
+        __
+        do print using ["list sum: " | to_str([sum])]
+
+        do print using ["Repeat while"]
+        [[a] = 1]
+        # while loops can have a "max" iteration argument
+        repeat while [[a] < 3] max [20 + 2]:
+            [[a] = [a] + 1]
+        __
+        do print using [[a]]
+
+        do print using ["Repeat until"]
+        [[a] = 10]
+        repeat until [[a] < 5 ] max 3:
+            [[a] = [a] - 1]
+        __
+        do print using ["a: " | to_str([a])]
+      __body
+   __plan
+
+__deliberate

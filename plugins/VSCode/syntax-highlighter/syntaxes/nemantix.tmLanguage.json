@@ -1,0 +1,215 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Nemantix",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#toolset_block"
+    },
+    {
+      "include": "#prompts"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#brackets"
+    },
+    {
+      "include": "#input_qualifiers"
+    },
+    {
+      "include": "#parentheses"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#metadata"
+    }
+  ],
+  "repository": {
+    "brackets": {
+      "begin": "\\[",
+      "end": "\\]",
+      "patterns": [
+        {
+          "include": "#constants"
+        },
+        {
+          "include": "#brackets"
+        },
+        {
+          "include": "#parentheses"
+        },
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#prompts"
+        },
+        {
+          "include": "#metadata"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "match": "\\b(true|false)\\b",
+          "name": "constant.language.boolean.nemantix"
+        },
+        {
+          "match": "\\b(none|_)\\b",
+          "name": "constant.language.null.nemantix"
+        }
+      ]
+    },
+    "input_qualifiers": {
+      "match": "\\b(required|optional|default)\\b(?!\\s*:)",
+      "name": "storage.modifier.nemantix"
+    },
+    "toolset_block": {
+      "begin": "^\\s*(toolset)\\b\\s*([a-zA-Z_][a-zA-Z0-9_]*)?",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.nemantix" },
+        "2": { "name": "entity.name.function.nemantix" }
+      },
+      "end": "^\\s*(__toolset|__)\\b",
+      "endCaptures": {
+        "1": { "name": "keyword.control.end.nemantix" }
+      },
+      "patterns": [
+        {
+          "begin": ">>>",
+          "beginCaptures": {
+            "0": { "name": "markup.raw.block.nemantix" }
+          },
+          "end": "<<<",
+          "endCaptures": {
+            "0": { "name": "markup.raw.block.nemantix" }
+          },
+          "contentName": "meta.embedded.block.python",
+          "patterns": [
+            {
+              "include": "source.python"
+            }
+          ]
+        },
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#metadata"
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.nemantix",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "prompts": {
+      "patterns": [
+        {
+          "name": "variable.parameter.multiline.nemantix",
+          "begin": ">>>",
+          "end": "<<<"
+        },
+        {
+          "name": "variable.parameter.inline.nemantix",
+          "begin": ">>",
+          "end": "<<|$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.nemantix",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.nemantix",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+  "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.nemantix",
+          "match": "\\b(action|deliberate|require|required|when|plan|optional|default|slot|guidelines|in|out|body|do|using|producing|return|as|if|else|elif|repeat|each|while|until|from|use|with|times|break|continue)\\b"
+        },
+        {
+          "name": "storage.type.nemantix",
+          "match": "\\b(frame|tool|__frame|toolset|__toolset|TEXT|INT|FLOAT|BOOL|STRUCT|ENUM)\\b"
+        },
+        {
+          "name": "keyword.control.end.nemantix",
+          "match": "\\b__(plan|in|out|body|guidelines|do|action|deliberate|toolset|repeat|if|use)?\\b"
+        },
+        {
+          "name": "constant.language.nemantix",
+          "match": "\\b(undefined|drafted|frozen|true|false|none)\\b"
+        }
+      ]
+    },
+    "metadata": {
+      "patterns": [
+        {
+          "name": "entity.name.tag.nemantix",
+          "match": "@[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*"
+        }
+      ]
+    },
+    "parentheses": {
+      "begin": "\\(",
+      "end": "\\)",
+      "patterns": [
+        {
+          "include": "#input_qualifiers"
+        },
+        {
+          "include": "#constants"
+        },
+        {
+          "include": "#parentheses"
+        },
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#prompts"
+        },
+        {
+          "include": "#metadata"
+        }
+      ]
+    }
+  },
+  "scopeName": "source.nemantix"
+}

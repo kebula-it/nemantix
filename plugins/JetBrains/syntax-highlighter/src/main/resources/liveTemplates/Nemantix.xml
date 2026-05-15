@@ -1,0 +1,46 @@
+<templateSet group="Nemantix">
+    <template name="action" value="@completion: $LEVEL$&#10;action $NAME$ &gt;&gt; $PROMPT$ &lt;&lt;:&#10;    in:&#10;        $INPUTS$&#10;    __in&#10;    out:&#10;        $OUTPUTS$&#10;    __out&#10;    body:&#10;        $STMTS$&#10;    __body&#10;__action" description="Generate a full Nemantix action block" toReformat="true" toShortenFQNames="true">
+        <variable name="LEVEL" expression="" defaultValue="&quot;frozen&quot;" alwaysStopAt="true" />
+        <variable name="NAME" expression="" defaultValue="&quot;name&quot;" alwaysStopAt="true" />
+        <variable name="PROMPT" expression="" defaultValue="&quot;description&quot;" alwaysStopAt="true" />
+        <variable name="INPUTS" expression="" defaultValue="" alwaysStopAt="true" />
+        <variable name="OUTPUTS" expression="" defaultValue="" alwaysStopAt="true" />
+        <variable name="STMTS" expression="" defaultValue="" alwaysStopAt="true" />
+        <context>
+            <option name="NEMANTIX" value="true" />
+        </context>
+    </template>
+
+    <template name="deliberate" value="@breakdown: $BOOL$&#10;deliberate $NAME$ when &gt;&gt; $PROMPT$ &lt;&lt;:&#10;    guidelines:&#10;        &gt;&gt;&gt; $RULES$ &lt;&lt;&lt;&#10;    __guidelines&#10;&#10;    @completion: $COMPLETION$&#10;    plan:&#10;        in:&#10;            $INPUTS$&#10;        __in&#10;        out:&#10;            $OUTPUTS$&#10;        __out&#10;        body:&#10;            $STMTS$&#10;        __body&#10;    __plan&#10;__deliberate" description="Generate a full Nemantix deliberate block" toReformat="true" toShortenFQNames="true">
+        <variable name="BOOL" expression="" defaultValue="&quot;false&quot;" alwaysStopAt="true" />
+        <variable name="NAME" expression="" defaultValue="&quot;name&quot;" alwaysStopAt="true" />
+        <variable name="PROMPT" expression="" defaultValue="&quot;description&quot;" alwaysStopAt="true" />
+        <variable name="RULES" expression="" defaultValue="&quot;rules&quot;" alwaysStopAt="true" />
+        <variable name="COMPLETION" expression="" defaultValue="&quot;frozen&quot;" alwaysStopAt="true" />
+        <variable name="INPUTS" expression="" defaultValue="" alwaysStopAt="true" />
+        <variable name="OUTPUTS" expression="" defaultValue="" alwaysStopAt="true" />
+        <variable name="STMTS" expression="" defaultValue="" alwaysStopAt="true" />
+        <context>
+            <option name="NEMANTIX" value="true" />
+        </context>
+    </template>
+
+    <template name="toolset" value="toolset $NAME$:&#10;&gt;&gt;&gt; $PROMPT$ &lt;&lt;&lt;$END$&#10;__toolset"
+              description="Generate a Nemantix toolset block" toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="&quot;name&quot;" alwaysStopAt="true" />
+        <variable name="PROMPT" expression="" defaultValue="&quot;toolset description&quot;" alwaysStopAt="true" />
+        <context>
+            <option name="NEMANTIX" value="true" />
+        </context>
+    </template>
+
+    <template name="frame" value="frame $NAME$:&#10;    slot $SLOT$ as $TYPE$$END$&#10;__frame"
+              description="Generate a Nemantix frame block" toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="&quot;name&quot;" alwaysStopAt="true" />
+        <variable name="SLOT" expression="" defaultValue="&quot;field&quot;" alwaysStopAt="true" />
+        <variable name="TYPE" expression="" defaultValue="" alwaysStopAt="true" />
+        <context>
+            <option name="NEMANTIX" value="true" />
+        </context>
+    </template>
+</templateSet>

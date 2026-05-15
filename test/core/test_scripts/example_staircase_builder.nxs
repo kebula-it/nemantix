@@ -1,0 +1,57 @@
+# Demonstrates a multi-step drafted plan for building a staircase.
+from toolset Inventor use:
+    build_staircase
+__
+
+action prepare_requirements >> prepare the requirements to build the staircase <<:
+    in:
+        num_steps (required)
+    __in
+    out:
+        requirements
+    __out
+    body:
+        do get_requirements using [ (num_steps: [num_steps]) ] producing [[requirements]]
+        return
+    __body
+__action
+
+action build_staircase >> construct the staircase <<:
+    in:
+        num_steps (required)
+        requirements (required)
+    __in
+    out:
+        success
+    __out
+    body:
+        do tool build_staircase using [ (num_steps: [num_steps], requirements: [requirements]) ] producing [[success]]
+        return
+    __body
+__action
+
+action run >> assemble everything <<:
+    in:
+        num_steps (required)
+    __in
+    out:
+        success
+    __out
+    body:
+        do action prepare_requirements using [ (num_steps: [num_steps]) ] producing [[requirements]]
+        do action build_staircase using [ (num_steps: [num_steps], requirements: [requirements]) ] producing [[success]]
+        return [[success]]
+    __body
+__action
+
+deliberate AssembleStaircase when >> Assemble a staircase <<:
+    guidelines:
+        >> Assemble the staircase respecting all structural constraints
+    __
+
+    plan:
+        body:
+            do action build_staircase
+        __
+    __plan
+__deliberate

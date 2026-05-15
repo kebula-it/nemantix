@@ -1,0 +1,224 @@
+{Example} @version: 1
+deliberate SummarizeSupportTicket when >>> run when the user provides a raw support ticket and asks for a short summary. <<<:
+
+    guidelines:
+    >>> Takes a raw support ticket, cleans and normalizes its text, extracts key signals (language, entities, salient points),
+    and produces two outputs: (1) a short internal summary with an issue label and a few key bullets, and (2) a concise,
+    polite reply message for the user based on those points. <<<
+    __guidelines
+
+    @completion: drafted->frozen
+    plan:
+        in:
+            raw_ticket (required) >> raw support ticket text provided by the user <<
+        __in
+        out:
+            internal_summary >> short internal summary with issue label and key bullets <<
+            user_reply >> concise, polite reply message for the user <<
+        __out
+
+        body:
+            do action preprocess_ticket using [ [raw_ticket] = [raw_ticket] ] producing [ [structured_ticket] ]
+            do action generate_reply using [ [structured_ticket] = [structured_ticket] ] producing [ [internal_summary], [user_reply] ]
+            return [ [internal_summary], [user_reply] ]
+        __body
+
+    __
+__deliberate
+
+{Prep} @intent.goal: "Clean and normalize ticket text; extract language, entities, and salient points into a structured form."
+action preprocess_ticket >> clean the ticket text and extract key signals for downstream steps. <<:
+    in:
+        raw_ticket (required) >> raw support ticket text, may contain noise and formatting <<
+    __in
+    out:
+        structured_ticket >> structured representation: normalized text, language, entities, salient points <<
+    __out
+
+    body:
+        [ [text_raw] = [raw_ticket] ?? "" ]
+        [ [clean_text >>normalized ticket text; trim, collapse whitespace; remove boilerplate; preserve important IDs/URLs/emails<<] = [text_raw] ]
+        [ [language >> ISO 639-1 language code of the ticket <<] = [clean_text] ]
+        [ [entities >> list of canonical entities (people, orgs, products, versions, order IDs, emails); deduplicated <<] = [clean_text] ]
+        [ [points >> 3-5 salient points capturing problem, context, symptoms, attempted steps; terse phrases <<] = [clean_text] ]
+        [ [structured_ticket] = ( "text": [clean_text], "language": [language], "entities": [entities], "points": [points] ) ]
+        return [structured_ticket]
+    __body
+__action
+
+{Gen} @intent.goal: "From the structured ticket, produce a short internal summary with an issue label and bullets, and a concise, polite user reply."
+action generate_reply >>> generate a concise reply draft and a short internal summary from the structured ticket. <<<:
+    in:
+        structured_ticket (required) >> output of preprocess_ticket <<
+    __in
+    out:
+        internal_summary >> 'label: <issue>' on first line + 3-5 bullet points <<
+        user_reply >> concise, polite reply (2-4 sentences), no internal details <<
+    __out
+
+    body:
+        [ [issue_label >> short issue label (2-4 words) based on points and entities; no PII; lowercase with hyphens <<] = [structured_ticket] ]
+        [ [internal_summary >> short internal summary; first line 'label: ' + issue_label; then 3-5 bullets with key facts <<] = [structured_ticket] ]
+        [ [user_reply >> concise, polite reply addressing user's issue; acknowledge, summarize next steps or workaround; ask for missing info if needed; 2-4 sentences; avoid internal notes <<] = [structured_ticket] ]
+        return [ [internal_summary], [user_reply] ]
+    __body
+__action
+
+@intent.goal: "Main entrypoint that creates a support ticket from error code and description, prepares a submission payload, and aggregates outputs."
+@completion: frozen->frozen
+action GenerateTicket >> Create and prepare a support ticket from inputs. <<:
+    in:
+        error_code (required) >> error or issue code, non-empty <<
+        description (required) >> human-readable error description, non-empty <<
+    __in
+    out:
+        ticket_id >> identifier for the created ticket <<
+        submission_status >> current submission state: 'prepared' or 'pending' <<
+        submission_payload >> payload structure ready for submission <<
+    __out
+
+    body:
+        do action BuildTicket using [[error_code]=[error_code], [description]=[description]] producing [[ticket]] >> build ticket structure
+        do action aux_audit_action using [[ticket]=[ticket:title]] producing [[audit_note]] >> auxiliary step preserved from original plan
+        do action PrepareSubmission using [[ticket]=[ticket:title]] producing [[submission_payload]] >> prepare payload for submission
+
+        [ [ticket_id] = [ticket:id] ?? ("TCK-" | [error_code]) ]
+
+        if [ [submission_payload:endpoint] == none ]:
+            [ [submission_status] = "pending" ]
+        else:
+            [ [submission_status] = "prepared" ]
+        __if
+
+        return [[ticket_id], [submission_status], [submission_payload]]
+    __body
+__action
+
+@intent.goal: "Construct a consistent ticket object from the provided error code and description."
+@completion: frozen->frozen
+action BuildTicket >> Build a ticket structure from inputs. <<:
+    in:
+        error_code (required)
+        description (required)
+    __in
+    out:
+        ticket
+    __out
+    body:
+        [ [title] = "Support ticket for error " | [error_code] ]
+        [ [ticket] = ( id: ("TCK-" | [error_code]), code: [error_code], title: [title], description: [description], priority: "normal" ) ]
+        return [ticket]
+    __body
+__action
+
+@intent.goal: "Prepare an HTTP-like submission payload for the support site without performing the actual submission."
+@completion: frozen->frozen
+action PrepareSubmission >> Prepare submission payload for support site. <<:
+    in:
+        ticket (required)
+    __in
+    out:
+        submission_payload
+    __out
+    body:
+        [ [submission_payload] = ( endpoint: none, method: "POST", body: (ticket: [ticket]) ) ]
+        return [submission_payload]
+    __body
+__action
+
+@intent.goal: "Auxiliary action preserved from the original plan; emits a simple audit note."
+@completion: frozen->frozen
+action aux_audit_action >> emit an audit note <<:
+    in:
+        ticket (optional)
+    __in
+    out:
+        audit_note
+    __out
+    body:
+        [ [audit_note] = "ticket_ready" ]
+        return [audit_note]
+    __body
+__action
+
+deliberate GenerateTicket when >>> create a new ticket for the user support <<<:
+    guidelines:
+        >>> Consider the error code and description and generate a consistent ticket for
+        the user support team. Then submit it to the support team website. <<<
+    __
+
+    @completion: frozen->frozen
+    plan:
+        in:
+            error_code (required) >> error or issue code, non-empty <<
+            description (required) >> human-readable error description, non-empty <<
+        __in
+        out:
+            ticket_id >> identifier for the created ticket <<
+            submission_status >> current submission state: 'prepared' or 'pending' <<
+            submission_payload >> payload structure ready for submission <<
+        __out
+        body:
+            do action GenerateTicket using [[error_code], [description]] producing [[a], [b], [c]]
+            return [[ticket_id] = [a], [submission_status] = [b], [submission_payload] = [c]]
+        __
+    __plan
+__deliberate
+
+@intent.goal: "Main entry point that assembles a staircase plan from steps, width, height, and optional user instructions; orchestrates helper actions."
+action AssembleStaircase >> Orchestrate staircase assembly using inputs and helper action(s). <<:
+    in:
+        steps (required) >> total number of steps, int > 0 <<
+        width (required) >> staircase clear width (units), > 0 <<
+        height (required) >> total rise/height (same units), > 0 <<
+        instructions (optional) >> free-form user instructions to consider <<
+    __in
+    out:
+        plan_text >> human-readable assembly plan summary <<
+        step_rise >> per-step rise (height/steps) <<
+        clear_width >> pass-through of width <<
+    __out
+
+    body:
+        [ [step_rise] = [height] / [steps] ]
+        [ [clear_width] = [width] ]
+
+        do action prepare_summary_note using [[steps]=[steps], [width]=[width], [height]=[height], [instructions]=[instructions]] producing [[note]]
+
+        [ [plan_text] = "Staircase: steps=" | [steps] | ", clear_width=" | [clear_width] | ", total_height=" | [height] | ", step_rise=" | [step_rise] | ". " | [note] ]
+
+        return [[plan_text], [step_rise], [clear_width]]
+    __body
+__action
+
+@intent.goal: "Prepare a concise note summarizing staircase parameters and optional instructions."
+action prepare_summary_note >> prepare a summary note <<:
+    in:
+        steps (required)
+        width (required)
+        height (required)
+        instructions (optional)
+    __in
+    out:
+        note >> short summary note <<
+    __out
+
+    body:
+        [ [safe_instructions] = [instructions] ?? "" ]
+        [ [note] = "Summary: steps=" | [steps] | ", width=" | [width] | ", height=" | [height] | (", instructions=" | [safe_instructions]) ]
+        return [note]
+    __body
+__action
+
+deliberate AssembleStaircase when >>> user requires to assemble a staircase <<<:
+    guidelines:
+        >>> Consider the number of steps, the width, height, along with the user instructions. <<<
+    __
+
+    @completion: frozen->frozen
+    plan:
+        body:
+            do action AssembleStaircase
+        __
+    __plan
+__deliberate

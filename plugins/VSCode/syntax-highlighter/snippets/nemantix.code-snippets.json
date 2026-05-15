@@ -1,0 +1,53 @@
+{
+  "Action Block": {
+    "prefix": "act",
+    "body": [
+      "action ${1:name} >> ${2:microprompt} <<:",
+      "\tbody:",
+      "\t$0",
+      "\t__body",
+      "__action"
+    ],
+    "description": "Generate a Nemantix action block"
+  },
+  "Deliberate Block": {
+    "prefix": "del",
+    "body": [
+      "deliberate ${1:name} when >> ${2:microprompt} <<:",
+      "\tplan:",
+      "\t\tbody:",
+      "\t\t\t$0",
+      "\t\t__body",
+      "\t__plan",
+      "__deliberate"
+    ],
+    "description": "Generate a Nemantix deliberate block"
+  },
+  "Toolset Block": {
+    "prefix": "toolset",
+    "body": [
+      "toolset ${1:name}:",
+      ">>> ${0:description} <<<",
+      "__toolset"
+    ],
+    "description": "Generate a Nemantix toolset block"
+  },
+  "Frame Block": {
+    "prefix": "frame",
+    "body": [
+      "frame ${1:name}:",
+      "\tslot ${2:slot_name} as ${3:TYPE}",
+      "__frame"
+    ],
+    "description": "Generate a Nemantix frame block"
+  },
+    "Guidelines": {
+    "prefix": "guide",
+    "body": [
+      "guidelines:",
+      ">>> ${0:description} <<<",
+      "__guidelines"
+    ],
+    "description": "Generate a Nemantix guidelines block"
+  }
+}

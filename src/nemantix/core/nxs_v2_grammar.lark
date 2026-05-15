@@ -1,0 +1,524 @@
+start: require* import_stmt* (frame | toolset | deliberate | action)*
+
+
+start_fstr: expression | variable
+start_stmt: inline_func_call
+start_frame: frame+
+
+
+require: _REQUIRE (NXS_PATH | NXC_PATH)
+
+number:NUMBER
+// --- Intentables ---
+intentable_prefix: label meta_decl*
+               | meta_decl+
+label: "{" CNAME "}"
+meta_decl: "@" qualified_name (":" meta_value)?
+?meta_value: prompt_stmt
+         | expression ->inner_meta_expr_value
+         | ESCAPED_STRING
+         | number
+         | boolean
+         | qualified_name
+         | plan_qualifier
+
+
+// --- Frames and Slots ---
+frame: intentable_prefix? _FRAME frame_name ":" frame_body (_END_BLOCK | _END_FRAME)
+frame_name: CNAME
+frame_body: (frame | slot | (prompt_block | prompt_line) | prompt_line_variable )*
+
+
+slot: intentable_prefix? _SLOT slot_name slot_spec (prompt_block | prompt_line_variable)?
+slot_name: CNAME
+slot_spec: ("as" slot_types)? slot_card?
+slot_types: slot_type ("|" slot_type)*
+?slot_type: TEXT_TYPE | INT_TYPE | BOOL_TYPE | FLOAT_TYPE | STRUCT_TYPE | slot_enum | frame_name
+slot_enum: ENUM_TYPE "(" ESCAPED_STRING ("," ESCAPED_STRING)* ")"
+slot_card: "[" CARDINALITY "]"
+
+
+toolset: intentable_prefix? _TOOLSET toolset_name ":" toolset_body (_END_BLOCK | _END_TOOLSET)
+toolset_name: CNAME
+toolset_body: (prompt_block | prompt_line)
+
+
+
+
+// --- Top Level Structure ---
+deliberate: intentable_prefix? DELIBERATE deliberate_name _WHEN deliberate_condition ":"  guidelines? action* plan? (_END_BLOCK | _END_DELIBERATE)
+deliberate_name: CNAME
+deliberate_condition: prompt_block
+
+
+import_stmt: import_toolset
+    | import_deliberate
+
+
+//from toolset <ToolsetName> [as <alias>] [with <args>]  use <tool_1, …, tool_n>
+
+as_alias: _AS CNAME
+with_args: _WITH argument_list
+import_toolset: intentable_prefix? _FROM _TOOLSET toolset_name (as_alias | (as_alias with_args))? _USE (import_inline | import_block)
+
+
+import_deliberate: intentable_prefix? _FROM DELIBERATE deliberate_name _USE (import_inline | import_block) -> import_deliberate
+
+
+import_inline: import_targets
+import_block: ":" import_targets+ (_END_BLOCK | _END_USE)
+
+
+?import_targets: ident_list | wildcard
+wildcard: "*"
+
+
+guidelines: _GUIDELINES ":" (prompt_line | prompt_block)+ (_END_BLOCK | _END_GUIDELINES)
+
+
+// --- Planning & Actions ---
+UNDEFINED: "undefined"
+DRAFTED: "drafted"
+FROZEN: "frozen"
+plan_type:  UNDEFINED | DRAFTED | FROZEN | none
+plan_qualifier: plan_type ("->" plan_type)?
+plan: intentable_prefix? _PLAN ":" action_ins? action_out? action_body (_END_BLOCK | _END_PLAN)
+
+
+action: intentable_prefix? ACTION action_name prompt_block ":" action_ins? action_out? action_body (_END_BLOCK | _END_ACTION)
+action_name: CNAME
+action_ins: intentable_prefix? _IN ":" in_body
+action_out: intentable_prefix? _OUT ":" out_body
+
+
+
+
+// --- INPUT DEFINITIONS ---
+in_body: in_inline | in_block
+in_inline: (none | in_arg+)
+in_block: (none | in_arg+) (_END_BLOCK | _END_IN)
+
+
+
+
+// Rules for inputs: Named, Unnamed with modifier, or Unnamed
+in_arg: varname in_modifier? (prompt_line | prompt_block)?   -> input_named
+ | in_modifier (prompt_line | prompt_block)             -> input_unnamed_mod
+ | (prompt_line | prompt_block)                         -> input_unnamed
+
+
+
+
+in_modifier: "(" in_modifier_content ")"
+?in_modifier_content: required
+               | optional
+               | default
+required: _REQUIRED
+optional: _OPTIONAL
+default: _DEFAULT expression
+
+
+
+
+// --- OUTPUT DEFINITIONS ---
+out_body: out_inline | out_block
+out_inline: (none | out_arg)
+out_block: (none | out_arg+) (_END_BLOCK | _END_OUT)
+
+
+out_arg: (varname (prompt_line | prompt_block)?) -> output_named
+        | (prompt_line | prompt_block)  -> output_unnamed
+
+
+varname: CNAME
+
+
+
+
+// --- Body & Statements ---
+action_body: _BODY ":" statement* (_END_BLOCK | _END_BODY)
+
+
+
+
+?statement: prompt_block      -> instruction_block
+     | prompt_line       -> instruction_line
+     | generic_loop
+     | loop_each
+     | loop_times
+     | loop_conditional
+     | condition_if
+     | func_call
+     | expression
+     | return_statement
+     | break_statement
+     | continue_statement
+
+
+// --- Return and flow control ---
+return_statement: _RETURN (expression | inner_expression)?
+break_statement: _BREAK
+continue_statement: _CONTINUE
+
+
+// --- Loops ---
+generic_loop: intentable_prefix? _REPEAT prompt_block ":" loop_body (_END_BLOCK | _END_REPEAT)
+loop_each: intentable_prefix? _REPEAT _EACH loop_iterable loop_each_bind? ":" loop_body (_END_BLOCK | _END_REPEAT)
+
+
+loop_each_bind: _AS idx_var "," item_var
+
+loop_iterable: prompted_variable
+loop_condition: prompted_expression
+
+
+idx_var: variable
+item_var: variable
+
+
+loop_times: intentable_prefix? _REPEAT prompted_integer _TIMES loop_times_index? ":" loop_body (_END_BLOCK | _END_REPEAT)
+loop_times_index: _AS idx_var
+loop_conditional: intentable_prefix? _REPEAT (WHILE|UNTIL) loop_condition max_iterations? ":" loop_body (_END_BLOCK | _END_REPEAT)
+max_iterations: _MAX (prompted_integer | expression)
+
+
+loop_body: statement*
+
+
+// --- Conditionals ---
+condition_if: intentable_prefix? if_clause elif_clause* else_clause? (_END_BLOCK | _END_IF)
+
+if_clause: _IF condition_expression ":" condition_if_body
+elif_clause: _ELIF condition_expression ":" condition_if_body
+else_clause: _ELSE ":" condition_if_body
+
+
+
+
+condition_if_body: statement*
+condition_expression: prompted_expression
+
+
+
+
+// --- Function Calls (The 'do' command) ---
+// This handles: do [func] using [args] producing [out] >> [description]
+func_call: inline_func_call | block_func_call
+TOOL : "tool"
+callable_type : ACTION | TOOL
+inline_func_call: intentable_prefix? _DO callable_type? qualified_name? using_clause? producing_clause? prompt_line?
+block_func_call:  intentable_prefix? _DO callable_type? qualified_name? ":" using_clause? producing_clause? prompt_line? (_END_BLOCK | _END_DO)
+
+
+
+
+qualified_name: CNAME ("." CNAME)*
+
+
+
+
+using_clause: _USING (argument_list | prompt_block)
+producing_clause: _PRODUCING (argument_list | prompt_block) (_AS (frame_apply | prompt_block))?
+
+
+
+
+// --- Arguments & Variables ---
+// Handles ["string"], [[var]], [[var:index]] or [[var] as alias]
+argument_list: expression // TODO: rivedere albero prodotto in argument_list, probabilmente da sistemare struttura
+//argument_list: "[" list_create "]"
+//?arg_item: inner_expression (_AS CNAME)?
+// Supports: [x], [x:1], [x:key], [x:1:subKey], and trailing prompts
+variable: "[" (var_path prompt_line_variable? | prompt_line_variable) "]"
+var_path: CNAME (":" var_accessor)*
+var_accessor: CNAME -> access_key
+       | INT   -> access_index
+       | "(" inner_expression ")" -> access_expr
+ident_list: CNAME ("," CNAME)*
+// --- Expression & Operators ---
+// Precedence Order (Lowest to Highest):
+// 1. Assignment (=)
+// 2. List Creation (,)
+// 3. Concatenation (|)
+// 4. Fallback (??)
+// 5. Logical OR/XOR (||, ^^)
+// 6. Logical AND (&&)
+// 7. Logical NOT (!)
+// 8. Comparison (==, !=, <, >, <=, >=)
+// 9. Sum (+, -)
+// 10. Product (*, /, %)
+// 11. Unary Signs (+, -)
+// 12. Power (^)
+// 13. Functions (f) & Atoms (vars, numbers, parens)
+// TODO: rivedere nodi espressioni
+expression: intentable_prefix? "[" inner_expression "]"
+
+
+// structure = list_literal con frame_apply opzionale (prima o dopo)
+?structure: frame_apply list_literal   -> structure_prefix
+        | list_literal frame_apply   -> structure_suffix
+frame_apply: "{" qualified_name "}"
+
+
+
+
+?inner_expression: list_op
+
+
+
+
+// --- List literal with key:value & prompts ---
+// Supports (a, b, key: value, >>prompt<<, key: _ >>desc<<, nested:(x:1))
+list_literal: "(" list_literal_body? ")"
+
+
+
+
+// Require either:
+// - at least one comma (so (x) stays a grouping expression)
+// - OR at least one key:value (so (key: x) works)
+// - OR a prompt-only element (so (>>desc<<) works)
+?list_literal_body: list_literal_comma
+               | list_literal_single_kv
+               | prompt_block
+
+list_literal_comma: list_literal_element "," (list_literal_element ("," list_literal_element)*)? ","?
+
+list_literal_single_kv: list_kv_element
+
+?list_literal_element: list_kv_element
+                  | list_value_element
+                  | prompt_block
+
+list_value_element: assignment prompt_block?            -> list_item_value
+list_kv_element: list_key ":" assignment? prompt_block? -> list_item_kv
+list_key: CNAME | ESCAPED_STRING
+
+
+// Meta expressions
+meta_expression: "{{" meta_content "}}"
+meta_content: CNAME "@" qualified_name
+
+
+
+// Level : List Creation
+// Note: This creates a flattened list for 1,2,3,4
+?list_op: assignment
+   | assignment ("," assignment)+ -> list_create
+
+
+
+
+// Level 2: Assignment
+// supports [x] = 5 or [x] = 1,2,3
+?assignment: concat
+      | variable "=" assignment -> assign_var
+//NOTA!!!! prima era ?assignment: concat | variable "=" assignment -> assign_var
+//vedere se va benel lo stesso
+
+
+// Level 3: Concatenation
+?concat: fallback
+  | concat "|" fallback -> string_concat
+
+
+// Level 4: Fallback / Null Coalescing
+?fallback: logic_or
+    | fallback "??" logic_or -> op_fallback
+
+
+// Level 5: Logical OR / XOR
+?logic_or: logic_and
+    | logic_or "||" logic_and -> op_or
+    | logic_or "^^" logic_and -> op_xor
+
+
+// Level 6: Logical AND
+?logic_and: logic_not
+     | logic_and "&&" logic_not -> op_and
+
+
+// Level 7: Logical NOT (Unary)
+?logic_not: comparison
+     | "!" logic_not -> op_not
+
+
+// Level 8: Comparisons
+
+?comparison: sum
+    | sum "~"  sum                     -> sem_sim
+    | sum "~"  sim_qual "~" sum        -> sem_sim_qual
+
+    | sum "~>" sum                     -> sem_in
+    | sum "~"  sim_qual "~>" sum       -> sem_in_qual
+
+    | sum "<~" sum                     -> sem_in_rev
+    | sum "<~" sim_qual "~" sum        -> sem_in_rev_qual
+
+    | sum "==" sum -> eq
+    | sum "!=" sum -> neq
+    | sum "<"  sum -> lt
+    | sum ">"  sum -> gt
+    | sum "<=" sum -> lte
+    | sum ">=" sum -> gte
+
+// --- Semantic operator qualifiers ---
+sim_qual_kw: SIM_FAR | SIM_LOOSE | SIM_ABOUT | SIM_CLOSE | SIM_STRICT
+sim_qual: sim_qual_kw | NUMBER
+
+// Level 9: Arithmetic Sum
+?sum: product
+| sum "+" product -> add
+| sum "-" product -> sub
+
+// Level 10: Arithmetic Product
+?product: unary_signed
+   | product "*" unary_signed -> mul
+   | product "/" unary_signed -> div
+   | product "%" unary_signed -> mod
+
+// Level 11: Unary Signs
+?unary_signed: power
+        | "+" unary_signed -> unary_plus
+        | "-" unary_signed -> unary_minus
+
+// Level 12: Power
+// Right-associative usually, but here strictly recursive on right for standard math power behavior
+?power: atom
+ | atom "^" power -> pow
+
+// Level 13: Atoms
+?atom: variable
+ | NUMBER -> number
+ | ESCAPED_STRING -> string
+ | boolean
+ | none
+ | structure
+ | list_literal
+ | meta_expression
+ | "(" assignment ")" -> group_expr
+ | math_func
+
+boolean: TRUE | FALSE
+
+none: _NONE | _SHORT_NONE
+
+// Mathematical Functions: sin(x), cos(1, 2)
+math_func: CNAME "(" [inner_expression ("," inner_expression)*] ")"
+
+// --- Prompts ---
+// TODO:
+// 1) separare delimitatori da contenuto nell'albero <- fattibile solo nel Transformer
+// 2) verificare in tutti gli statement il supporto a prompt inline/multilinea
+// 3) gestire concatenazione prompt con singola new line? O solo spazi? <- difficile da implementare senza gestire
+//    manualmente tutti i newline
+prompt_block: PROMPT_INLINE_TEXT | PROMPT_BLOCK_TEXT
+prompt_line: PROMPT_LINE_TEXT
+prompt_line_variable: PROMPT_LINE_VAR_TEXT
+
+
+prompt_stmt:  prompt_stmt_variant
+?prompt_stmt_variant: PROMPT_INLINE_TEXT | PROMPT_BLOCK_TEXT | PROMPT_LINE_TEXT //questo ultimo serve ad evitare che LALR(1) consumi un token non previsto che è un sttoinsieme di LINE ma ha priorità più alta
+
+prompt_expr:  prompt_expr_variant
+?prompt_expr_variant: PROMPT_INLINE_TEXT | PROMPT_BLOCK_TEXT
+
+prompted_variable: (variable prompt_stmt?) | prompt_stmt
+prompted_expression: (expression prompt_stmt?) | prompt_stmt
+prompted_integer: (INT prompt_stmt?) | INT
+
+
+// --- Terminal Definitions (The Lexer) ---
+NXS_PATH: /((?:\.\.?\/)+)?(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.nxs/
+NXC_PATH: /((?:\.\.?\/)+)?(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.nxc/
+CARDINALITY: /(\*|(0|[1-9][0-9]*)(\.\.(\*|[1-9][0-9]*))?)/
+// Matches >>> text <<< (multiline) OR >> text << (inline guarded)
+// We use (?s) to allow dots to match newlines for the block version
+PROMPT_BLOCK_TEXT: />>>(?:[^<]+|<[^<]|<<[^<])+<<</s
+PROMPT_INLINE_TEXT: />>([^<\n]|<[^<\n])*<</
+// Matches >> text (until end of line)
+PROMPT_LINE_TEXT: />>([^<\n]|<[^<\n])*<?/
+// Matches >> text until right square bracket (for variables)
+PROMPT_LINE_VAR_TEXT: />>[^\n\]]*/
+
+DELIBERATE: "deliberate"
+_WHEN: "when"
+_FROM: "from"
+_TOOLSET: "toolset"
+_USE: "use"
+_GUIDELINES: "guidelines"
+_PLAN: "plan"
+ACTION: "action"
+_IN: "in"
+_OUT: "out"
+_BODY: "body"
+_RETURN: "return"
+_BREAK: "break"
+_CONTINUE: "continue"
+_REPEAT: "repeat"
+_EACH: "each"
+_WHERE: "where"
+_AS: "as"
+_TIMES: "times"
+WHILE: "while"
+UNTIL: "until"
+_MAX: "max"
+_IF: "if"
+_ELIF: "elif"
+_ELSE: "else"
+_DO: "do"
+_USING: "using"
+_PRODUCING: "producing"
+_REQUIRED: "required"
+_OPTIONAL: "optional"
+_DEFAULT: "default"
+_REQUIRE: "require"
+_FRAME: "frame"
+_SLOT: "slot"
+_WITH: "with"
+
+INT_TYPE: "INT"
+BOOL_TYPE: "BOOL"
+FLOAT_TYPE: "FLOAT"
+TEXT_TYPE: "TEXT"
+ENUM_TYPE: "ENUM"
+STRUCT_TYPE: "STRUCT"
+
+
+// --- Semantic matching keywords ---
+SIM_FAR:    "far"
+SIM_LOOSE:  "loose"
+SIM_ABOUT:  "about"
+SIM_CLOSE:  "close"
+SIM_STRICT: "strict"
+
+
+TRUE: "true"
+FALSE: "false"
+_NONE: "none"
+_SHORT_NONE: "_"
+
+_END_BLOCK: "__"
+_END_DELIBERATE: "__deliberate"
+_END_GUIDELINES: "__guidelines"
+_END_PLAN: "__plan"
+_END_ACTION: "__action"
+_END_BODY: "__body"
+_END_DO: "__do"
+_END_IN: "__in"
+_END_OUT: "__out"
+_END_REPEAT: "__repeat"
+_END_IF: "__if"
+_END_TOOLSET: "__toolset"
+_END_USE: "__use"
+_END_FRAME: "__frame"
+
+
+%import common.CNAME
+%import common.INT
+%import common.ESCAPED_STRING
+%import common.WS
+%import common.NUMBER
+// Ignore spaces and standard python-style comments
+%ignore WS
+%ignore /#[^\n]*/

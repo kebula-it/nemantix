@@ -1,0 +1,38 @@
+
+action another_action >> an action that can be called from outside deliberates and actions <<:
+
+  # "in" and "out" blocks define expected action's inputs and outputs
+  in:
+    x (required)  # in this case, "x" argument is mandatory
+    y (default [5])  # default value if 5, if not specified
+  __in
+
+  out: z
+
+  body:
+      do print using ["calling another_action"]
+
+      # use the return statement to output one or more values
+      return [[x] + [y]]
+  __body
+__action
+
+deliberate actions_example when >> Examples about defining and calling actions <<:
+    # "in" and "out" blocks can be omitted.
+  @completion: frozen
+  plan:
+      # "body" contains the instructions to execute
+      body:
+          do print using ["main action"]
+
+          # actions are called in the do-statement: action qualifier is optional;
+          # "using" allows to provide input arguments
+          # "producing" yields the result.
+          do action another_action using [2.5] producing [[result]]
+          do print using ["result is " | to_str([result])]
+
+          do action another_action using [[result], -1.5] producing [[new_result]]
+          do print using ["result is " | to_str([new_result])]
+      __body
+  __plan
+__deliberate

@@ -1,0 +1,84 @@
+# Tests core NXS data types, operators, and expression evaluation.
+
+toolset ShortDescriptionToolset:
+  >> Toolset with a one-line description <<
+__toolset
+
+action test_assignments_and_types >> test assignment of primitives and structural types <<:
+  body:
+    # Primitive Assignments
+    [[test_string] = "my string"]
+    [[test_bool_true] = true]
+    [[test_bool_false] = false]
+    [[test_none] = none]
+    [[test_underscore_none] = _]
+
+    # Unary Operations
+    [[unary_none] = -_]
+    [[unary_num] = -.6]
+
+    # Lists and Structures
+    [[simple_list] = (1, 2, 3, metadata: (key_a: "value_a", key_b: "value_b"))]
+    [[typed_struct] = {Languages}(italian: "ita", english: "eng")]
+  __body
+__action
+
+action test_binary_operations >> test concatenation, math, and logical operators <<:
+  body:
+    # Concatenation
+    [[str_concat] = "hello" | " nemantix"]
+    [[concat_num] = 1 | 2]
+    [[concat_num_var] = 1 | [str_concat]]
+    [[concat_num_str] = 1 | "2.0"]
+
+    # Logical Operators
+    [[logic_or] = false || true]
+    [[logic_xor] = false ^^ true]
+    [[logic_and] = false && true]
+
+    # Comparisons
+    [[eq_num] = 1 == 2]
+    [[eq_none] = none == none]
+    [[neq_mixed] = true != 1]
+    [[less_than] = 1 < 2]
+    [[greater_than] = 1 > 2]
+    [[less_eq] = 2 <= 2]
+    [[greater_eq] = 3 >= 2]
+
+    # Arithmetic
+    [[math_add] = 1 + 2]
+    [[math_add_mixed] = 1 + "2.3"]
+    [[math_sub] = 1 - 2]
+    [[math_sub_none] = none - 2]
+    [[math_mul] = 1 * 2]
+    [[math_div] = 1 / 2]
+    [[math_mod] = 8 % 3]
+    [[math_pow] = 2 ^ 3]
+  __body
+__action
+
+action test_semantic_operators >> test semantic similarity and containment <<:
+  body:
+    # Semantic Comparisons
+    [[sim_standard] = "happy" ~ "glad"]
+    [[sim_close] = "happy" ~close~ "glad"]
+    [[sim_numeric] = "happy" ~0.82~ "glad"]
+    [[sim_far] = "happy" ~far~ "unhappy"]
+    [[sim_strict] = "happy" ~strict~ "unhappy"]
+
+    # Semantic Containment
+    [[contain_standard] = "dog" ~> "animal"]
+    [[contain_reverse] = "dog" <~about~ "german shepherd"]
+  __body
+__action
+
+deliberate TestOperations when >> run core syntax and memory operations test <<:
+
+  plan:
+        body:
+            do action test_assignments_and_types
+            do action test_binary_operations
+            do action test_semantic_operators
+        __
+  __plan
+__deliberate

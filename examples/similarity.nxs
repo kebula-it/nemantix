@@ -1,0 +1,29 @@
+deliberate similarity_example when >> Examples about the similarity operator "~" <<:
+
+  @completion: frozen
+  plan:
+      body:
+          # similarity evaluates to a true/false value
+          if ["happy" ~ "happier"]:
+            do print using ["happy is similar to happier"]
+          __
+
+          # There are default similarity levels through qualifiers:
+          # far, loose, about, close, strict
+          [[is_far] = "happy" ~far~ "angry"]
+          do print using ["is far? " | to_str([is_far])]
+
+          # it is possible to specify a custom threshold
+          [[custom_t] = "happy" ~0.4~ "cheerful"]
+          do print using ["is similar? " | to_str([custom_t])]
+
+          # SIMILARITY ON STRUCTURES
+          [[struct] = ("dog", "cat", pet: "dogmeat", "the cat is on the table")]
+
+          # when the similarity operator is applied on a struct it is applied field-wise,
+          # filtering the fields whose similarity against the query is not sufficient.
+          [[filtered_struct] = [struct] ~ "A dog pet"]
+          do print using [[filtered_struct]]
+      __body
+  __plan
+__deliberate

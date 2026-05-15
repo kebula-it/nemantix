@@ -1,0 +1,71 @@
+from deliberate Stairs use step
+{Example} @version: 1
+deliberate SummarizeSupportTicket when >>> run when the user provides a raw support ticket and asks for a short summary. <<<:
+
+    guidelines:
+    >>> Takes a raw support ticket, cleans and normalizes its text, extracts key signals (language, entities, salient points),
+    and produces two outputs: (1) a short internal summary with an issue label and a few key bullets, and (2) a concise,
+    polite reply message for the user based on those points. <<<
+    __guidelines
+
+
+    editable->frozen plan:
+
+        in:
+            raw_ticket (required) >> raw support ticket text provided by the user <<
+        __in
+        out:
+            internal_summary >> short internal summary with issue label and key bullets <<
+            user_reply >> concise, polite reply message for the user <<
+        __out
+
+        body:
+            do action preprocess_ticket using [ [raw_ticket] = [raw_ticket] ] producing [ [structured_ticket] ]
+            do action generate_reply using [ [structured_ticket] = [structured_ticket] ] producing [ [internal_summary], [user_reply] ]
+            return [ [internal_summary], [user_reply] ]
+        __body
+
+    __
+__deliberate
+
+
+
+
+{Prep} @intent.goal: "Clean and normalize ticket text; extract language, entities, and salient points into a structured form."
+ action preprocess_ticket >> clean the ticket text and extract key signals for downstream steps. <<:
+    in:
+        raw_ticket (required) >> raw support ticket text, may contain noise and formatting <<
+    __in
+    out:
+        structured_ticket >> structured representation: normalized text, language, entities, salient points <<
+    __out
+
+    body:
+        [ [text_raw] = [raw_ticket] ?? "" ]
+        [ [clean_text >>normalized ticket text; trim, collapse whitespace; remove boilerplate; preserve important IDs/URLs/emails<<] = [text_raw] ]
+        [ [language >> ISO 639-1 language code of the ticket <<] = [clean_text] ]
+        [ [entities >> list of canonical entities (people, orgs, products, versions, order IDs, emails); deduplicated <<] = [clean_text] ]
+        [ [points >> 3-5 salient points capturing problem, context, symptoms, attempted steps; terse phrases <<] = [clean_text] ]
+        [ [structured_ticket] = ( "text": [clean_text], "language": [language], "entities": [entities], "points": [points] ) ]
+        return [structured_ticket]
+    __body
+__action
+
+{Gen} @intent.goal: "From the structured ticket, produce a short internal summary with an issue label and bullets, and a concise, polite user reply."
+action generate_reply >>> generate a concise reply draft and a short internal summary from the structured ticket. <<<:
+    in:
+        structured_ticket (required) >> output of preprocess_ticket <<
+    __in
+    out:
+        internal_summary >> 'label: <issue>' on first line + 3-5 bullet points <<
+        user_reply >> concise, polite reply (2-4 sentences), no internal details <<
+    __out
+
+    body:
+        [ [issue_label >> short issue label (2-4 words) based on points and entities; no PII; lowercase with hyphens <<] = [structured_ticket] ]
+        [ [internal_summary >> short internal summary; first line 'label: ' + issue_label; then 3-5 bullets with key facts <<] = [structured_ticket] ]
+        [ [user_reply >> concise, polite reply addressing user's issue; acknowledge, summarize next steps or workaround; ask for missing info if needed; 2-4 sentences; avoid internal notes <<] = [structured_ticket] ]
+        return [ [internal_summary], [user_reply] ]
+    __body
+__action
+

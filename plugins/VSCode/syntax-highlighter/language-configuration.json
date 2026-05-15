@@ -1,0 +1,28 @@
+{
+    "comments": {
+        "lineComment": "#"
+    },
+    "brackets": [
+        ["{", "}"],
+        ["[", "]"],
+        ["(", ")"]
+    ],
+    "autoClosingPairs": [
+        {"open": "{", "close": "}"},
+        {"open": "[", "close": "]"},
+        {"open": "(", "close": ")"},
+        {"open": "\"", "close": "\""}
+    ],
+    "surroundingPairs": [
+        {"open": "{", "close": "}"},
+        {"open": "[", "close": "]"},
+        {"open": "(", "close": ")"},
+        {"open": "\"", "close": "\""}
+    ],
+    "folding": {
+        "markers": {
+            "start": "^\\s*(deliberate|plan|action|toolset|frame|in|out|body|guidelines)\\b",
+            "end": "^\\s*__(deliberate|plan|action|toolset|frame|in|out|body|guidelines)?\\b"
+        }
+    }
+}

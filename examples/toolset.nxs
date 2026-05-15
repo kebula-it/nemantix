@@ -1,0 +1,21 @@
+# toolset imports
+from toolset PizzaToolset use make_pizza
+# toolsets can be imported with specific arguments (as-with are mandatory)
+from toolset PizzaToolset as MargheritaToolset with ["Margherita"] use make_pizza
+
+# toolset generation within NXC
+toolset PizzaToolset:
+  >>> This toolset must bake pizza <<<
+__toolset
+
+@completion: frozen
+deliberate toolset_example when >> An example about using toolsets <<:
+
+  plan:
+      body:
+          # tools are called with the do-statement: tool qualifier is optional
+          do PizzaToolset.make_pizza using ["Tomato"]
+          do tool MargheritaToolset.make_pizza using ["Tomato", "Mozzarella"]
+      __body
+  __plan
+__deliberate

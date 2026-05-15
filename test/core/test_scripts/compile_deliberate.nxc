@@ -1,0 +1,87 @@
+from toolset Inventor use:
+        build_platform_ladder
+__
+from toolset Inventor as costruttore  use build_platform_ladder
+@intent.completion: none->undefined 
+action assemble_ladder >> create a platform ladder validating constraints <<:
+    in:
+        request >> user request
+    out:
+        ladder >> ladder object
+    body:
+        >> check that the request respects the constraints
+        >> if respected, start building the ladder and return the built object
+    __body
+__action
+@completion: frozen
+action list_constraints >> print list of constraints <<:
+    body:
+        repeat 3 times as [idx]:
+        __
+        do print using ["constraints"]
+    __body
+__action
+@completion: frozen
+action check_constraints >> check the constraints given the request <<:
+    in:
+        request >> user request to be checked
+    out:
+        passed_list >> list of booleans, one for each
+    body:
+    do costruttore.build_platform_ladder using [[request]=""]
+        return [true, true, true]
+    __body
+__action
+@completion: _->frozen
+deliberate AssemblePlatformLadder when >> Assemble a platform ladder <<:
+
+
+    guidelines:
+        >> Assemble the platform ladder respecting the constraints
+    __
+
+ 
+    
+    @intent.goal: "Orchestrate constraint validation and assemble the platform ladder"
+    plan:
+        in:
+            request (required) >> user request describing ladder to assemble <<
+        __in
+
+        out:
+            ladder >> assembled ladder object <<
+        __out
+
+        body:
+            [ [ladder] = _ ]
+
+            # List and check constraints for the given request
+            do action list_constraints >> enumerate applicable constraints <<
+            do action check_constraints using [ [request] = [request] ] producing [ [passed_list] ] >> validate request against constraints
+
+            # Determine if any constraint failed
+            [ [failed] = false ]
+            repeat each [passed_list] as [i], [p] :
+                if [ ! [p] ]:
+                    [ [failed] = true ]
+                    break
+                __if
+            __repeat
+
+            # If constraints failed, abort assembly and return no ladder
+            if [ [failed] ]:
+                [ [ladder] = _ ]
+                return [ladder]
+            __if
+
+            # All constraints passed — assemble the ladder (logical object)
+            do action assemble_ladder using [ [request] = [request] ] producing [ [ladder] ] >> create the validated ladder object
+
+            # Trigger physical construction via inventor tool (optional physical build)
+            do tool Inventor.build_platform_ladder using [ [request] = [request] ] producing [ [ladder] ] >> invoke external builder
+
+            return [ladder]
+        __body
+    __plan
+__deliberate
+

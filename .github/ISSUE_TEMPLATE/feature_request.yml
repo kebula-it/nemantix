@@ -1,0 +1,44 @@
+name: Feature Request
+description: Suggest a new feature or improvement for Nemantix
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Before submitting, please:
+        - **Search [existing issues](https://github.com/kebula-it/nemantix/issues) to avoid duplicates.**
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What problem does this feature solve? Why is it needed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the feature you'd like and how it should work.
+    validations:
+      required: true
+
+  - type: textarea
+    id: nxs_example
+    attributes:
+      label: NXS example (if applicable)
+      description: Show how the feature would look in an `.nxs` script.
+      render: text
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any alternative approaches or workarounds you've considered.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other context, references, or examples that may help.

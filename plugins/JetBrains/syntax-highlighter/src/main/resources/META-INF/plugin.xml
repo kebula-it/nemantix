@@ -1,0 +1,36 @@
+<idea-plugin>
+    <id>it.kebula.nemantix</id>
+    <name>Nemantix Language</name>
+
+    <vendor url="https://nemantix.ai/">Nemantix</vendor>
+    <description>Syntax highlighting support for the Nemantix language.</description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <defaultLiveTemplates file="/liveTemplates/Nemantix.xml"/>
+        <liveTemplateContext contextId="NEMANTIX" implementation="it.kebula.plugin.NemantixTemplateContextType"/>
+        <multiHostInjector implementation="it.kebula.plugin.NemantixPythonInjector"/>
+        <annotator language="Nemantix" implementationClass="it.kebula.plugin.NemantixAnnotator"/>
+        <fileType
+                name="Nemantix"
+                implementationClass="it.kebula.plugin.NemantixFileType"
+                fieldName="INSTANCE"
+                language="Nemantix"
+                extensions="nxs;nxc;nxv"/> <lang.syntaxHighlighterFactory
+            language="Nemantix"
+            implementationClass="it.kebula.plugin.NemantixSyntaxHighlighterFactory"/>
+        <lang.parserDefinition
+                language="Nemantix"
+                implementationClass="it.kebula.plugin.NemantixParserDefinition"/>
+        <lang.commenter
+                language="Nemantix"
+                implementationClass="it.kebula.plugin.NemantixCommenter"/>
+        <completion.contributor
+                language="Nemantix"
+                implementationClass="it.kebula.plugin.NemantixCompletionContributor"/>
+        <lang.foldingBuilder
+                language="Nemantix"
+                implementationClass="it.kebula.plugin.NemantixFoldingBuilder"/>
+    </extensions>
+</idea-plugin>

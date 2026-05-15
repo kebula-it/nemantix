@@ -1,0 +1,104 @@
+require example_inc.nxs
+
+# Imports: only names (tools are assumed to exist in these toolsets)
+from toolset TextTools use trim, normalize_whitespace, split_sentences, tokenize, join
+from toolset NlpTools use extract_entities, detect_language
+from toolset JsonTools use to_struct
+
+action preprocess_ticket >> clean the ticket text and extract key signals for downstream steps. <<:
+        in:
+            raw_ticket (required) >>> TEXT, may contain noise/newlines <<<
+            min_tokens (default [5]) >>>  INT >= 1 <<<
+        __in
+        out:
+            ticket_struct >>> STRUCT with fields text, language, entities, tokens <<<
+        __out
+        body:
+            # --- already coded part ---
+            [ [text] = [raw_ticket] ?? "" ]
+            do tool trim using [[text]=[text]] producing [[text]] >> trimming applied
+            do normalize_whitespace using [[text]=[text]] producing [[text]] >> whitespace normalized
+
+            # Start a basic structure (some fields will be filled later)
+            [[ticket_struct] = ("text": [text], "language": none, "entities": ("ciao"), "tokens": ("cioa"))]
+
+            # Guardrail already coded
+            if [ [min_tokens] < 1 ]:
+                [[min_tokens] = 1]
+            __if
+
+            >>> infer and set the ticket language in [ticket_struct:language], using available tools if needed
+            extract a reasonable set of salient entities from the ticket and store them in [ticket_struct:entities]
+            produce a token list representing the ticket content (suitable for later summarization), and store it in [ticket_struct:tokens]
+            ensure [ticket_struct:tokens] is not trivially small; if it is, enrich it in a sensible way while keeping meaning faithful
+            <<<
+
+            return [ticket_struct]
+        __body
+    __action
+
+action generate_reply >>> generate a concise reply draft and a short internal summary from the structured ticket. <<<:
+    in:
+        ticket_struct (required) >>  output of preprocess_ticket <<
+        max_bullets (default [3]) >>  INT >= 1 <<
+    __in
+    out:
+        reply_message >> TEXT, concise and polite
+        internal_summary >> STRUCT with fields issue, key_entities, bullets
+    __out
+    body:
+        # --- already coded part ---
+        [[text] = [ticket_struct:text]]
+        [[entities] = [ticket_struct:entities]]
+
+        [[bullets] = ()]          # will hold bullet strings
+        [[picked]  = 0]           # count bullets added
+
+        # Example of a realistic loop: walk sentences, pick up to max_bullets
+        do tool TextTools.split_sentences using [[text]=[text]] producing [[sentences]] >> sentence split
+
+        repeat each [sentences] as [i], [s]:
+            if [ [picked] >= [max_bullets] ]:
+                break
+            __if
+
+            >> decide whether sentence [s] contains an important user-visible point; if yes, add a concise bullet to [bullets] and increment [picked]
+        __repeat
+
+        # Construct an internal summary structure (some fields to be filled)
+        [[internal_summary] = ("issue": none, "key_entities": [entities], "bullets": [bullets])]
+
+        >>infer a short "issue" label for the ticket and set [internal_summary:issue]
+        >>write a concise, polite user reply in [reply_message] that acknowledges the issue and requests any missing critical info (only if needed)
+        >> ensure the reply is aligned with the extracted bullets and does not introduce unsupported claims
+
+        return [reply_message]
+    __body
+__action
+
+{Example} @version: 1
+deliberate SummarizeSupportTicket when >>> run when the user provides a raw support ticket and asks for a short summary. <<<:
+
+    guidelines:
+    >>> Takes a raw support ticket, cleans and normalizes its text, extracts key signals (language, entities, salient points),
+    and produces two outputs: (1) a short internal summary with an issue label and a few key bullets, and (2) a concise,
+    polite reply message for the user based on those points. <<<
+    __guidelines
+
+    @completion: drafted->frozen
+    plan:
+        body:
+        __
+    __plan
+__deliberate
+
+
+deliberate boh when >> okok <<:
+    guidelines:
+    >> fofwofn <<
+    __guidelines
+    plan:
+        body:
+        __
+    __
+__

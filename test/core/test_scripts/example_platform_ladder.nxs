@@ -1,0 +1,86 @@
+# Domain test for checking constraints and assembling a platform ladder.
+
+from toolset Inventor use:
+    build_platform_ladder
+__
+
+from deliberate Constraints use check_constraints
+
+@intent.goal: "Orchestrate constraint verification and, if passed, construct and return the ladder object."
+action assemble_ladder >> create a platform ladder validating constraints <<:
+    in:
+        user_request >> the specific dimensions and steps requested
+    __in
+    out:
+        ladder_object >> the finalized ladder object, or none if constraints fail
+    __out
+
+    body:
+        # Delegate to the constraints deliberate
+        do action check_constraints using [[request] = [user_request]] producing [[passed_list]]
+
+        [[all_constraints_met] = true]
+
+        repeat each [passed_list] as [i], [passed_check]:
+            if [ ![passed_check] ]:
+                [[all_constraints_met] = false]
+                break
+            __if
+        __repeat
+
+        if [ [all_constraints_met] ]:
+            do tool build_platform_ladder using [[request] = [user_request]] producing [[ladder_object]]
+        else:
+            [[ladder_object] = none]
+        __if
+
+        return [ladder_object]
+    __body
+__action
+
+
+action list_constraints >> print the list of constraints <<:
+    body:
+        do print using ["Constraints List Activated"]
+    __body
+__action
+
+action check_constraints >> check the constraints against the provided request <<:
+    in:
+        request >> user request to be checked against constraints
+    __in
+    out:
+        passed_list >> list of booleans, one for each constraint checked
+    __out
+
+    body:
+        # Mock return for testing purposes
+        return [true, true, true]
+    __body
+__action
+
+deliberate AssemblePlatformLadder when >> the user wants to assemble a platform ladder <<:
+
+    guidelines:
+        >> Assemble the platform ladder ensuring all safety and structural constraints are met.
+    __
+
+    @completion: frozen->frozen
+    plan:
+        body:
+        __
+    __plan
+__deliberate
+
+
+deliberate Constraints when >> constraints verification is required <<:
+    guidelines:
+        >> List and verify active constraints.
+    __
+
+    @completion: frozen->frozen
+    plan:
+        body:
+        __
+    __plan
+__deliberate

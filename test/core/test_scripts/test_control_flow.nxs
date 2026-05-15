@@ -1,0 +1,51 @@
+# Tests conditional branching and loop structures.
+
+action align >> control surfaces alignment <<:
+    in:
+        docs (required) >>> the cad documents to work on <<<
+        max_iterations (default [10])
+        tolerance (default [0.5])
+    __in
+
+    body:
+        # Repeat Each
+        repeat each >> control surface << as [idx], [current_surface]:
+            >> align the control surface with the support surface via the contact point
+        __repeat
+
+        # Repeat N Times
+        repeat 3 times:
+            do print using ["hello world"] >> print hello world.
+        __repeat
+
+        # Repeat While with Max
+        [[deviation] = 1.0]
+        repeat while >>deviation over tolerance<< max [[max_iterations] + 1]:
+            >>> apply incremental correction <<<
+
+            if [[deviation] < [tolerance]]:
+                break
+            elif [[deviation] == 0]:
+                continue
+            else:
+                do print using ["correction applied"]
+            __if
+
+            >> recalculate the deviation
+        __repeat
+
+        # Repeat Until with Max
+        repeat until >>all surfaces are collinear<< max 10:
+            >> verify collinearity
+            >> apply refinement if necessary
+        __repeat
+    __body
+__action
+
+deliberate AlignSurfaces when >> I need to align the planes <<:
+    plan:
+        body:
+            do action align
+        __
+    __plan
+__deliberate

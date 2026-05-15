@@ -1,0 +1,54 @@
+# Tests frame definitions, slot typing, and frame applications.
+
+frame Person:
+    # A frame can define other frames inside it
+    frame Date:
+        slot day as INT [1]
+        slot month as INT | TEXT [1]
+        slot year as INT [1]
+    __frame
+
+    # A frame is an entity and an n-ary relation
+    slot name as TEXT | INT [0..*]
+    slot surname as TEXT | STRUCT [1]
+    slot born_on as TEXT | Date | ENUM("N/A","n.d.")
+__frame
+
+frame Figure:
+    >>> We are creating a frame
+        that will be used to manage documentary memory
+    <<<
+    slot image >>> This represents the image
+                   and must always be present <<<
+    slot caption >> this instead represents the associated caption
+__frame
+
+
+action apply_frames >> test prefix and postfix frame application <<:
+    body:
+        # Prefix application requires the structured collection to conform
+        [[schema_with_prefix] = {Person}(
+            name: _ >> proper name <<,
+            >> surname <<,
+            born_on: (
+                day: (type: "int"),
+                month: _,
+                year: _
+            ){Date}
+        )]
+
+        # Postfix application interprets the structure in the context of the frame
+        [[partial_schema] = (
+            name: "Bob",
+            tags: ("ml","ai")
+        ){Person}]
+    __body
+__action
+
+deliberate TestFrames when >> test frame application <<:
+    plan:
+        body:
+            do action apply_frames
+        __
+    __plan
+__deliberate

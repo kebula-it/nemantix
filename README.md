@@ -289,7 +289,7 @@ Read the full documentation in [docs/](docs/00%20-%20Welcome%20to%20Nemantix.md)
 ---
 ## ⚖️ License and Owner
 Nemantix is licensed under the _**Nemantix Source Available License Agreement**_ **(NSAL)**. The full license is available [here](LICENSE.md). <br>
-* The JetBrains and VSCode plugins in the `plugins\` folder are licensed under the Apache 2.0 license.
+* The JetBrains and VSCode plugins in the `plugins/` folder are licensed under the Apache 2.0 license.
 
 <p align="center">
   <img src="docs/images/kebula.png" alt="Kebula Logo" height="80"/>

@@ -19,12 +19,14 @@ NXS may contain natural-language prompts delimited as:
 These prompts may appear anywhere in the code.
 
 TWO TYPES OF PROMPTS
-1) Completion prompts
+1) COMPLETION PROMPTS
 - They describe behavior that must be implemented in valid NXS code.
 - You must implement their meaning, but keep the original prompt text present exactly as written for traceability.
+- Typically found alone in the lines of the body or as conditions in if statements and loops.
 
-2) Verification prompts
-- They are semantic checks or constraints.
+2) VERIFICATION PROMPTS
+- Short semantic hints used only as checks/constraints during execution. 
+- They don't describe an implementable behaviour, but they are descriptions.
 - They must remain exactly as written and must not be replaced or rewritten.
 
 RULES
@@ -85,7 +87,7 @@ action NormalizeInput >> Demonstrate prompts, variables, calls, structures, and 
         do action list_available_pizza 
         do action create_menu producing [ [menu] ]
         do action delete_menu using [ [menu] ]
-        
+
         # LISTS + KEY:VALUE:
         # - List literals use parentheses: (a, b, c)
         # - Key:value entries: ("k": v) or (k: v)
@@ -170,12 +172,12 @@ action AnalyzeUsers >> Demonstrate conditionals, loops, semantic comparisons, an
         # [ [wrong_syntax] = 'this is a string']   # THIS IS NOT ALLOWED!!!
         # [ [ right_syntax ] = "this is a string" ] # THIS IS THE RIGHT SYNTAX
         # [ [example] = "I can use 'single quotes' inside a string"]  # you can use single quotes as a content of a string
-        
-        # - if a string contains a double quote, escape it with a backslash
+
+        # - if a string contains a double quote, escape it (\")
         # - you can use the f-string to format a string with the value of a variable, example:
         [ [user_stat] = "users number is [stats:user_count]" ]  # will be formatted to "users number is 3" where 3 is the value of stats:user_count
-        # - REMEMBER: Square brackets in nxs are special symbols. If you need square brackets in the text of a string but you don't want them to be expanded like a formatted string, 
-        #   you need to escape them with ONE backslash (ONE for each bracket)
+        # - REMEMBER: Square brackets in nxs are special symbols. If you need square brackets in the text of a string, you need to escape them (with ONE backslash for each bracket), example:
+        [ [example] = "This is a square bracket symbol: \[." ]
 
 
         return [report_text] # CONTROL FLOW: return with expression. For multiple values: [[v1], [v2]]
@@ -183,7 +185,7 @@ action AnalyzeUsers >> Demonstrate conditionals, loops, semantic comparisons, an
 __action
 
 deliberate DemoMain when >>> Run this deliberate when the user asks for a two-action syntax showcase. <<<:
-    # deliberate declaration needs a name and a short microprompt showing its purpose
+    # deliberate declaration needs a name and a short micro-prompt showing its purpose
 
     guidelines:
         # PROMPTS (LANGUAGE TOKENS):

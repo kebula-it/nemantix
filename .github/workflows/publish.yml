@@ -51,13 +51,13 @@ jobs:
           name: python-package-distributions
           path: dist/
 
-  publish-to-testpypi:
-    name: Publish to TestPyPI
+  publish-to-pypi:
+    name: Publish to PyPI
     needs: build
     runs-on: ubuntu-latest
     environment:
-      name: testpypi
-      url: https://test.pypi.org/p/nemantix
+      name: pypi
+      url: https://pypi.org/p/nemantix
     permissions:
       id-token: write
       contents: read
@@ -68,7 +68,7 @@ jobs:
           name: python-package-distributions
           path: dist/
 
-      - name: Publish package to TestPyPI
+      - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          repository-url: https://test.pypi.org/legacy/
+          repository-url: https://pypi.org/legacy/

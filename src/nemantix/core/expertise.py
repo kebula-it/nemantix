@@ -214,25 +214,18 @@ class Expertise:
                               script=script, statement='', payload={"model": name, "coded": coded})
                 event_hub.emit(event=event)
 
-            # map deliberate name to source location (for execution)
-            for deliberate in self.script_by_loc[source_loc].deliberates.values():
-                self.deliberate_to_script_loc[deliberate.name] = source_loc
-
-            # map action name to source location (for execution)
-            for action in self.script_by_loc[source_loc].actions.values():
-                self.action_to_script_loc[action.name] = source_loc
-
-            for key in self.script_by_loc[source_loc].private_actions.keys():
-                self.private_action_to_script_loc[key] = source_loc
+            self.update(source_ordered_list=self.source_ordered_list)
 
         self.export()
 
-    def update(self):
+    def update(self, source_ordered_list: list[str] | None = None):
         """Discovers actions and deliberates for each script"""
-        self.source_ordered_list = _topo_order(self.requires_map)
+        if source_ordered_list is None:
+            self.source_ordered_list = _topo_order(self.requires_map)
+        else:
+            self.source_ordered_list = source_ordered_list
 
         for source_loc in self.source_ordered_list:
-            # TODO: refactor
             for deliberate in self.script_by_loc[source_loc].deliberates.values():
                 self.deliberate_to_script_loc[deliberate.name] = source_loc
 

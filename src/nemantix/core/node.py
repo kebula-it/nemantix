@@ -856,11 +856,6 @@ class ImportStatement(LeafStatement):
         return f"ImportStatement(name={self.name}, elements={self.elements})"
 
 
-class ImportDeliberateStatement(ImportStatement):
-    def __init__(self, name: str, elements: list[str], meta: dict[str, Meta | None]):
-        super().__init__(name, elements, meta)
-
-
 class ImportToolsetStatement(ImportStatement):
     def __init__(self, name: str, elements: list[str], args: Expression, alias: str, meta: dict[str, Meta | None]):
         super().__init__(name, elements, meta)

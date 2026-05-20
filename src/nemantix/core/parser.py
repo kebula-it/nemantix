@@ -27,7 +27,7 @@ from nemantix.core.node import (ActionBlock, ActionInput, ActionOutput, Annotati
                                 Slot, SlotTypesEnum, BuiltinFunctionEnum,
                                 Statement, UnaryOperation, UnaryOperationEnum, Variable, VariableTypeEnum,
                                 map_sim_qual_kw, builtin_func_map, slot_types_map, Require, MetaExpression,
-                                Return, Break, Continue, ImportDeliberateStatement, ImportToolsetStatement, Value,
+                                Return, Break, Continue, ImportToolsetStatement, Value,
                                 CallableTypeEnum)
 from nemantix.common.logger import get_package_logger
 from nemantix.core.custom_types import PathLike
@@ -349,24 +349,6 @@ class AstTransformer(Transformer):
             elements=tools,
             alias=alias,
             args=args,
-            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
-        )
-
-    @v_args(meta=True)
-    def import_deliberate(self, meta, items):
-        node_meta = items.pop(0) if items and isinstance(items[0], NodeMeta) else None
-
-        new_items = []
-        for it in items:
-            if not isinstance(it, Token):
-                new_items.append(it)
-
-        deliberate_name = new_items[0]
-        action_list = new_items[1]
-
-        return ImportDeliberateStatement(
-            name=deliberate_name,
-            elements=action_list,
             meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
         )
 

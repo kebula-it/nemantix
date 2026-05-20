@@ -79,15 +79,14 @@ require ./common.nxs
 require ../actions/send_request.nxc
 ```
 
-## Toolset and deliberate imports
+## Toolset imports
 
-You can import tools from a toolset or actions from another deliberate by specifying their names.
+You can import tools from a toolset by specifying their names.
 You can import all targets using `*`.
 
 ```nxs
 from toolset ToolsetName use tool_name_1, tool_name_2
 from toolset AnotherToolsetName use *
-from deliberate OtherDeliberateName use action_name_1, action_name_2
 ```
 Toolsets can be instantiated with arguments and optionally aliased:
 

@@ -4,8 +4,6 @@ from toolset Inventor use:
     build_platform_ladder
 __
 
-from deliberate Constraints use check_constraints
-
 @intent.goal: "Orchestrate constraint verification and, if passed, construct and return the ladder object."
 action assemble_ladder >> create a platform ladder validating constraints <<:
     in:

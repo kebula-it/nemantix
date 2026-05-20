@@ -290,25 +290,22 @@ class Interpreter:
 
         return frame_
 
-    def interpret_imports(self, imports: list[nmx_types.ImportToolsetOrDeliberateStatement]):
+    def interpret_imports(self, imports: list[nmx_nodes.ImportToolsetStatement]):
         for import_stmt in imports:
             self.interpret_intentable(metadata=import_stmt.meta, stmt=import_stmt)
+
             tool_class = import_stmt.name
             tool_alias = None
-
-            is_deliberate_import = isinstance(import_stmt, nmx_nodes.ImportDeliberateStatement)
+            tool_alias = import_stmt.alias
             arguments = None
 
-            if not is_deliberate_import:
-                tool_alias = import_stmt.alias
+            if import_stmt.args is not None:
+                arguments = [self.interpret_expression(expression=import_stmt.args)]
 
-                if import_stmt.args is not None:
-                    arguments = [self.interpret_expression(expression=import_stmt.args)]
+                if len(arguments) == 1 and isinstance(arguments[0], nmx_runtime.Struct):
+                    arguments, _ = arguments[0].to_args_and_kwargs()
 
-                    if len(arguments) == 1 and isinstance(arguments[0], nmx_runtime.Struct):
-                        arguments, _ = arguments[0].to_args_and_kwargs()
-
-                    arguments = nmx_runtime.Opaque.unbox_in(arguments)
+                arguments = nmx_runtime.Opaque.unbox_in(arguments)
 
             elements = import_stmt.elements
             if elements == '*':
@@ -330,18 +327,6 @@ class Interpreter:
                     Toolset.register_alias(tool_class, tool_name=tool, alias=tool_alias)
                 else:
                     tool_name = f"{tool_class}.{tool}"
-
-                if is_deliberate_import:
-                    # TODO: deliberate imports and emit_error
-                    if tool_name not in self.context.actions:
-                        raise self._runtime_exception(action_or_tool=tool, deliberate_name=tool_class,
-                                                      cls=nmx_ex.NemantixImportException)
-
-                    deliberate = self._get_global_deliberate()
-                    assert deliberate is not None
-
-                    self.context.actions[tool_name]["imported_by"].add(deliberate.name)
-                    continue
 
                 if tool_name in Toolset.REGISTRY:
                     if tool_name not in self.context.tools:
@@ -365,8 +350,10 @@ class Interpreter:
         with self.CallEvent(self, stmt=deliberate):
             self.interpret_intentable(metadata=deliberate.meta, stmt=deliberate)
 
-            result = self.interpret_plan(plan=deliberate.get_plan(),
-                                         inputs=self._unpack_user_inputs(user_inputs))
+            plan = deliberate.get_plan()
+            assert plan is not None
+
+            result = self.interpret_plan(plan, inputs=self._unpack_user_inputs(user_inputs))
 
         self._pop_scope()
         return result

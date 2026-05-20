@@ -177,7 +177,7 @@ action AnalyzeUsers >> Demonstrate conditionals, loops, semantic comparisons, an
         # - you can use the f-string to format a string with the value of a variable, example:
         [ [user_stat] = "users number is [stats:user_count]" ]  # will be formatted to "users number is 3" where 3 is the value of stats:user_count
         # - REMEMBER: Square brackets in nxs are special symbols. If you need square brackets in the text of a string, you need to escape them (with ONE backslash for each bracket), example:
-        [ [example] = "This is a square bracket symbol: \[." ]
+        [ [example] = "This is a square bracket symbol: \\[." ]
 
 
         return [report_text] # CONTROL FLOW: return with expression. For multiple values: [[v1], [v2]]

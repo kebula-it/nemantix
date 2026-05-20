@@ -52,7 +52,6 @@ deliberate_condition: prompt_block
 
 
 import_stmt: import_toolset
-    | import_deliberate
 
 
 //from toolset <ToolsetName> [as <alias>] [with <args>]  use <tool_1, …, tool_n>
@@ -60,9 +59,6 @@ import_stmt: import_toolset
 as_alias: _AS CNAME
 with_args: _WITH argument_list
 import_toolset: intentable_prefix? _FROM _TOOLSET toolset_name (as_alias | (as_alias with_args))? _USE (import_inline | import_block)
-
-
-import_deliberate: intentable_prefix? _FROM DELIBERATE deliberate_name _USE (import_inline | import_block) -> import_deliberate
 
 
 import_inline: import_targets

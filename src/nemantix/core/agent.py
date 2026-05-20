@@ -7,6 +7,8 @@ import logging
 from enum import Enum, auto
 from typing import Any, Type, Optional, TYPE_CHECKING
 
+from nemantix.core.tools import Toolset
+
 if TYPE_CHECKING:
     from nemantix.knowledge_base.core.nemantix_knowledge_base import KnowledgeBaseConfig
 
@@ -107,7 +109,7 @@ class Agent:
             return
 
         event = Event(type=EventType.MONITOR_STOP, lines=(0, 0), scope='agent',
-                          script=None, statement='')
+                      script=None, statement='')
         hub.emit(event)
 
     def run(self, user_request: str, schema: Type[BaseModel] | None = None,
@@ -343,7 +345,7 @@ class ReActAgent(Agent):
             inputs = [f'- {arg.name}: required={arg.required}, default={arg.default}'
                       for arg in plan.input]
             outputs = [f'- {arg.name} ({arg.prompt.prompt})'
-                      for arg in plan.output]
+                       for arg in plan.output]
 
             node_meta = deliberate.meta['node_meta']
             intent = ''
@@ -363,12 +365,12 @@ class ReActAgent(Agent):
             parameters = {arg.name: cls.param_from_input(arg) for arg in plan.input}
 
             cls.REGISTRY[f'{cls.__name__}.{deliberate.name}'] = dict(
-                    cls=cls,
-                    cls_name=cls.__name__,
-                    fn_name=f'call_{deliberate.name}',
-                    fn=call_deliberate,
-                    docstring=docstring.strip(),
-                    parameters=parameters)
+                cls=cls,
+                cls_name=cls.__name__,
+                fn_name=f'call_{deliberate.name}',
+                fn=call_deliberate,
+                docstring=docstring.strip(),
+                parameters=parameters)
 
             return deliberate.name
 
@@ -449,7 +451,7 @@ __deliberate
 
     def __init__(self, expertise: Expertise, llm_proxy: AbstractLLMProxy | None = None,
                  external_vars: dict | None = None, use_embedder=False,
-                 run_mode = RunModeEnum.DELIBERATE, log_level=None,
+                 run_mode=RunModeEnum.DELIBERATE, log_level=None,
                  kb_config: KnowledgeBaseConfig | None = None,
                  use_knowledge_base=False, build_on_start=True, **__):
         super().__init__(expertise, llm_proxy, external_vars, use_embedder,
@@ -463,6 +465,8 @@ __deliberate
         should_register_deliberates = run_mode in [self.RunModeEnum.ALL, self.RunModeEnum.DELIBERATE,
                                                    self.RunModeEnum.DELIBERATE_ACTION,
                                                    self.RunModeEnum.DELIBERATE_TOOL]
+        should_register_tools = run_mode in [self.RunModeEnum.TOOL, self.RunModeEnum.ACTION_TOOL,
+                                             self.RunModeEnum.DELIBERATE_TOOL, self.RunModeEnum.ALL]
         update_expertise = []
 
         for script in self.expertise.script_by_loc.values():
@@ -476,11 +480,14 @@ __deliberate
 
             if should_register_deliberates:
                 for deliberate in script.deliberates.values():
-                    if deliberate.name == '__Dummy__':
-                        continue
-
                     self.NemantixToolset.register_deliberate(deliberate, self)
                     registered_names.append(deliberate.name)
+
+        if should_register_tools:
+            from nemantix.core import Toolset
+
+            for tool_name, tool in Toolset.REGISTRY.items():
+                pass
 
         for loc, script, name in update_expertise:
             self.expertise.script_by_loc[loc] = script
@@ -488,6 +495,7 @@ __deliberate
 
         self.available_tools = registered_names
 
+    # TODO: predict a plan, then execute and revise it at each step?
     def run(self, user_request: str, schema: Type[BaseModel] | None = None,
             reformulate_answer=True, **kwargs) -> RunSchema:
         system_prompt = ('You are an helpful agent assistant. You have access to tools '
@@ -520,15 +528,15 @@ __deliberate
         [[user_request]]
         "{}"
         and the agent context
-        
+
         [[context]]
         "{}"
         determine which tool you should call (see [[tools]]), with which arguments 
         (as JSON), and why.
-        
+
         [[tools]]
         "{}"
-        
+
         NOTE: If the last output answers the [[user_request]] then, no tool call is 
         necessary and the task is solved.
         [[last_output]]
@@ -568,32 +576,58 @@ __deliberate
                     return self.RunSchema(last_output, last_output)
 
             tool_name = response.tool_name
-            tool = self.NemantixToolset.get_tool(f'NemantixToolset.{tool_name}')
+            if tool_name in self.NemantixToolset.REGISTRY:
+                tool = self.NemantixToolset.get_tool(f'NemantixToolset.{tool_name}')
 
-            arguments = response.tool_arguments
-            logger.info(f'Calling tool "{tool_name}" with arguments: {arguments}')
+                arguments = response.tool_arguments
+                logger.info(f'Calling tool "{tool_name}" with arguments: {arguments}')
 
-            tool_out = tool(**arguments)
-            last_output = self.convert_to_str(tool_out).replace('\n', ' ')
+                tool_out = tool(**arguments)
+                last_output = self.convert_to_str(tool_out).replace('\n', ' ')
 
-            # TODO: add tool args?
-            context.append(('tool', f'{tool_name}: {last_output}'))
+                # TODO: add tool args?
+                context.append(('tool', f'{tool_name}: {last_output}'))
+            else:
+                context.append(('tool', f'Tool "{tool_name}" is not a valid toolset name: either '
+                                        'make a valid tool call or mark the task as completed if '
+                                        'no more tool calls are necessary.'))
 
-    @staticmethod
-    def convert_to_str(content) -> str:
+    # TODO: handle Opaque, etc
+    @classmethod
+    def convert_to_str(cls, content) -> str:
+        if isinstance(content, nmx_runtime.DocRef):
+            return cls._doc_to_str(doc=content)
+
         if isinstance(content, nmx_runtime.Struct):
             args, kwargs = content.to_args_and_kwargs()
             string = []
 
             for i, arg in enumerate(args):
+                if isinstance(arg, nmx_runtime.DocRef):
+                    arg = cls._doc_to_str(doc=arg)
+
+                elif isinstance(arg, nmx_runtime.Struct):
+                    arg = cls.convert_to_str(content=arg)
+
                 string.append(f'{i}: {arg}')
 
             for k, v in kwargs.items():
+                if isinstance(v, nmx_runtime.DocRef):
+                    v = cls._doc_to_str(doc=v)
+
+                elif isinstance(v, nmx_runtime.Struct):
+                    v = cls.convert_to_str(content=v)
+
                 string.append(f'{k}: {v}')
 
             return f"{{{', '.join(string)}}}"
 
         return str(content)
+
+    @staticmethod
+    def _doc_to_str(doc: nmx_runtime.DocRef) -> str:
+        return (f'{{"node_id": "{doc.node_id}", "content": "{doc.content}",'
+                f'"breadcrumbs": "{doc.breadcrumbs}"}}')
 
 
 class AgentState:

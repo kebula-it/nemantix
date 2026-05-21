@@ -576,8 +576,10 @@ __deliberate
                     return self.RunSchema(last_output, last_output)
 
             tool_name = response.tool_name
-            if tool_name in self.NemantixToolset.REGISTRY:
-                tool = self.NemantixToolset.get_tool(f'NemantixToolset.{tool_name}')
+            tool_alias = f'NemantixToolset.{tool_name}'
+
+            if tool_alias in self.NemantixToolset.REGISTRY:
+                tool = self.NemantixToolset.get_tool(tool_alias)
 
                 arguments = response.tool_arguments
                 logger.info(f'Calling tool "{tool_name}" with arguments: {arguments}')

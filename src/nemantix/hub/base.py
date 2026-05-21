@@ -12,9 +12,10 @@ class Storable:
 
         if self.connector is not None:
             from nemantix.common.connectors import DBConnector
+            from nemantix.hub.storage import ObserverLogModel
 
             if isinstance(self.connector, DBConnector):
-                self.connector.create_tables()
+                self.connector.create_tables(base=ObserverLogModel)
 
     def save(self, **kwargs):
         """Helper to write a log entry to the database."""

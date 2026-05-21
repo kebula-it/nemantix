@@ -9,10 +9,10 @@ from nemantix.hub.base import Storable
 
 if TYPE_CHECKING:
     from nemantix.hub.observer import Observer
-    from nemantix.hub.storage import ObserverLogModel
+    from nemantix.hub.storage import EventLogModel
 
 __all__ = ["EventHub", "Event", "EventType", "Debugger", "Profiler", "Tracer",
-           "Observer", "ObserverLogModel", "Storable"]
+           "Observer", "EventLogModel", "Storable"]
 
 
 def __getattr__(name):
@@ -22,8 +22,8 @@ def __getattr__(name):
         return Observer
 
     if name == "ObserverLogModel":
-        from nemantix.hub.storage import ObserverLogModel
-        globals()["ObserverLogModel"] = ObserverLogModel
-        return ObserverLogModel
+        from nemantix.hub.storage import EventLogModel
+        globals()["ObserverLogModel"] = EventLogModel
+        return EventLogModel
 
     raise AttributeError(f"module 'nemantix.hub' has no attribute {name!r}")

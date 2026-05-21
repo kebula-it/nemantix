@@ -354,9 +354,8 @@ If the observer is instantiated with a database connector (`DBConnector`), it fo
 application logs to the provided database:
 
 ```python
-from nemantix.hub import Observer, ObserverLogModel
+from nemantix.hub import Observer, EventLogModel
 from nemantix.common.connectors import DBConnector
-
 
 # in-mem SQLite example
 sql_connector = DBConnector.sqlite_in_mem()
@@ -373,7 +372,7 @@ with agent:
 
 # print the recorded logs from the DB
 with observer.connector.get_session() as session:
-    logs = session.query(ObserverLogModel).all()
+    logs = session.query(EventLogModel).all()
 
     for log in logs:
         print(f"[{log.timestamp}] {log.message}")

@@ -631,7 +631,8 @@ class Interpreter:
 
                     elif builtin_name == BuiltinFunctionEnum.RETRIEVE:
                         def __retrieve(*args_, **kwargs_):
-                            self._emit_retrieve(stmt=do, knowledge_base=self.knowledge_base, **kwargs_)
+                            self._emit_retrieve(stmt=do, knowledge_base=self.knowledge_base,
+                                                query=kwargs_.get('query', args_[0]))
 
                             return Builtin.retrieve(self.knowledge_base, *args_, **kwargs_)
 
@@ -639,7 +640,8 @@ class Interpreter:
 
                     elif builtin_name == BuiltinFunctionEnum.EXPAND:
                         def __expand(*args_, **kwargs_):
-                            self._emit_expand(stmt=do, knowledge_base=self.knowledge_base, **kwargs_)
+                            self._emit_expand(stmt=do, knowledge_base=self.knowledge_base,
+                                              node_id=kwargs_.get('node_id', args_[0]))
 
                             return Builtin.expand(self.knowledge_base, *args_, **kwargs_)
 
@@ -647,7 +649,8 @@ class Interpreter:
 
                     elif builtin_name == BuiltinFunctionEnum.EXTEND:
                         def __extend(*args_, **kwargs_):
-                            self._emit_extend(stmt=do, knowledge_base=self.knowledge_base, **kwargs_)
+                            self._emit_extend(stmt=do, knowledge_base=self.knowledge_base,
+                                              node_id=kwargs_.get('node_id', args_[0]))
 
                             return Builtin.extend(self.knowledge_base, *args_, **kwargs_)
 
@@ -655,7 +658,8 @@ class Interpreter:
 
                     elif builtin_name == BuiltinFunctionEnum.GENERALIZE:
                         def __generalize(*args_, **kwargs_):
-                            self._emit_generalize(stmt=do, knowledge_base=self.knowledge_base, **kwargs_)
+                            self._emit_generalize(stmt=do, knowledge_base=self.knowledge_base,
+                                                  node_id=kwargs_.get('node_id', args_[0]))
 
                             return Builtin.generalize(self.knowledge_base, *args_, **kwargs_)
 
@@ -894,28 +898,28 @@ class Interpreter:
 
             elif expression.function == BuiltinFunctionEnum.RETRIEVE:
                 def __retrieve(knowledge_base, *_, **kwargs):
-                    self._emit_retrieve(stmt=expression, knowledge_base=knowledge_base)
+                    self._emit_retrieve(stmt=expression, knowledge_base=knowledge_base, **kwargs)
                     return Builtin.retrieve(knowledge_base, **kwargs)
 
                 function = __retrieve
 
             elif expression.function == BuiltinFunctionEnum.EXPAND:
                 def __expand(knowledge_base, *_, **kwargs):
-                    self._emit_expand(stmt=expression, knowledge_base=knowledge_base)
+                    self._emit_expand(stmt=expression, knowledge_base=knowledge_base, **kwargs)
                     return Builtin.expand(knowledge_base, **kwargs)
 
                 function = __expand
 
             elif expression.function == BuiltinFunctionEnum.EXTEND:
                 def __extend(knowledge_base, *_, **kwargs):
-                    self._emit_extend(stmt=expression, knowledge_base=knowledge_base)
+                    self._emit_extend(stmt=expression, knowledge_base=knowledge_base, **kwargs)
                     return Builtin.extend(knowledge_base, **kwargs)
 
                 function = __extend
 
             elif expression.function == BuiltinFunctionEnum.GENERALIZE:
                 def __generalize(knowledge_base, *_, **kwargs):
-                    self._emit_generalize(stmt=expression, knowledge_base=knowledge_base)
+                    self._emit_generalize(stmt=expression, knowledge_base=knowledge_base, **kwargs)
                     return Builtin.generalize(knowledge_base, **kwargs)
 
                 function = __generalize
@@ -1783,19 +1787,23 @@ class Interpreter:
 
     def _emit_retrieve(self, stmt: nmx_nodes.Statement, knowledge_base: NemantixKnowledgeBase, scope = None, **kwargs):
         self._emit_event(stmt, event_type=EventType.RETRIEVE, scope=scope,
-                         payload=dict(knowledge_base=knowledge_base), **kwargs)
+                         payload=dict(knowledge_base=knowledge_base, query=kwargs.pop('query', '')),
+                         **kwargs)
 
     def _emit_expand(self, stmt: nmx_nodes.Statement, knowledge_base: NemantixKnowledgeBase, scope = None, **kwargs):
         self._emit_event(stmt, event_type=EventType.EXPAND, scope=scope,
-                         payload=dict(knowledge_base=knowledge_base), **kwargs)
+                         payload=dict(knowledge_base=knowledge_base,
+                                      query=f'node_id: {kwargs.pop('node_id', None)}'), **kwargs)
 
     def _emit_extend(self, stmt: nmx_nodes.Statement, knowledge_base: NemantixKnowledgeBase, scope = None, **kwargs):
         self._emit_event(stmt, event_type=EventType.EXTEND, scope=scope,
-                         payload=dict(knowledge_base=knowledge_base), **kwargs)
+                         payload=dict(knowledge_base=knowledge_base,
+                                      query=f'node_id: {kwargs.pop('node_id', None)}'), **kwargs)
 
     def _emit_generalize(self, stmt: nmx_nodes.Statement, knowledge_base: NemantixKnowledgeBase, scope = None, **kwargs):
         self._emit_event(stmt, event_type=EventType.GENERALIZE, scope=scope,
-                         payload=dict(knowledge_base=knowledge_base), **kwargs)
+                         payload=dict(knowledge_base=knowledge_base,
+                                      query=f'node_id: {kwargs.pop('node_id', None)}'), **kwargs)
 
     def _push_scope(self, scope: str):
         self.globals['__scope'].append(scope)

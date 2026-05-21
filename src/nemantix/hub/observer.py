@@ -241,16 +241,22 @@ class Observer(Observable, Storable):
         else:
             self.agent.llm_calls[name]['external'] += 1
 
-    def on_tool_call(self, event: Event):
+    def on_tool_call(self, event: Event) -> bool:
         if event.payload.get('type', None) == 'tool':
             self.agent.tool_frequencies[event.payload['name']] += 1
+            return True
+
+        return False
 
     def on_user_request(self, _: Event):
         self.agent.user_requests += 1
 
-    def on_runtime_coding(self, event: Event):
+    def on_runtime_coding(self, event: Event) -> bool:
         if event.payload.get('phase', None) == 'code_deliberate':
             self.agent.runtime_codings += 1
+            return True
+
+        return False
 
     def on_error(self, event: Event):
         if event.type == EventType.CODING_ERROR:
@@ -261,11 +267,12 @@ class Observer(Observable, Storable):
 
         self.agent.errors += 1
         self.agent.logs.append(err_msg)
-        self.save(timestamp=event.timestamp, message=err_msg)
+        self.save(timestamp=event.timestamp, message=err_msg, event=event.type.name)
 
     def on_log(self, event: Event):
         self.agent.logs.append(f"[LOG] {event.payload}")
-        self.save(timestamp=event.timestamp, message=f'{event.payload}')
+        self.save(timestamp=event.timestamp, message=f'{event.payload}',
+                  event=event.type.name)
 
     def print(self, line_size=50):
         """Prints a unified view of the system and agent states."""

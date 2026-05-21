@@ -985,35 +985,43 @@ class Builtin:
         return docs
 
     @staticmethod
-    def expand(knowledge_base: NemantixKnowledgeBase, node_id) -> list[DocRef]:
-        results = knowledge_base.expand(node_id=node_id)
+    def expand(knowledge_base: NemantixKnowledgeBase, node_id: 'str | list[str]') -> list[DocRef]:
+        if not isinstance(node_id, list):
+            node_id = [node_id]
+
         docs = []
+        for id_ in set(node_id):
+            results = knowledge_base.expand(node_id=id_)
 
-        if isinstance(results, dict):
-            results = [results]
+            if isinstance(results, dict):
+                results = [results]
 
-        for result in results:
-            docs.append(DocRef(node_id=result['node_id'], score=0.0,
-                               content=result['content'], breadcrumbs=''))
+            for result in results:
+                docs.append(DocRef(node_id=result['node_id'], score=0.0,
+                                   content=result['content'], breadcrumbs=''))
         return docs
 
     @staticmethod
-    def extend(knowledge_base: NemantixKnowledgeBase, node_id) -> list[DocRef]:
-        results = knowledge_base.extend(node_id=node_id)
+    def extend(knowledge_base: NemantixKnowledgeBase, node_id: 'str | list[str]') -> list[DocRef]:
+        if not isinstance(node_id, list):
+            node_id = [node_id]
+
         docs = []
+        for id_ in set(node_id):
+            results = knowledge_base.extend(node_id=id_)
 
-        for result in [results.get('previous_sibling', None),
-                       results.get('next_sibling', None)]:
-            if result is None:
-                continue
+            for result in [results.get('previous_sibling', None),
+                           results.get('next_sibling', None)]:
+                if result is None:
+                    continue
 
-            assert isinstance(result, dict)
-            docs.append(DocRef(node_id=result['node_id'], score=0.0,
-                               content=result['content'], breadcrumbs=''))
+                assert isinstance(result, dict)
+                docs.append(DocRef(node_id=result['node_id'], score=0.0,
+                                   content=result['content'], breadcrumbs=''))
         return docs
 
     @staticmethod
-    def generalize(knowledge_base: NemantixKnowledgeBase, node_id) -> DocRef:
+    def generalize(knowledge_base: NemantixKnowledgeBase, node_id: 'str') -> DocRef:
         result = knowledge_base.generalize(node_id=node_id)
         return DocRef(node_id=result['node_id'], score=0.0,
                       content=result['content'], breadcrumbs='')

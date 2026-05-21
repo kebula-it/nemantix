@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import json
 import logging
+import textwrap
 
 from enum import Enum, auto
 from typing import Any, Type, Optional, TYPE_CHECKING
@@ -494,10 +495,12 @@ __deliberate
             self.expertise.deliberate_to_script_loc[name] = loc
 
         self.available_tools = registered_names
+        self.history = dict(thoughts=[], tools=[], arguments=[], outputs=[],
+                            feedbacks=[])
 
     # TODO: predict a plan, then execute and revise it at each step?
     def run(self, user_request: str, schema: Type[BaseModel] | None = None,
-            reformulate_answer=True, **kwargs) -> RunSchema:
+            reformulate_answer=True, human_approval=False, **kwargs) -> RunSchema:
         system_prompt = ('You are an helpful agent assistant. You have access to tools '
                          '(lookup [[tools]]). '
                          'You must assess the goal (lookup [[user_request]]) and '
@@ -558,7 +561,8 @@ __deliberate
             assert isinstance(response, self.ReActSchema)
 
             context.append(('assistant', response.thought))
-            logger.info(f'though: "{response.thought}"')
+            logger.info(f'though: "{"\n".join(textwrap.wrap(response.thought, width=100))}"')
+            self.history['thoughts'].append(response.thought)
 
             if response.task_completed:
                 logger.info('Task complete')
@@ -589,10 +593,19 @@ __deliberate
 
                 # TODO: add tool args?
                 context.append(('tool', f'{tool_name}: {last_output}'))
+                self.history['arguments'].append(arguments)
+
+                if human_approval:
+                    feedback = self._ask_user(last_output)
+                    context.append(('user', feedback))
+                    self.history['feedbacks'].append(feedback)
             else:
                 context.append(('tool', f'Tool "{tool_name}" is not a valid toolset name: either '
                                         'make a valid tool call or mark the task as completed if '
                                         'no more tool calls are necessary.'))
+
+            self.history['outputs'].append(last_output)
+            self.history['tools'].append(tool_name)
 
     # TODO: handle Opaque, etc
     @classmethod
@@ -625,6 +638,14 @@ __deliberate
             return f"{{{', '.join(string)}}}"
 
         return str(content)
+
+    @staticmethod
+    def _ask_user(output) -> str:
+        lines = textwrap.wrap(output, width=100)
+        user_prompt = (f'[Last step output]\n{"\n".join(lines)}\n\n[Feedback]'
+                       f'\nWrite user feedback: ')
+        feedback = input(user_prompt)
+        return feedback
 
     @staticmethod
     def _doc_to_str(doc: nmx_runtime.DocRef) -> str:

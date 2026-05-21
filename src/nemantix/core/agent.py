@@ -496,7 +496,7 @@ __deliberate
 
         self.available_tools = registered_names
         self.history = dict(thoughts=[], tools=[], arguments=[], outputs=[],
-                            feedbacks=[])
+                            feedbacks=[], errors=[])
 
     # TODO: predict a plan, then execute and revise it at each step?
     def run(self, user_request: str, schema: Type[BaseModel] | None = None,
@@ -544,14 +544,21 @@ __deliberate
         necessary and the task is solved.
         [[last_output]]
         "{}"
+        
+        [[errors]]
+        "{}"
+        If an error occurred during the last tool call, revise it: either select another tool,
+        or adjust the input arguments accordingly to avoid the execution error again.
         """
+
         last_output = ''
+        last_error = ''
 
         # TODO: add internal prompt to initial request?
         # TODO: catch exception and eventually ask user?
         while True:
             prompt = reason_template.format(user_request, context_to_str(),
-                                            tools_str, last_output)
+                                            tools_str, last_output, last_error)
 
             messages = self.llm.messages_from([('assistant', prompt)])
             result = self.llm.invoke_structured(messages, schema=self.ReActSchema)
@@ -588,23 +595,31 @@ __deliberate
                 arguments = response.tool_arguments
                 logger.info(f'Calling tool "{tool_name}" with arguments: {arguments}')
 
-                tool_out = tool(**arguments)
-                last_output = self.convert_to_str(tool_out).replace('\n', ' ')
+                try:
+                    tool_out = tool(**arguments)
+                    last_error = ''
 
-                # TODO: add tool args?
-                context.append(('tool', f'{tool_name}: {last_output}'))
-                self.history['arguments'].append(arguments)
+                    last_output = self.convert_to_str(tool_out).replace('\n', ' ')
 
-                if human_approval:
-                    feedback = self._ask_user(last_output)
-                    context.append(('user', feedback))
-                    self.history['feedbacks'].append(feedback)
+                    # TODO: add tool args?
+                    context.append(('tool', f'{tool_name}: {last_output}'))
+                    self.history['arguments'].append(arguments)
+
+                    if human_approval:
+                        feedback = self._ask_user(last_output)
+                        context.append(('user', feedback))
+                        self.history['feedbacks'].append(feedback)
+
+                except Exception as e:
+                    # TODO: could also put the error in 'tool' message
+                    last_error = f'Error occurred in tool "{tool_name}": "{e}"!'
             else:
                 context.append(('tool', f'Tool "{tool_name}" is not a valid toolset name: either '
                                         'make a valid tool call or mark the task as completed if '
                                         'no more tool calls are necessary.'))
 
             self.history['outputs'].append(last_output)
+            self.history['errors'].append(last_error)
             self.history['tools'].append(tool_name)
 
     # TODO: handle Opaque, etc

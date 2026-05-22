@@ -1,34 +1,49 @@
 from __future__ import annotations
 
-import math
 import functools
+import math
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Callable, Iterable, List, Optional, Type, Union
+
 import numpy as np
 import numpy.typing as npt
+from lark import Token
+from pydantic import BaseModel, create_model
 
 from nemantix.common import context
 from nemantix.common.logger import get_package_logger
+from nemantix.core import custom_types as nmx_types
 from nemantix.core import exceptions as nmx_ex
 from nemantix.core import node as nmx_nodes
-from nemantix.core.expertise import Expertise
-from nemantix.core.tools import Toolset
-from nemantix.core.node import (Expression, VariableTypeEnum, UnaryOperationEnum, BinaryOperationEnum,
-                                BuiltinFunctionEnum, SimilarityEnum, SimilarityQualifierEnum,
-                                SlotTypesEnum, Deliberate)
 from nemantix.core import runtime as nmx_runtime
+from nemantix.core.expertise import Expertise
+from nemantix.core.node import (
+    BinaryOperationEnum,
+    BuiltinFunctionEnum,
+    Deliberate,
+    Expression,
+    SimilarityEnum,
+    SimilarityQualifierEnum,
+    SlotTypesEnum,
+    UnaryOperationEnum,
+    VariableTypeEnum,
+)
+from nemantix.core.prompt import (
+    LEFT_SEM_INCL_PROMPT,
+    RIGHT_SEM_INCL_PROMPT,
+    SEM_INCL_TEMPLATE,
+)
 from nemantix.core.runtime import Builtin, Struct
 from nemantix.core.script import Script
-from nemantix.core import custom_types as nmx_types
-from nemantix.core.prompt import RIGHT_SEM_INCL_PROMPT, LEFT_SEM_INCL_PROMPT, SEM_INCL_TEMPLATE
-from nemantix.llm import AbstractLLMProxy
+from nemantix.core.tools import Toolset
 from nemantix.hub import Event, EventType
-
-from typing import Optional, Any, Callable, Type, Union, List, Iterable, TYPE_CHECKING
+from nemantix.llm import AbstractLLMProxy
 
 if TYPE_CHECKING:
-    from nemantix.knowledge_base.core.nemantix_knowledge_base import NemantixKnowledgeBase
-from pydantic import BaseModel, create_model
-from lark import Token
-from enum import Enum
+    from nemantix.knowledge_base.core.nemantix_knowledge_base import (
+        NemantixKnowledgeBase,
+    )
+
 
 logger = get_package_logger(__name__)
 
@@ -1599,7 +1614,7 @@ class Interpreter:
             required_script = self.expertise.script_by_loc[location]
             self._discover_actions(required_script)
 
-    def _discover_actions(self, script: Script, deliberate: Deliberate = None):
+    def _discover_actions(self, script: Script, deliberate: Deliberate | None = None):
         for action in script.actions.values():
             if action.name not in self.context.actions:
                 self.context.actions[action.name] = dict(closure=self._action_closure(action),
@@ -1608,13 +1623,14 @@ class Interpreter:
             else:
                 logger.warning(f'Name "{action.name}" already defined in context.actions!')
 
-        if deliberate:
+        if deliberate is not None:
             for action in deliberate.generated_actions:
                 if action.name not in self.context.actions:
-                    # TODO: also add [deliberate.name].[action.name]
-                    self.context.actions[action.name] = dict(closure=self._action_closure(action),
-                                                             is_global=False, action=action,
-                                                             imported_by={deliberate.name})
+                    action_dict = dict(closure=self._action_closure(action), is_global=False, action=action,
+                                       imported_by={deliberate.name})
+
+                    self.context.actions[action.name] = action_dict
+                    self.context.actions[f'{deliberate.name}.{action.name}'] = action_dict
                 else:
                     logger.warning(f'Private action "{action.name}" shadowed by global action with same name!')
 
@@ -1865,7 +1881,6 @@ class Interpreter:
 
     def _set_special_variables(self):
         # TODO: add semantics to (all/some) variables?
-        # TODO: rename 'ENV' (or 'STATE') to 'AG'?
         self._register_special_var(name='ENV', value=self.external_vars)
         self._register_special_var(name='STATE', value=self.agent_state, read_only=False)
 

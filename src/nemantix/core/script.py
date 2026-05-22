@@ -1,14 +1,22 @@
 from enum import Enum
-from typing import Any
 from pathlib import Path
+from typing import Any
 
+from nemantix.common.logger import get_package_logger
 from nemantix.core.custom_types import PathLike
 from nemantix.core.exceptions import NemantixException
-from nemantix.core.node import (Deliberate, Require, PythonToolDeclaration, Frame, ActionBlock,
-                                ImportToolsetStatement, DoStatement, BlockStatement)
+from nemantix.core.node import (
+    ActionBlock,
+    BlockStatement,
+    Deliberate,
+    DoStatement,
+    Frame,
+    ImportToolsetStatement,
+    PythonToolDeclaration,
+    Require,
+)
 from nemantix.core.parser import ParserLark
 from nemantix.core.source_manager import SourceManager
-from nemantix.common.logger import get_package_logger
 
 logger = get_package_logger(__name__)
 
@@ -142,7 +150,6 @@ class Script:
             if isinstance(n, Deliberate):
                 self.deliberates[n.name] = n
 
-                # TODO raise exception or just a warning?
                 if n.name in self.delib_semantics_map:
                     raise NemantixException(f"Cannot instantiate two deliberates with the same name ({n.name})")
 
@@ -169,9 +176,10 @@ class Script:
 
             elif isinstance(n, ActionBlock):
                 self.actions[n.name] = n
-                # TODO raise exception or just a warning?
+
                 if n.name in self.action_semantics_map:
                     raise NemantixException(f"Cannot instantiate two actions with the same name ({n.name})")
+
                 semantics = n.prompt.prompt
                 ins = n.input
                 outs = n.output

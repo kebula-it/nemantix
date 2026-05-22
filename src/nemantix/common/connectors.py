@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
+from enum import Enum
 
 from sqlalchemy import URL, create_engine, text
-from sqlalchemy.orm import sessionmaker, Session, DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
-from sqlalchemy_utils import database_exists, create_database
+from sqlalchemy_utils import create_database, database_exists
 
 from nemantix.common.logger import get_package_logger
 
@@ -13,6 +14,25 @@ class ORMBase(DeclarativeBase):
 
 
 logger = get_package_logger(__name__)
+
+
+class DBEngineEnum(Enum):
+    """Enumeration of sqlalchemy common engines"""
+    # postgres
+    POSTGRES = 'postgresql'
+    PSYCOPG2 = 'postgresql+psycopg2'
+    PG_8000 = 'postgresql+pg8000'
+    # mysql
+    MYSQL = 'mysql'
+    MYSQL_DB = 'mysql+mysqldb'
+    PY_MYSQL = 'mysql+pymysql'
+    # oracle
+    ORACLE = 'oracle+oracledb'
+    # MS sql server
+    PY_ODBC = 'mssql+pyodbc'
+    PY_MSSQL = 'mssql+pymssql'
+    # sqlite
+    SQLITE = 'sqlite'
 
 
 class Connector(ABC):
@@ -27,7 +47,6 @@ class Connector(ABC):
 class DBConnector(Connector):
     """Class that wraps the connection to a DBMS"""
 
-    # TODO: enum for engines?
     # TODO: pool options
     def __init__(self, database_url: URL | str, autoflush=False, autocommit=False,
                  expire_on_commit=False, future=True, **kwargs):
@@ -55,7 +74,7 @@ class DBConnector(Connector):
             return False
 
     def get_session(self) -> Session:
-        # TODO: or Session.begin()
+        # NOTE: Session.begin() for autocommit
         return self.Session()
 
     def create_tables(self, base=ORMBase):
@@ -92,9 +111,12 @@ class DBConnector(Connector):
             self.connection = None
 
     @staticmethod
-    def from_parameters(engine: str, username: str | None = None, password: str | None = None,
+    def from_parameters(engine: str | DBEngineEnum, username: str | None = None, password: str | None = None,
                         host: str | None = None, database: str | None = None,
                         port: int | None = None, **kwargs) -> 'DBConnector':
+        if isinstance(engine, DBEngineEnum):
+            engine = engine.value
+
         url = URL.create(engine, username=username, password=password, host=host,
                          database=database, port=port)
         return DBConnector(url, **kwargs)

@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-import re
 import math
+import re
+from collections import OrderedDict
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
 import numpy as np
 
-from typing import TYPE_CHECKING
-
 from nemantix.common.logger import get_package_logger
-from nemantix.llm import AbstractLLMProxy, LLMResponse
 from nemantix.core import node as nmx_nodes
+from nemantix.llm import AbstractLLMProxy, LLMResponse
 
 if TYPE_CHECKING:
     from nemantix.knowledge_base import NemantixKnowledgeBase
 
-from collections import OrderedDict
-from typing import Optional, Dict, Any
 
 logger = get_package_logger(__name__)
 
@@ -605,7 +604,6 @@ class Frame:
         return f'Frame({", ".join(strings)})'
 
 
-# TODO: make read-only (cannot modify and add new fields)
 class DocRef(Struct):
     """Reference to knowledge base's document"""
 
@@ -1053,7 +1051,7 @@ def get_globals() -> dict[str, Any]:
 
 # TODO: could wrap __import__ to improve security? or import commonly used libraries names (pd, np)?
 def _allowed_builtins() -> dict:
-    from typing import Optional, Set, List, Union, Dict, Any, Callable, Tuple
+    from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
     return {
         "Exception": Exception, "TypeError": TypeError, "False": False, "min": min, "max": max,

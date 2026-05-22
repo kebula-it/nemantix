@@ -3,34 +3,78 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from lark import (
     Lark,
+    ParseTree,
+    Token,
     Transformer,
     Tree,
-    Token,
     UnexpectedCharacters,
     UnexpectedToken,
-    v_args, ParseTree,
+    v_args,
 )
 from lark.visitors import Visitor_Recursive
 
-from nemantix.core.exceptions import NemantixParserException
-from nemantix.core.node import (ActionBlock, ActionInput, ActionOutput, Annotation, Assignment,
-                                BinaryOperation, BinaryOperationEnum, BlockStatement, Collection, ConditionBlock,
-                                Deliberate, DoStatement, ElifBlock, ElseBlock, Expression, FileMeta, Frame,
-                                FrameApplyEnum, IfBlock, LeafStatement, BuiltinFunction, MicroPrompt, NodeMeta,
-                                PlanBlock, PythonToolDeclaration, RepeatBlock, RepeatEachBlock, RepeatTimesBlock,
-                                RepeatUntilBlock,
-                                RepeatWhileBlock, SchemedCollection, SimilarityEnum, SimilarityOperation, SingleValue,
-                                Slot, SlotTypesEnum, BuiltinFunctionEnum,
-                                Statement, UnaryOperation, UnaryOperationEnum, Variable, VariableTypeEnum,
-                                map_sim_qual_kw, builtin_func_map, slot_types_map, Require, MetaExpression,
-                                Return, Break, Continue, ImportToolsetStatement, Value,
-                                CallableTypeEnum)
 from nemantix.common.logger import get_package_logger
 from nemantix.core.custom_types import PathLike
+from nemantix.core.exceptions import NemantixParserException
+from nemantix.core.node import (
+    ActionBlock,
+    ActionInput,
+    ActionOutput,
+    Annotation,
+    Assignment,
+    BinaryOperation,
+    BinaryOperationEnum,
+    BlockStatement,
+    Break,
+    BuiltinFunction,
+    BuiltinFunctionEnum,
+    CallableTypeEnum,
+    Collection,
+    ConditionBlock,
+    Continue,
+    Deliberate,
+    DoStatement,
+    ElifBlock,
+    ElseBlock,
+    Expression,
+    FileMeta,
+    Frame,
+    FrameApplyEnum,
+    IfBlock,
+    ImportToolsetStatement,
+    LeafStatement,
+    MetaExpression,
+    MicroPrompt,
+    NodeMeta,
+    PlanBlock,
+    PythonToolDeclaration,
+    RepeatBlock,
+    RepeatEachBlock,
+    RepeatTimesBlock,
+    RepeatUntilBlock,
+    RepeatWhileBlock,
+    Require,
+    Return,
+    SchemedCollection,
+    SimilarityEnum,
+    SimilarityOperation,
+    SingleValue,
+    Slot,
+    SlotTypesEnum,
+    Statement,
+    UnaryOperation,
+    UnaryOperationEnum,
+    Value,
+    Variable,
+    VariableTypeEnum,
+    builtin_func_map,
+    map_sim_qual_kw,
+    slot_types_map,
+)
 
 logger = get_package_logger(__name__)
 
@@ -339,7 +383,6 @@ class AstTransformer(Transformer):
                     args = it[1]
 
         # keep track of imported toolsets
-        # TODO: handle "*" toolset imports
         # TODO: check tool name as key
         for tool in tools:
             IMPORTED_TOOLSETS[tool] = toolset_name

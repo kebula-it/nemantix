@@ -1194,7 +1194,7 @@ class Interpreter:
             if a is None or b is None:
                 return a == b
 
-            if type(a) == type(b):
+            if type(a) is type(b):
                 return a == b
 
             raise __nmx_operation_exception()
@@ -1203,13 +1203,13 @@ class Interpreter:
             if a is None or b is None:
                 return a != b
 
-            if type(a) == type(b):
+            if type(a) is type(b):
                 return a != b
 
             raise __nmx_operation_exception()
 
         if self._is_comparison_op(operation):
-            if type(a) != type(b):
+            if type(a) is not type(b):
                 raise __nmx_operation_exception()
 
             if a is None and b is None:

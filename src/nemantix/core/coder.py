@@ -1,29 +1,56 @@
 import json
 import textwrap
 import traceback
-
 from enum import Enum
 
 from lark import LarkError
 
+from nemantix.common import context
+from nemantix.common.logger import get_package_logger
+from nemantix.core.exceptions import (
+    NemantixException,
+    NemantixParserException,
+    NemantixRuntimeException,
+)
+from nemantix.core.node import (
+    ActionBlock,
+    BlockStatement,
+    Deliberate,
+    DoStatement,
+    FileMeta,
+    Frame,
+    ImportToolsetStatement,
+    MicroPrompt,
+    Statement,
+)
+from nemantix.core.parser import _get_frame_parser
+from nemantix.core.prompt import (
+    CODING_ADDITIONAL_INFO,
+    CODING_DELIBERATE_ADDITIONAL_INFO,
+    CODING_SYSTEM_PROMPT,
+    COMPILATION_ACTION,
+    COMPILATION_DELIBERATE,
+    COMPILATION_DELIBERATE_BREAKDOWN,
+    COMPLETE_ACTION_RULES,
+    COMPLETE_DELIBERATE_BREAKDOWN_RULES,
+    COMPLETE_DELIBERATE_RULES,
+    DRAFT_ACTION_RULES,
+    DRAFT_DELIBERATE_BREAKDOWN_RULES,
+    DRAFT_DELIBERATE_RULES,
+    EVALUATE_ACTION_RULES,
+    EVALUATE_DELIBERATE_BREAKDOWN_RULES,
+    EVALUATE_DELIBERATE_RULES,
+    FIX_GENERATION,
+    GEN_FRAME_PROMPT,
+    GEN_TOOLSET_PROMPT,
+    USER_REQUEST,
+)
 from nemantix.core.runtime import get_globals
 from nemantix.core.script import Script
 from nemantix.core.tools import Toolset
-from nemantix.core.parser import _get_frame_parser
-from nemantix.core.exceptions import NemantixException, NemantixRuntimeException, NemantixParserException
-from nemantix.core.node import (Deliberate, Statement, ImportToolsetStatement, Frame, MicroPrompt,
-                                FileMeta, ActionBlock, DoStatement, BlockStatement)
-from nemantix.core.prompt import CODING_ADDITIONAL_INFO, CODING_SYSTEM_PROMPT, COMPILATION_DELIBERATE_BREAKDOWN, \
-    FIX_GENERATION, COMPILATION_ACTION, DRAFT_ACTION_RULES, \
-    COMPLETE_ACTION_RULES, USER_REQUEST, DRAFT_DELIBERATE_RULES, COMPLETE_DELIBERATE_RULES, COMPILATION_DELIBERATE, \
-    CODING_DELIBERATE_ADDITIONAL_INFO, EVALUATE_ACTION_RULES, EVALUATE_DELIBERATE_RULES, \
-    DRAFT_DELIBERATE_BREAKDOWN_RULES, EVALUATE_DELIBERATE_BREAKDOWN_RULES, COMPLETE_DELIBERATE_BREAKDOWN_RULES, \
-    GEN_TOOLSET_PROMPT, GEN_FRAME_PROMPT
+from nemantix.hub.events import Event, EventType
 from nemantix.llm import AbstractLLMProxy
 from nemantix.llm.abstract_proxy import LLMUsage
-from nemantix.common.logger import get_package_logger
-from nemantix.common import context
-from nemantix.hub.events import Event, EventType
 
 logger = get_package_logger(__name__)
 
@@ -420,7 +447,7 @@ class Coder:
 
         file_meta = action.meta["file_meta"]
         assert isinstance(file_meta, FileMeta)
-        start_line, end_line = file_meta.line[0] - 1, file_meta.line[1] - 1
+        end_line = file_meta.line[1] - 1
 
         orig_code = self._read_node_nxs(script_content_list=script_content_list, node=action, read_as_list=True)
         assert isinstance(orig_code, list)
@@ -453,8 +480,7 @@ class Coder:
 
         deliberate_file_meta = deliberate.meta["file_meta"]
         assert isinstance(deliberate_file_meta, FileMeta)
-        deliberate_start_line, deliberate_end_line = (deliberate_file_meta.line[0] - 1,
-                                                      deliberate_file_meta.line[1] - 1)
+        deliberate_start_line = deliberate_file_meta.line[0] - 1
 
         deliberate_original_code = self._read_node_nxs(script_content_list=script_content_list,
                                                        node=deliberate, read_as_list=True)
@@ -851,8 +877,10 @@ class Coder:
         return messages
 
     def query_knowledge_base(self, deliberate: Deliberate) -> str:
-        from nemantix.knowledge_base.core.nemantix_knowledge_base import NemantixKnowledgeBase
         from nemantix.core.runtime import Builtin
+        from nemantix.knowledge_base.core.nemantix_knowledge_base import (
+            NemantixKnowledgeBase,
+        )
 
         if not isinstance(self.knowledge_base, NemantixKnowledgeBase):
             return ''

@@ -11,16 +11,18 @@ from pydantic import BaseModel
 
 from nemantix.core import exceptions as nmx_ex
 from nemantix.core import node as nmx_nodes
+from nemantix.core import runtime as nmx_runtime
 from nemantix.core.interpreter import Interpreter
 from nemantix.core.node import (
-    VariableTypeEnum,
     BinaryOperationEnum,
-    UnaryOperationEnum,
+    FileMeta,
+    NodeMeta,
     SimilarityEnum,
     SimilarityQualifierEnum,
-    SlotTypesEnum, FileMeta, NodeMeta,
+    SlotTypesEnum,
+    UnaryOperationEnum,
+    VariableTypeEnum,
 )
-from nemantix.core import runtime as nmx_runtime
 
 HERE = Path(__file__).parent
 
@@ -314,7 +316,7 @@ def test_string_concat_fail(interpreter_instance):
 
 def test_logical_op(interpreter_instance):
     expr = make_binary_op(BinaryOperationEnum.LOGICAL_OR, True, False)
-    assert interpreter_instance.interpret_expression(expr) == True
+    assert interpreter_instance.interpret_expression(expr) is True
 
 
 def test_logical_op_fail(interpreter_instance):
@@ -325,12 +327,12 @@ def test_logical_op_fail(interpreter_instance):
 
 def test_equality_op_none(interpreter_instance):
     expr = make_binary_op(BinaryOperationEnum.EQ, None, None)
-    assert interpreter_instance.interpret_expression(expr) == True
+    assert interpreter_instance.interpret_expression(expr) is True
 
 
 def test_equality_op(interpreter_instance):
     expr = make_binary_op(BinaryOperationEnum.EQ, 1, 2)
-    assert interpreter_instance.interpret_expression(expr) == False
+    assert interpreter_instance.interpret_expression(expr) is False
 
 
 def test_equality_op_fail(interpreter_instance):
@@ -341,7 +343,7 @@ def test_equality_op_fail(interpreter_instance):
 
 def test_comparison_op(interpreter_instance):
     expr = make_binary_op(BinaryOperationEnum.LT, 1, 2)
-    assert interpreter_instance.interpret_expression(expr) == True
+    assert interpreter_instance.interpret_expression(expr) is True
 
 
 def test_comparison_op_none(interpreter_instance):

@@ -1,17 +1,11 @@
-from typing import TYPE_CHECKING
-
-from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException
-from nemantix.llm.azure_openai_proxy import AzureOpenAILLMProxy
-from nemantix.llm.openai_proxy import OpenAILLMProxy
-from nemantix.llm.google_proxy import GoogleLLMProxy
-from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
-
-if TYPE_CHECKING:
-    from nemantix.llm.local_proxy import LocalLLMProxy
-
-
 from pathlib import Path
 from typing import Any
+
+from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException
+from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
+from nemantix.llm.azure_openai_proxy import AzureOpenAILLMProxy
+from nemantix.llm.google_proxy import GoogleLLMProxy
+from nemantix.llm.openai_proxy import OpenAILLMProxy
 
 
 def get_grammar_path():

@@ -5,26 +5,24 @@ from dataclasses import dataclass
 import pytest
 from lark import LarkError
 
-nemantix = pytest.importorskip("nemantix")
-
+from nemantix.core.coder import CodeOperationEnum, Coder, qualifier_coding_map
 from nemantix.core.exceptions import NemantixException
 from nemantix.core.node import BlockStatement, DoStatement, FileMeta, PlanQualifierEnum
 from nemantix.core.script import Script
 from nemantix.core.tools import Toolset
-
-
-from nemantix.core.coder import Coder, CodeOperationEnum, qualifier_coding_map
 from nemantix.hub.event_hub import EventHub
 from nemantix.hub.events import Event, EventType
 from nemantix.llm.abstract_proxy import LLMResponse, LLMUsage
+
+nemantix = pytest.importorskip("nemantix")
 
 
 class MyToolset(Toolset):
     @classmethod
     def get_tool_descriptions(cls):
         return {
-            "fake_tool": "Stampa ciao",
-            "fake_tool2": "Stampa arrivederci",
+            "fake_tool": "prints ciao",
+            "fake_tool2": "prints arrivederci",
         }
 
 
@@ -157,8 +155,8 @@ def test_extract_toolset_docs_map_import_all(monkeypatch):
 
     assert out == {
         "MyToolset": {
-            "fake_tool": "Stampa ciao",
-            "fake_tool2": "Stampa arrivederci",
+            "fake_tool": "prints ciao",
+            "fake_tool2": "prints arrivederci",
         }
     }
 
@@ -169,7 +167,7 @@ def test_extract_toolset_docs_map_import_subset_list(monkeypatch):
     stmt = ImportToolsetStmt(name="MyToolset", elements=["fake_tool2"])
     out = Coder._extract_toolset_docs_map([stmt])
 
-    assert out == {"MyToolset": {"fake_tool2": "Stampa arrivederci"}}
+    assert out == {"MyToolset": {"fake_tool2": "prints arrivederci"}}
 
 
 def test_extract_toolset_docs_map_raises_if_toolset_not_available(monkeypatch):
@@ -220,15 +218,15 @@ def test_extract_do_str_collects_nested_matching_toolset_calls():
             ],
         )
     }
-    delib = DummyDeliberate("D", 1, 1)
-    delib.get_plan = lambda: make_block_statement(
+    deliberate = DummyDeliberate("D", 1, 1)
+    deliberate.get_plan = lambda: make_block_statement(
         children=[
             make_do_statement("myts.first", 3, 3),
             make_do_statement("myts.second", 4, 4),
         ]
     )
-    delib.generated_actions = None
-    script.deliberates = {"D": delib}
+    deliberate.generated_actions = None
+    script.deliberates = {"D": deliberate}
 
     out = coder._extract_do_str({"myts"}, script)
 
@@ -281,7 +279,7 @@ def test_check_and_fix_generated_code_retries_then_succeeds(monkeypatch):
 
 
 def test_check_and_fix_generated_code_raises_after_max_attempts(monkeypatch):
-    llm = FakeLLMProxy(responses=["stillbad"] * 6)
+    llm = FakeLLMProxy(responses=["still bad"] * 6)
     coder = Coder(llm_proxy=llm)
 
     monkeypatch.setattr(Script, "parse", lambda self: (_ for _ in ()).throw(LarkError("always bad")))

@@ -435,11 +435,11 @@ class AstTransformer(Transformer):
         ins: List[ActionInput] = []
         outs: List[ActionOutput] = []
         body: List[Statement] = []
-        qual: Optional[str] = None
 
         for obj in non_tokens:
             if isinstance(obj, str):
-                name_str = obj
+                continue
+
             elif isinstance(obj, list) and obj:
                 first_elem = obj[0]
 
@@ -454,15 +454,14 @@ class AstTransformer(Transformer):
             ins = []
 
         if all([o is None for o in outs]):
-            out = []
+            outs = []
 
         file_meta = FileMeta((meta.line, meta.end_line), (meta.column, meta.end_column), file=self._current_file)
         return PlanBlock(
             action_inputs=ins,
             action_outputs=outs,
             body=body,
-            meta={"file_meta": file_meta, "node_meta": node_meta},
-        )
+            meta={"file_meta": file_meta, "node_meta": node_meta})
 
     @v_args(meta=True)
     def deliberate(self, meta, items):
@@ -1175,7 +1174,6 @@ class AstTransformer(Transformer):
         ins: List[ActionInput] = []
         outs: List[ActionOutput] = []
         body: List[Statement] = []
-        qual: Optional[str] = None
 
         for obj in non_tokens:
             if isinstance(obj, str):
@@ -1196,7 +1194,7 @@ class AstTransformer(Transformer):
             ins = []
 
         if all([o is None for o in outs]):
-            out = []
+            outs = []
 
         file_meta = FileMeta((meta.line, meta.end_line), (meta.column, meta.end_column), file=self._current_file)
         return ActionBlock(
@@ -1427,7 +1425,6 @@ class AstTransformer(Transformer):
         callable_type = items.pop(0)[1] if items and isinstance(items[0], tuple) and items[0][
             0] == "callable_type" else None
         name: Optional[str] = None
-        deliberate: Optional[str] = None
         using_expr: Optional[Expression] = None
         producing_expr: Optional[Expression] = None
         producing_schema: Optional[str] = None

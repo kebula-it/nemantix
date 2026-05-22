@@ -1,18 +1,18 @@
 # llm/azure_openai_proxy.py (Azure OpenAI via official SDK)
-import inspect
-import json
 import os
-from typing import Any, Iterator, Dict, Optional, List, Type, TYPE_CHECKING
-
+import json
+import inspect
 import httpx
+
+from typing import Any, Iterator, Dict, Optional, List, Type, TYPE_CHECKING
 from pydantic import BaseModel
 
 from nemantix.common import get_package_logger
 
-logger = get_package_logger(__name__)
-
 from nemantix.llm.abstract_proxy import (AbstractLLMProxy, LLMProxyException,
                                          LLMResponse, LLMUsage, StructuredLLMResponse)
+logger = get_package_logger(__name__)
+
 
 try:
     # OpenAI Python SDK v1.x
@@ -105,14 +105,18 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
     def _map_parameter_type(parameter: inspect.Parameter):
         # TODO: proper type mapping, including complex Pydantic parameters
         ann_type = parameter.annotation
-        if ann_type == str:
+        if ann_type is str:
             return "string"
-        if ann_type == int:
+
+        if ann_type is int:
             return "integer"
-        if ann_type == bool:
+
+        if ann_type is bool:
             return "boolean"
-        if ann_type == float:
+
+        if ann_type is float:
             return "number"
+
         return "string"
 
     @staticmethod

@@ -1,1 +1,1 @@
-from nemantix.stl.http_requests.base import RequestsToolset
+from nemantix.stl.http_requests.base import RequestsToolset as RequestsToolset

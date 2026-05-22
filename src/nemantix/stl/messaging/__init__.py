@@ -1,1 +1,1 @@
-from nemantix.stl.messaging.base import MessagingToolset
+from nemantix.stl.messaging.base import MessagingToolset as MessagingToolset

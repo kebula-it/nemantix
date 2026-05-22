@@ -8,16 +8,16 @@ import numpy as np
 import pytest
 from pydantic import BaseModel
 
+from nemantix.common import context
 from nemantix.core import node as nmx_nodes
 from nemantix.core.expertise import Expertise
 from nemantix.core.interpreter import Interpreter
 from nemantix.core.node import (
-    VariableTypeEnum,
+    Annotation,
     FileMeta,
     NodeMeta,
-    Annotation,
+    VariableTypeEnum,
 )
-from nemantix.common import context
 from nemantix.hub.debugger import Debugger
 from nemantix.hub.event_hub import EventHub
 from nemantix.hub.events import Event, EventType
@@ -590,7 +590,7 @@ def test_list_lines_marks_current_line():
 def test_observers_api_creates_hub_automatically():
     """`observers=[Debugger()]` causes Expertise to use the context EventHub."""
     coder = MagicMock()
-    exp = Expertise(script_list=[], coder=coder, verifier=DebugVerifier(), observers=[Debugger()])
+    _ = Expertise(script_list=[], coder=coder, verifier=DebugVerifier(), observers=[Debugger()])
     assert isinstance(context.event_hub.get(), EventHub)
 
 

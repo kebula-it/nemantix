@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 import inspect
 import pkgutil
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nemantix.common.logger import get_package_logger

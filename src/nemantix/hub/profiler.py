@@ -5,7 +5,6 @@ from nemantix.common.logger import get_package_logger
 from nemantix.hub.event_hub import EventHub, Observable
 from nemantix.hub.events import Event, EventType
 
-
 logger = get_package_logger(__name__)
 
 
@@ -212,7 +211,7 @@ class Profiler(Observable):
     def print(self, line_size=70):
         """Generates a Flame-Graph style text report of the execution."""
         print("\n" + "=" * line_size)
-        mode_label = f' [annotated mode]' if self.profile_mode == 'annotated' else ''
+        mode_label = ' [annotated mode]' if self.profile_mode == 'annotated' else ''
         print(f"PROFILER REPORT{mode_label}")
         print("=" * line_size)
 

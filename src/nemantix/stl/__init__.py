@@ -1,10 +1,10 @@
-from nemantix.stl import audio_processor
-from nemantix.stl import email_operation
-from nemantix.stl import http_requests
-from nemantix.stl import local_filesystem
-from nemantix.stl import math_solver
-from nemantix.stl import media_processor
-from nemantix.stl import messaging
-from nemantix.stl import remote_filesystem
-from nemantix.stl import sql_explorer
-from nemantix.stl import web_search
+from nemantix.stl import audio_processor as audio_processor
+from nemantix.stl import email_operation as email_operation
+from nemantix.stl import http_requests as http_requests
+from nemantix.stl import local_filesystem as local_filesystem
+from nemantix.stl import math_solver as math_solver
+from nemantix.stl import media_processor as media_processor
+from nemantix.stl import messaging as messaging
+from nemantix.stl import remote_filesystem as remote_filesystem
+from nemantix.stl import sql_explorer as sql_explorer
+from nemantix.stl import web_search as web_search

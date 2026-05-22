@@ -1,29 +1,27 @@
 from __future__ import annotations
 
-import re
 import json
 import logging
+import re
 import textwrap
-
 from enum import Enum, auto
-from typing import Any, Type, Optional, TYPE_CHECKING
-
-from nemantix.core.tools import Toolset
+from typing import TYPE_CHECKING, Any, Optional, Type
 
 if TYPE_CHECKING:
     from nemantix.knowledge_base.core.nemantix_knowledge_base import KnowledgeBaseConfig
 
-from pydantic import BaseModel, ValidationError
 from dataclasses import dataclass
 
-from nemantix.core.expertise import Expertise
+from pydantic import BaseModel, ValidationError
+
 from nemantix.common.logger import get_package_logger, update_logger_levels
+from nemantix.core import runtime as nmx_runtime
 from nemantix.core.exceptions import NemantixException, NemantixRuntimeException
 from nemantix.core.executor import Executor
-from nemantix.core import runtime as nmx_runtime
-from nemantix.core.node import ActionBlock, Deliberate, ActionInput, NodeMeta
+from nemantix.core.expertise import Expertise
+from nemantix.core.node import ActionBlock, ActionInput, Deliberate, NodeMeta
+from nemantix.hub import Event, EventHub, EventType
 from nemantix.llm import AbstractLLMProxy
-from nemantix.hub import EventType, Event, EventHub
 
 logger = get_package_logger(__name__)
 
@@ -56,7 +54,9 @@ class Agent:
         self.state = AgentState()
 
         if use_embedder:
-            from nemantix.knowledge_base.models.embedding import SentenceTransformerWrapper
+            from nemantix.knowledge_base.models.embedding import (
+                SentenceTransformerWrapper,
+            )
             self.embedder = SentenceTransformerWrapper()
 
         if use_knowledge_base:
@@ -65,7 +65,9 @@ class Agent:
                     "The 'kb_config' (KnowledgeBaseConfig) is mandatory when 'use_knowledge_base' is True."
                 )
 
-            from nemantix.knowledge_base.core.nemantix_knowledge_base import NemantixKnowledgeBase
+            from nemantix.knowledge_base.core.nemantix_knowledge_base import (
+                NemantixKnowledgeBase,
+            )
 
             self.knowledge_base = NemantixKnowledgeBase(config=kb_config)
             self.expertise.set_knowledge_base(knowledge_base=self.knowledge_base)
@@ -277,9 +279,10 @@ class ReActAgent(Agent):
     class NemantixToolset(Toolset):
         @classmethod
         def register_action(cls, action: ActionBlock, agent: Agent):
+            from pathlib import Path
+
             from nemantix.core.script import Script
             from nemantix.core.source_manager import LocalSourceManager
-            from pathlib import Path
 
             script_loc = agent.expertise.action_to_script_loc[action.name]
             script = agent.expertise.script_by_loc[script_loc]
@@ -377,8 +380,8 @@ class ReActAgent(Agent):
 
         @staticmethod
         def param_from_input(input_arg: ActionInput):
-            from inspect import Parameter
             from collections import namedtuple
+            from inspect import Parameter
             from typing import Any
 
             param = namedtuple('Param', ['annotation', 'default'])
@@ -498,6 +501,7 @@ __deliberate
         self.history = dict(thoughts=[], tools=[], arguments=[], outputs=[],
                             feedbacks=[], errors=[])
 
+    # TODO: detect loops
     # TODO: predict a plan, then execute and revise it at each step?
     def run(self, user_request: str, schema: Type[BaseModel] | None = None,
             reformulate_answer=True, human_approval=False, **kwargs) -> RunSchema:

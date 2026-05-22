@@ -1,1 +1,1 @@
-from nemantix.stl.sql_explorer.base import SqlExplorerToolset
+from nemantix.stl.sql_explorer.base import SqlExplorerToolset as SqlExplorerToolset

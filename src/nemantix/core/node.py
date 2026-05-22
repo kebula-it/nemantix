@@ -142,8 +142,9 @@ class BlockStatement(Statement):
         for name in ['intent.goal', 'goal']:
             try:
                 intent = self.get_annotation_value(name)
-            except:
+            except NemantixException:
                 pass
+
             if intent:
                 return intent
 

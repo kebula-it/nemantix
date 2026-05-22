@@ -1,20 +1,19 @@
 from collections import defaultdict, deque
 from pathlib import Path
 
+from nemantix.common import context
+from nemantix.common.logger import get_package_logger
 from nemantix.core.coder import Coder
+from nemantix.core.custom_types import PathLike
 from nemantix.core.exceptions import NemantixException
-from nemantix.core.node import BlockStatement, FileMeta, ActionBlock
+from nemantix.core.node import ActionBlock, BlockStatement, FileMeta
 from nemantix.core.script import Script, ScriptTypeEnum
 from nemantix.core.source_manager import LocalSourceManager
 from nemantix.core.tools import Toolset
-from nemantix.core.custom_types import PathLike
-from nemantix.common.logger import get_package_logger
-from nemantix.common import context
-from nemantix.hub import Event, EventType
+from nemantix.hub import Event, EventHub, EventType
+from nemantix.hub.event_hub import Observable
 from nemantix.llm import AbstractLLMProxy, Credentials, LLMProxyFactory
 from nemantix.security.verifier import BaseVerifier
-from nemantix.hub.event_hub import Observable
-from nemantix.hub import EventHub
 
 logger = get_package_logger(__name__)
 
@@ -127,7 +126,7 @@ class Expertise:
         if observers:
             event_hub = context.event_hub.get()
             if event_hub is None:
-                logger.info(f'Setting event-hub context instance.')
+                logger.info('Setting event-hub context instance.')
                 context.event_hub.set(EventHub())
                 event_hub = context.event_hub.get()
 
@@ -166,7 +165,9 @@ class Expertise:
             raise NemantixException("external_vars_names must be the list of names of the variables")
 
     def set_knowledge_base(self, knowledge_base):
-        from nemantix.knowledge_base.core.nemantix_knowledge_base import NemantixKnowledgeBase
+        from nemantix.knowledge_base.core.nemantix_knowledge_base import (
+            NemantixKnowledgeBase,
+        )
 
         if self.enhance_conding and isinstance(knowledge_base, NemantixKnowledgeBase):
             logger.info('[EXPERIMENTAL] Using the Knowledge-base to enhance the coding.')

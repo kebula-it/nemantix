@@ -627,25 +627,41 @@ class DoStatement(LeafStatement):
 
     def to_nxs(self, **kwargs):
         code = ['do']
+        lines = self.meta['file_meta'].line
+        is_multiline = lines[1] - lines[0] > 0
 
         if self.callable_type is not None:
             code.append(str(self.callable_type.value).lower())
 
         code.append(str(self.name))
 
+        if is_multiline:
+            code = [' '.join(code) + ':']
+            char = '\n'
+            space = '  '
+        else:
+            char = ' '
+            space = ''
+
         if self.using is not None:
-            code.append(f'using [{self.using.to_nxs(**kwargs)}]')
+            code.append(f'{space}using [{self.using.to_nxs(**kwargs)}]')
 
         if self.producing is not None:
-            code.append(f'producing [{self.producing.to_nxs(**kwargs)}]')
+            code.append(f'{space}producing [{self.producing.to_nxs(**kwargs)}]')
 
         if isinstance(self.producing_schema, str):
-            code.append(f'as {{{self.producing_schema}}}')
+            code.append(f'{space}as {{{self.producing_schema}}}')
 
-        if isinstance(self.prompt, MicroPrompt):
-            code.append(f'>> {self.prompt.prompt} <<')
+        if is_multiline:
+            if isinstance(self.prompt, MicroPrompt):
+                code.append(f"__do >> {self.prompt.prompt} <<")
+            else:
+                code.append("__do")
+        else:
+            if isinstance(self.prompt, MicroPrompt):
+                code.append(f">> {self.prompt.prompt} <<")
 
-        return ' '.join(code)
+        return char.join(code)
 
 
 class Return(LeafStatement):

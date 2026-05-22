@@ -247,6 +247,10 @@ class Script:
             # FileMeta is 1-indexed; convert to 0-indexed for Python arrays
             start_line = file_meta.line[0] - 1
             end_line = file_meta.line[1] - 1
+            is_multiline = file_meta.line[1] - file_meta.line[0] > 0
+
+            if is_multiline:
+                end_line += 1  # to account for final "__do"
 
             # Extract the old code to see if the Fixer actually changed anything
             old_code = "\n".join(content_lines[start_line:end_line + 1])

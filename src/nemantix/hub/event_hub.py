@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Callable
 
 from nemantix.common import context
-from nemantix.hub.events import EventType, Event
+from nemantix.hub.events import Event, EventType
 
 
 class EventHub:
@@ -46,3 +46,10 @@ class Observable(ABC):
     @abstractmethod
     def subscribe(self, event_hub: EventHub):
         pass
+
+    @staticmethod
+    def get_script_location(event: Event) -> str | None:
+        if event.script is not None:
+            return event.script.get_location()
+
+        return None

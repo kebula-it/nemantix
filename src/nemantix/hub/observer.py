@@ -1,17 +1,16 @@
-import os
 import logging
+import os
 import platform
 import urllib.request
-
-from typing import TYPE_CHECKING
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from nemantix.common import context
 from nemantix.common.logger import get_package_logger
+from nemantix.hub.base import Storable
 from nemantix.hub.event_hub import EventHub, Observable
 from nemantix.hub.events import Event, EventType
-from nemantix.hub.base import Storable
 
 if TYPE_CHECKING:
     from nemantix.common.connectors import DBConnector
@@ -147,14 +146,12 @@ class ObserverLogHandler(logging.Handler):
         if not event_hub.has_subscribers(EventType.LOG_EVENT):
             return
 
-        # TODO: make better use of the log record
-        try:
-            msg = self.format(record)
-        except Exception:
-            msg = record.getMessage()
+        payload = dict(level=record.levelname, name=record.name,
+                       line=record.lineno, message=record.message,
+                       thread=record.threadName, function=record.funcName)
 
         event = Event(type=EventType.LOG_EVENT, lines=(-1, -1), scope='', script=None,
-                      statement='', payload=dict(msg=msg, lineno=record.lineno))
+                      statement='', payload=payload)
         event_hub.emit(event)
 
 
@@ -261,18 +258,20 @@ class Observer(Observable, Storable):
     def on_error(self, event: Event):
         if event.type == EventType.CODING_ERROR:
             payload = event.payload
-            err_msg = f'[CODING-ERROR] {payload['error']}: {payload['code']} [{payload['scope']}]'
+            data = dict(type='CODING_ERROR', error=payload['error'],
+                        code=payload['code'], scope=payload['scope'])
         else:
-            err_msg = f"[ERROR] Line {event.lines}: {event.payload}"
+            data = dict(type='ERROR', lines=event.lines, payload=event.payload)
 
         self.agent.errors += 1
-        self.agent.logs.append(err_msg)
-        self.save(timestamp=event.timestamp, message=err_msg, event=event.type.name)
+        self.agent.logs.append(str(data))
+        self.save(timestamp=event.timestamp, payload=data, event=event.type.name,
+                  script=self.get_script_location(event))
 
     def on_log(self, event: Event):
         self.agent.logs.append(f"[LOG] {event.payload}")
-        self.save(timestamp=event.timestamp, message=f'{event.payload}',
-                  event=event.type.name)
+        self.save(timestamp=event.timestamp, payload=event.payload,
+                  event=event.type.name, script=self.get_script_location(event))
 
     def print(self, line_size=50):
         """Prints a unified view of the system and agent states."""

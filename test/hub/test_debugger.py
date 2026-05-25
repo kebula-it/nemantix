@@ -601,7 +601,7 @@ def test_observers_api_subscribes_each_observer(monkeypatch, hub):
     invocations = []
     monkeypatch.setattr(dbg, "on_breakpoint", lambda e: invocations.append(e))
 
-    exp = Expertise(script_list=[], coder=coder, verifier=DebugVerifier(), observers=[dbg])
+    _ = Expertise(script_list=[], coder=coder, verifier=DebugVerifier(), observers=[dbg])
 
     event = Event(
         type=EventType.BREAKPOINT,

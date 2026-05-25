@@ -16,6 +16,7 @@ from nemantix.hub.observer import (
 class MockEvent:
     def __init__(self, type_: EventType, payload=None, lines=None, timestamp=1600000000.0):
         self.type = type_
+        self.script = None
         self.payload = payload or {}
         self.lines = lines or (1, 1)
         self.timestamp = timestamp
@@ -178,8 +179,8 @@ def test_observer_log_handler_emits_event(mock_context):
     emitted_event = mock_hub.emit.call_args[0][0]
 
     assert emitted_event.type == EventType.LOG_EVENT
-    assert emitted_event.payload['msg'] == "Hello from logger"
-    assert emitted_event.payload['lineno'] == 42
+    assert emitted_event.payload['message'] == "Hello from logger"
+    assert emitted_event.payload['line'] == 42
 
 
 @patch('nemantix.hub.observer.context')

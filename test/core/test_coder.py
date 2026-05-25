@@ -391,7 +391,7 @@ def test_check_and_fix_retries_emit_one_llm_event_per_retry(monkeypatch, isolate
 
     calls = {"n": 0}
 
-    def parse_side_effect(self):
+    def parse_side_effect(_):
         calls["n"] += 1
         if calls["n"] == 1:
             from lark import LarkError

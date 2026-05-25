@@ -1,17 +1,17 @@
 import json
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 from pydantic import BaseModel
 
 from nemantix.core.agent import Agent
-from nemantix.llm import AbstractLLMProxy
-from nemantix.llm.abstract_proxy import LLMResponse, LLMUsage, StructuredLLMResponse
+from nemantix.core.coder import Coder
 from nemantix.core.expertise import Expertise
 from nemantix.core.script import Script
 from nemantix.core.source_manager import LocalSourceManager
-from nemantix.core.coder import Coder
+from nemantix.llm import AbstractLLMProxy
+from nemantix.llm.abstract_proxy import LLMResponse, LLMUsage, StructuredLLMResponse
 from nemantix.security.verifier import DebugVerifier
 
 HERE = Path(__file__).parent
@@ -39,15 +39,14 @@ def mock_credentials(tmp_path):
 def mock_llm_proxy():
     """
     Mocks the LLM proxy for tests.
-    Simula la risposta dell'LLM senza richiedere una chiave API.
+    Emulates the LLM response without the need of an API KEY.
     """
     mock_llm = MagicMock(spec=AbstractLLMProxy)
 
-    # Simuliamo la risposta dell'LLM in base alla richiesta
     def _resp(text):
         return LLMResponse(text=text, tool_calls=[], usage=LLMUsage(input_tokens=0, output_tokens=0))
 
-    def side_effect(prompt, **kwargs):
+    def side_effect(prompt, **__):
         # 1. Deliberate Selection Phase
         if "find the name of the deliberate statement" in prompt:
             return _resp("GenerateTicket")
@@ -71,7 +70,7 @@ def mock_llm_proxy():
         name: str
         motivation: str
 
-    def invoke_structured_side_effect(prompt, schema=None, **kwargs):
+    def invoke_structured_side_effect(prompt, schema=None, **__):
         return StructuredLLMResponse(
             result=_SelectionSchema(name="GenerateTicket", motivation="matches error ticket creation"),
             usage=LLMUsage(input_tokens=0, output_tokens=0),

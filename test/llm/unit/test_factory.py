@@ -1,11 +1,12 @@
 import pytest
-from nemantix.llm.factory import LLMProxyFactory
+
 from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException
 from nemantix.llm.credentials import Credentials
+from nemantix.llm.factory import LLMProxyFactory
 
 
 def test_factory_requires_credentials_manager():
-    # Ensure reset happened from autouse fixture
+    # Ensure reset happened from auto-use fixture
     with pytest.raises(LLMProxyException):
         LLMProxyFactory.create_llm_proxy("openai", "gpt-4o")
 

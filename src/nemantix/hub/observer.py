@@ -147,7 +147,7 @@ class ObserverLogHandler(logging.Handler):
             return
 
         payload = dict(level=record.levelname, name=record.name,
-                       line=record.lineno, message=record.message,
+                       line=record.lineno, message=record.getMessage(),
                        thread=record.threadName, function=record.funcName)
 
         event = Event(type=EventType.LOG_EVENT, lines=(-1, -1), scope='', script=None,
@@ -260,11 +260,13 @@ class Observer(Observable, Storable):
             payload = event.payload
             data = dict(type='CODING_ERROR', error=payload['error'],
                         code=payload['code'], scope=payload['scope'])
+            err_msg = f"[CODING-ERROR] {payload['error']}: {payload['code']} [{payload['scope']}]"
         else:
             data = dict(type='ERROR', lines=event.lines, payload=event.payload)
+            err_msg = f"[ERROR] Line {event.lines}: {event.payload}"
 
         self.agent.errors += 1
-        self.agent.logs.append(str(data))
+        self.agent.logs.append(err_msg)
         self.save(timestamp=event.timestamp, payload=data, event=event.type.name,
                   script=self.get_script_location(event))
 

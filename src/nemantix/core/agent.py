@@ -19,7 +19,13 @@ from nemantix.core import runtime as nmx_runtime
 from nemantix.core.exceptions import NemantixException, NemantixRuntimeException
 from nemantix.core.executor import Executor
 from nemantix.core.expertise import Expertise
-from nemantix.core.node import ActionBlock, ActionInput, Deliberate, NodeMeta
+from nemantix.core.node import (
+    ActionBlock,
+    ActionInput,
+    ActionOutput,
+    Deliberate,
+    NodeMeta,
+)
 from nemantix.hub import Event, EventHub, EventType
 from nemantix.llm import AbstractLLMProxy
 
@@ -309,9 +315,11 @@ class ReActAgent(Agent):
                 deliberate = temp_script.deliberates[action.name]
                 action_args = cls.extract_inputs(agent, **kwargs)
 
-                return agent.executor.interpreter.interpret_coded_request(temp_script,
-                                                                          deliberate,
-                                                                          action_args)
+                result = agent.executor.interpreter.interpret_coded_request(temp_script,
+                                                                            deliberate,
+                                                                            action_args)
+
+                return cls._maybe_handle_opaque(agent, result, outputs=action.output)
 
             inputs = [f'- {arg.name}: required={arg.required}, default={arg.default}'
                       for arg in action.input]
@@ -338,12 +346,14 @@ class ReActAgent(Agent):
             return str(temp_loc), temp_script, action.name
 
         @classmethod
-        def register_deliberate(cls, deliberate: Deliberate, agent: Agent):
+        def register_deliberate(cls, deliberate: Deliberate, agent: 'ReActAgent'):
             def call_deliberate(*_, **kwargs):
                 action_args = cls.extract_inputs(agent, **kwargs)
                 script = agent.expertise.get_script_from_deliberate(deliberate.name)
-                return agent.executor.interpreter.interpret_coded_request(script, deliberate,
-                                                                          user_inputs=action_args)
+                result = agent.executor.interpreter.interpret_coded_request(script, deliberate,
+                                                                            user_inputs=action_args)
+                return cls._maybe_handle_opaque(agent, result,
+                                                outputs=deliberate.get_plan().output)
 
             plan = deliberate.get_plan()
             inputs = [f'- {arg.name}: required={arg.required}, default={arg.default}'
@@ -377,7 +387,7 @@ class ReActAgent(Agent):
                 parameters=parameters)
 
             return deliberate.name
-
+        
         @staticmethod
         def param_from_input(input_arg: ActionInput):
             from collections import namedtuple
@@ -400,7 +410,18 @@ class ReActAgent(Agent):
             for k, v in kwargs.items():
                 v_type = 'str'
 
-                if isinstance(v, bool):
+                # intercept reference to opaque object
+                if isinstance(v, str) and v.startswith('__opaque_') and v.endswith('__'):
+                    state_struct = agent.state.get()
+                    var_name = '_'.join(v.split('_')[3:-2])
+
+                    actual_val = state_struct.get(v)
+                    if actual_val is not None:
+                        k = var_name
+                        v = actual_val  # TODO: passing the opaque is not necessary
+                        v_type = "opaque"
+
+                elif isinstance(v, bool):
                     v_type = 'bool'
 
                 elif isinstance(v, int):
@@ -419,6 +440,19 @@ class ReActAgent(Agent):
 
             action_args = agent.executor._inputs_from_request(required_inputs=args)
             return action_args
+
+        @staticmethod
+        def _maybe_handle_opaque(agent: 'ReActAgent', result: Any, outputs: list[ActionOutput]):
+            if isinstance(result, nmx_runtime.Opaque):
+                # TODO: generalize
+                # get the name of the opaque in out block
+                state_key = f'__opaque_{outputs[0].name}__'
+                agent.opaque_map[result.identifier] = state_key
+
+                logger.info(f'Setting Opaque object "{result}" in agent state as field "{state_key}"')
+                agent.update_state(**{state_key: result})
+
+            return result
 
     # TODO: include feedback on error?
     class ReActSchema(BaseModel):
@@ -500,6 +534,7 @@ __deliberate
         self.available_tools = registered_names
         self.history = dict(thoughts=[], tools=[], arguments=[], outputs=[],
                             feedbacks=[], errors=[])
+        self.opaque_map = dict()
 
     # TODO: detect loops
     # TODO: predict a plan, then execute and revise it at each step?
@@ -543,7 +578,12 @@ __deliberate
 
         [[tools]]
         "{}"
-
+        
+        MEMORY RULE:
+        If a previous tool saved an object to memory and returned a reference ID (e.g., "__opaque_1234__"), 
+        and you need to use that object in your next step, pass that exact reference ID string as the 
+        argument for the new tool.
+        
         NOTE: If the last output answers the [[user_request]] then, no tool call is 
         necessary and the task is solved.
         [[last_output]]
@@ -627,10 +667,22 @@ __deliberate
             self.history['tools'].append(tool_name)
 
     # TODO: handle Opaque, etc
-    @classmethod
-    def convert_to_str(cls, content) -> str:
+    def convert_to_str(self, content) -> str:
         if isinstance(content, nmx_runtime.DocRef):
-            return cls._doc_to_str(doc=content)
+            return self._doc_to_str(doc=content)
+
+        if isinstance(content, nmx_runtime.Opaque):
+            # ref_id = f"__opaque_{content.identifier}__"
+
+            try:
+                preview = self._opaque_preview(opaque=content)
+            except Exception:
+                preview = "<Complex Object>"
+
+            key = self.opaque_map[content.identifier]
+            return (f"[Saved to agent internal state 'STATE' as '{key}'. Preview: {preview}\n"
+                    f"IMPORTANT: To use this object in your next tool call, you MUST pass the "
+                    f"EXACT string '{key}' as the input argument.]")
 
         if isinstance(content, nmx_runtime.Struct):
             args, kwargs = content.to_args_and_kwargs()
@@ -638,19 +690,19 @@ __deliberate
 
             for i, arg in enumerate(args):
                 if isinstance(arg, nmx_runtime.DocRef):
-                    arg = cls._doc_to_str(doc=arg)
+                    arg = self._doc_to_str(doc=arg)
 
-                elif isinstance(arg, nmx_runtime.Struct):
-                    arg = cls.convert_to_str(content=arg)
+                elif isinstance(arg, (nmx_runtime.Struct, nmx_runtime.Opaque)):
+                    arg = self.convert_to_str(content=arg)
 
                 string.append(f'{i}: {arg}')
 
             for k, v in kwargs.items():
                 if isinstance(v, nmx_runtime.DocRef):
-                    v = cls._doc_to_str(doc=v)
+                    v = self._doc_to_str(doc=v)
 
-                elif isinstance(v, nmx_runtime.Struct):
-                    v = cls.convert_to_str(content=v)
+                elif isinstance(v, (nmx_runtime.Struct, nmx_runtime.Opaque)):
+                    v = self.convert_to_str(content=v)
 
                 string.append(f'{k}: {v}')
 
@@ -658,6 +710,31 @@ __deliberate
 
         return str(content)
 
+    @staticmethod
+    def _opaque_preview(opaque: nmx_runtime.Opaque):
+        """Helper to generate a lightweight text summary of complex objects."""
+        obj = opaque.unbox()
+        type_name = type(obj).__name__
+
+        try:
+            import pandas as pd
+
+            if isinstance(obj, pd.DataFrame):
+                return f"DataFrame(shape={obj.shape}, columns={list(obj.columns)})"
+        except ImportError:
+            pass
+
+        try:
+            import numpy as np
+
+            if isinstance(obj, np.ndarray):
+                return f"np.ndarray({str(obj)})"
+        except ImportError:
+            pass
+
+        # Fallback for generic objects
+        return f"<{type_name} object>"
+    
     @staticmethod
     def _ask_user(output) -> str:
         lines = textwrap.wrap(output, width=100)

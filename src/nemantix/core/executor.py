@@ -451,6 +451,9 @@ class Executor:
                     stmt = f'[[{name}] = ({", ".join(buffer)})]'
                 else:
                     stmt = f'[[{name}] = ()]'
+
+            elif kind == 'opaque':
+                stmt = f"[[{name}] = [STATE:__opaque_{name}__]]"
             else:
                 assert kind in ['dict', 'dictionary']
                 assert isinstance(value, dict)

@@ -11,6 +11,7 @@ Supported functionalities:
 
 #### Build
 To build the plugin:
+* `npx tsc`
 * `npx @vscode/vsce package` or `vsce package`.
 
 It will create a `.vsix` file.

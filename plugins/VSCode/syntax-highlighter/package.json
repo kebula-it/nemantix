@@ -3,35 +3,62 @@
   "displayName": "Nemantix Syntax Highlighter",
   "publisher": "nemantix",
   "description": "Syntax Highlighter for Nemantix Language",
-  "version": "1.0.7",
+  "version": "1.0.8",
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:nemantix"
+  ],
   "icon": "images/plugin_icon.png",
   "engines": {
     "vscode": "^1.110.0"
   },
   "categories": [
-    "Programming Languages", "AI"
+    "Programming Languages",
+    "AI"
   ],
   "contributes": {
-    "languages": [{
-      "id": "nemantix",
-      "aliases": ["Nemantix", "nemantix"],
-      "extensions": [".nxs",".nxc",".nxv"],
-      "configuration": "./language-configuration.json",
-      "icon": {
-        "light": "./images/nemantix_file.png",
-        "dark": "./images/nemantix_file.png"
+    "languages": [
+      {
+        "id": "nemantix",
+        "aliases": [
+          "Nemantix",
+          "nemantix"
+        ],
+        "extensions": [
+          ".nxs",
+          ".nxc",
+          ".nxv"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/nemantix_file.png",
+          "dark": "./images/nemantix_file.png"
+        }
       }
-    }],
-    "grammars": [{
-      "language": "nemantix",
-      "scopeName": "source.nemantix",
-      "path": "./syntaxes/nemantix.tmLanguage.json"
-    }],
+    ],
+    "grammars": [
+      {
+        "language": "nemantix",
+        "scopeName": "source.nemantix",
+        "path": "./syntaxes/nemantix.tmLanguage.json"
+      }
+    ],
     "snippets": [
       {
         "language": "nemantix",
         "path": "./snippets/nemantix.code-snippets.json"
       }
     ]
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/vscode": "^1.110.0",
+    "typescript": "^6.0.3"
   }
 }

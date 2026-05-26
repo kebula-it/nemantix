@@ -1,5 +1,9 @@
 # Change Log
 
+## [1.0.8] - 2026-05-26
+### Added
+- Support for code formatting: `Format Document` and `Format Selection`.
+
 ## [1.0.7] - 2026-05-15
 ### Bugfix
 - Updated plugin information.

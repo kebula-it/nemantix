@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.0]
+### Added
+- Automatic code formatting on paste.
+
 ## [1.0.9]
 ### Bugfix
 - Missing highlight of `none` and `_` in expressions and struct definitions.
@@ -45,4 +49,4 @@ is shown instead of `...`.
 
 ## [1.0.1]
 ### Added
-- Support for `.nxv` file extension.
+- Support for `.nxv` file extension.**

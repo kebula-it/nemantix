@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -90,6 +91,12 @@ RESERVED_VAR_NAMES = ['_', '__', 'when', 'from', 'use', 'as', 'with',
                       '__action', '__body', '__do', '__in', '__out', '__repeat',
                       '__if', '__toolset', '__use', '__frame']
 IMPORTED_TOOLSETS = {}
+
+@dataclass
+class AsFrame:
+    '''Simulate node to temporarily store file meta of AS clause in producing clause (do)'''
+    value:str
+    meta:dict
 
 
 # =============================================================================
@@ -913,8 +920,10 @@ class AstTransformer(Transformer):
     def list_literal_single_kv(self, items):
         return items[0]
 
-    def frame_apply(self, items):
-        return items[0][0].value  # qualified_name
+    @v_args(meta=True)
+    def frame_apply(self, meta, items):
+        appl = AsFrame(value=items[0][0].value, meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return appl
 
     @v_args(meta=True)
     def structure_prefix(self, meta, items):
@@ -1448,7 +1457,7 @@ class AstTransformer(Transformer):
             end_line = end_item.line
             end_column = end_item.column
         else:
-            it = end_item[1] if isinstance(end_item, tuple) else end_item
+            it = end_item[-1] if isinstance(end_item, tuple) else end_item
             end_line = it.meta["file_meta"].line[-1]
             end_column = it.meta["file_meta"].column[-1]
 
@@ -1468,7 +1477,7 @@ class AstTransformer(Transformer):
                 elif kind == "producing":
                     producing_expr = it[1]
                     if len(it) > 2:
-                        producing_schema = it[2]
+                        producing_schema = it[2].value
             elif isinstance(it, MicroPrompt):
                 prompt = it
 

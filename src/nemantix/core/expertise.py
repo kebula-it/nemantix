@@ -105,7 +105,8 @@ class Expertise:
 
     def __init__(self, script_list: list[Script], coder: Coder, verifier: BaseVerifier, observers: list | None = None,
                  export_location: PathLike = None, export=True, allow_fallback_deliberate=False,
-                 experimental_enhance_coding=False, experimental_enable_fixer=False):
+                 experimental_enhance_coding=False, experimental_enable_fixer=False,
+                 experimental_include_action_body_in_semantics=False):
         assert isinstance(verifier, BaseVerifier)
 
         self.toolset_classes = Toolset.get_registered_classes()
@@ -114,6 +115,7 @@ class Expertise:
 
         self.coder = coder
         self.coder.enable_fixer = bool(experimental_enable_fixer)
+        self.coder.include_action_body_in_semantics = bool(experimental_include_action_body_in_semantics)
 
         self.verifier = verifier
         self.export_location = export_location
@@ -381,6 +383,8 @@ class Expertise:
         enable_fixer = kwargs.pop('experimental_enable_fixer', False)
         allow_fallback = kwargs.pop('allow_fallback_deliberate', False)
         enhance_coding = kwargs.pop('experimental_enhance_coding', False)
+        include_body_semantics = kwargs.pop('experimental_include_action_body_in_semantics', False)
+        
         logger.debug(f"Allow fallback value = {allow_fallback} ")
 
         if llm is None:
@@ -397,7 +401,8 @@ class Expertise:
                          export_location=export_location, export=export,
                          allow_fallback_deliberate=allow_fallback,
                          experimental_enhance_coding=enhance_coding,
-                         experimental_enable_fixer=enable_fixer)
+                         experimental_enable_fixer=enable_fixer,
+                         experimental_include_action_body_in_semantics=include_body_semantics)
 
     @staticmethod
     def get_default_llm(credentials_path: PathLike, vendor='openai',

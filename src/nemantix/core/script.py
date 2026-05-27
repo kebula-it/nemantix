@@ -45,10 +45,11 @@ def _nxc_deliberate_completeness_check(deliberates: list[Deliberate], location: 
 
 class Script:
     class SemanticInfo:
-        def __init__(self, semantics, ins, outs):
+        def __init__(self, semantics, ins, outs, body=None):
             self.semantics = semantics
             self.ins = ins
             self.outs = outs
+            self.body = body
 
         def to_dict(self):
             return {"semantics": self.semantics, "ins": [str(i) for i in self.ins],
@@ -183,8 +184,8 @@ class Script:
                 semantics = n.prompt.prompt
                 ins = n.input
                 outs = n.output
-                self.action_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs)
-
+                self.action_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs,
+                                                                      body=n.children)
             elif isinstance(n, Require):
                 self.requires.append(n)
 

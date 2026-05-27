@@ -96,6 +96,7 @@ class Coder:
         self.external_vars_names = None
         self.knowledge_base = None
         self.enable_fixer = False
+        self.include_action_body_in_semantics = False
 
     def coding(self, script: Script, required_scripts: list[Script], external_vars_names: list[str] = None):
         """
@@ -849,6 +850,7 @@ class Coder:
         imported_tools = list(script.toolset_imports.values())
         toolset_info_map = self._extract_toolset_docs_map(imported_tools)
         available_tools = json.dumps(toolset_info_map, indent=2, ensure_ascii=False)
+
         # Actions
         action_semantics_map = self._extract_actions_semantics(script, required_scripts)
         available_actions = json.dumps(action_semantics_map, indent=2, ensure_ascii=False)
@@ -1000,17 +1002,31 @@ class Coder:
 
         return toolset_map
 
-    @staticmethod
-    def _extract_actions_semantics(script: Script, required_scripts: list[Script]):
+    def _extract_actions_semantics(self, script: Script, required_scripts: list[Script]):
         action_semantics_map = script.action_semantics_map
 
         # build map of all deliberates # TODO handle same name deliberates (?)
         for req_scr in required_scripts:
             action_semantics_map.update(req_scr.action_semantics_map)
 
-        action_semantics_map = {k: v.to_dict() for k, v in action_semantics_map.items()}
+        action_semantics_map_ = {}
+        for k, v in action_semantics_map.items():
+            v_dict = v.to_dict()
 
-        return action_semantics_map
+            if self.include_action_body_in_semantics and v.body is not None:
+                content_lines = script.read_as_list()
+                body_lines = []
+
+                for stmt in v.body:
+                    code = self._read_node_nxs(content_lines, stmt, read_as_list=False)
+                    body_lines.append(code)
+
+                body = '\n'.join(body_lines)
+                v_dict['body'] = body
+
+            action_semantics_map_[k] = v_dict
+
+        return action_semantics_map_
 
     @staticmethod
     def _emit_coding_start(script: Script | None, scope: str, kind: str):

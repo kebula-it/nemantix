@@ -50,6 +50,7 @@ class DummyAction:
         self.prompt = DummyPrompt(semantics)
         self.input = ins or []
         self.output = outs or []
+        self.children = []
 
 
 class DummyPlan:

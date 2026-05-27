@@ -116,8 +116,9 @@ RANGE_CARDINALITY=[0-9]+\.\.(\*|[0-9]+)
   "close"            { return NemantixTypes.KEYWORD; }
   "strict"           { return NemantixTypes.KEYWORD; }
 
-  // Types
+  // Frame Types
   "INT"              { return NemantixTypes.KEYWORD; }
+  "BOOL"             { return NemantixTypes.KEYWORD; }
   "FLOAT"            { return NemantixTypes.KEYWORD; }
   "TEXT"             { return NemantixTypes.KEYWORD; }
   "ENUM"             { return NemantixTypes.KEYWORD; }

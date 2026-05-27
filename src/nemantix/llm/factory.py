@@ -5,6 +5,7 @@ from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException
 from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
 from nemantix.llm.azure_openai_proxy import AzureOpenAILLMProxy
 from nemantix.llm.google_proxy import GoogleLLMProxy
+from nemantix.llm.open_router_proxy import OpenRouterLLMProxy
 from nemantix.llm.openai_proxy import OpenAILLMProxy
 
 
@@ -58,6 +59,9 @@ class LLMProxyFactory:
 
         elif vendor == 'antrophic':
             return AnthropicLLMProxy(model_name, **kwargs)
+
+        elif vendor in ['OpenRouter', 'open-router', 'open_router']:
+            return OpenRouterLLMProxy(model_name, grammar_path=grammar_path, **kwargs)
 
         elif vendor == 'local':
             from nemantix.llm.local_proxy import LocalLLMProxy

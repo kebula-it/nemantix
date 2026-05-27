@@ -1,11 +1,18 @@
 import inspect
 import json
-from typing import Any, Iterator, Dict, Optional, List, Type, TYPE_CHECKING
+from json import JSONDecodeError
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type
+
 from pydantic import BaseModel
 
 from nemantix.common import get_package_logger
-from nemantix.llm.abstract_proxy import (AbstractLLMProxy, LLMProxyException,
-                                         LLMResponse, LLMUsage, StructuredLLMResponse)
+from nemantix.llm.abstract_proxy import (
+    AbstractLLMProxy,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+    StructuredLLMResponse,
+)
 
 if TYPE_CHECKING:
     from nemantix.core.tools import Toolset
@@ -111,7 +118,7 @@ class OpenAILLMProxy(AbstractLLMProxy):
                     import json
 
                     args = json.loads(args_str)
-                except Exception:
+                except JSONDecodeError:
                     args = {"_raw": args_str}
                 out.append({"name": name, "args": args})
         return out

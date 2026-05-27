@@ -1436,7 +1436,7 @@ class AstTransformer(Transformer):
         name: Optional[str] = None
         using_expr: Optional[Expression] = None
         producing_expr: Optional[Expression] = None
-        producing_schema: Optional[str] = None
+        producing_schema: Optional[str | MicroPrompt] = None
         prompt: Optional[MicroPrompt] = None
 
         start_item = items[0][0] if isinstance(items[0], list) else items[0]
@@ -1457,9 +1457,20 @@ class AstTransformer(Transformer):
             end_line = end_item.line
             end_column = end_item.column
         else:
-            it = end_item[-1] if isinstance(end_item, tuple) else end_item
-            end_line = it.meta["file_meta"].line[-1]
-            end_column = it.meta["file_meta"].column[-1]
+            if isinstance(end_item, tuple):
+                end_line = 0
+                end_column = 0
+                
+                for it in end_item:
+                    if it is None or not hasattr(it, 'meta'):
+                        continue
+
+                    end_line = max(end_line, it.meta["file_meta"].line[-1])
+                    end_column = max(end_column, it.meta["file_meta"].column[-1])
+            else:
+                it = end_item
+                end_line = it.meta["file_meta"].line[-1]
+                end_column = it.meta["file_meta"].column[-1]
 
         line = (start_line, end_line)
         column = (start_column, end_column)
@@ -1470,14 +1481,22 @@ class AstTransformer(Transformer):
                     name = it[0].value
                 else:
                     name = ".".join([i.value for i in it])
+
             elif isinstance(it, tuple):
                 kind = it[0]
                 if kind == "using":
                     using_expr = it[1]
+
                 elif kind == "producing":
                     producing_expr = it[1]
-                    if len(it) > 2:
-                        producing_schema = it[2].value
+
+                    if len(it) > 2 and it[2] is not None:
+                        if isinstance(it[2], AsFrame):
+                            producing_schema = it[2].value
+                        else:
+                            assert isinstance(it[2], MicroPrompt)
+                            producing_schema = it[2]
+
             elif isinstance(it, MicroPrompt):
                 prompt = it
 

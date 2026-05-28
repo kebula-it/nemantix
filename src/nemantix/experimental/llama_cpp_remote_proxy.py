@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type, Uni
 
 from pydantic import BaseModel
 
+from nemantix.common.logger import get_package_logger
 from nemantix.llm.abstract_proxy import (
     AbstractLLMProxy,
     LLMProxyException,
@@ -24,6 +25,9 @@ except ImportError as e:
     ) from e
 
 
+logger = get_package_logger(__name__)
+
+
 class LlamaCppRemoteLLMProxy(AbstractLLMProxy):
     """
     LLM proxy for a llama.cpp server instance utilizing the official OpenAI Python SDK.
@@ -32,7 +36,7 @@ class LlamaCppRemoteLLMProxy(AbstractLLMProxy):
 
     def __init__(
         self,
-        model_name: str = "local-gguf",
+        model_name: str | None = 'auto',
         base_url: str = "http://localhost:8080/v1",
         temperature: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
@@ -46,7 +50,7 @@ class LlamaCppRemoteLLMProxy(AbstractLLMProxy):
         # Fetch API key if llama-server was launched with `--api-key`
         api_key = (
             self._get_api_key("llamacpp_api_key", required=False, **kwargs)
-            or "KEY"
+            or "no-key-required"
         )
 
         try:
@@ -59,6 +63,23 @@ class LlamaCppRemoteLLMProxy(AbstractLLMProxy):
                 f"Failed to initialize llama.cpp client session: {e}"
             ) from e
 
+        # fetch model name if not provided
+        if not model_name or model_name == "auto":
+            try:
+                available_models = self._client.models.list()
+                if available_models.data:
+                    self._model_name = available_models.data[0].id
+                else:
+                    self._model_name = "default-model"
+
+                logger.info(f'Using model "{self._model_name}"')
+
+            except Exception as e:
+                logger.warning(f"Could not auto-fetch model name: {e}")
+                self._model_name = "default-model"
+        else:
+            self._model_name = model_name
+        
         self._temperature = temperature
         self._max_output_tokens = max_output_tokens
 

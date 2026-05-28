@@ -8,7 +8,7 @@ If you discover a security vulnerability, please do **not** open a public GitHub
 
 Instead, report it privately by contacting the maintainers at:
 
-**nemantix@kebula.com**
+**nemantix@kebula.it**
 
 Please include, if possible:
 
@@ -35,11 +35,11 @@ Nemantix is currently under active development.
 
 Security fixes are generally provided for the latest public release and for the main development branch, when applicable.
 
-| Version / Branch | Supported |
-| --- | --- |
-| Latest release | Yes |
-| `main` branch | Yes |
-| Older releases | No, unless explicitly stated |
+| Version / Branch | Supported                    |
+|------------------|------------------------------|
+| Latest release   | Yes                          |
+| `main` branch    | Yes                          |
+| Older releases   | No, unless explicitly stated |
 
 ## Security Updates
 

@@ -114,6 +114,19 @@ class Struct(OrderedDict):
     def can_be_seen_as_list(self) -> bool:
         return len(self.key_to_idx) == 0
 
+    def contains_opaques(self) -> bool:
+        args, kwargs = self.to_args_and_kwargs()
+        values = [a for a in args] + [v for v in kwargs.values()]
+
+        for v in values:
+            if isinstance(v, Opaque):
+                return True
+
+            if isinstance(v, Struct) and v.contains_opaques():
+                return True
+
+        return False
+
     @classmethod
     def unbox_in(cls, value: list | dict | Any) -> Any:
         if isinstance(value, Struct):

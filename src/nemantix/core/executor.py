@@ -453,7 +453,7 @@ class Executor:
                     stmt = f'[[{name}] = ()]'
 
             elif kind == 'opaque':
-                stmt = f"[[{name}] = [STATE:__opaque_{name}__]]"
+                stmt = f"[[{name}] = [STATE:__opaque_{value}__]]"
             else:
                 assert kind in ['dict', 'dictionary']
                 assert isinstance(value, dict)

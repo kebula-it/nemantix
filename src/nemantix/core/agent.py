@@ -27,7 +27,7 @@ from nemantix.core.node import (
     NodeMeta,
 )
 from nemantix.hub import Event, EventHub, EventType
-from nemantix.llm import AbstractLLMProxy
+from nemantix.llm import AbstractLLMProxy, LLMUsage
 
 logger = get_package_logger(__name__)
 
@@ -273,11 +273,25 @@ class Agent:
             f"RAW DATA:\n{outputs}")
 
         response = self.llm.invoke_structured(prompt=prompt, schema=schema)
-        self.executor._emit_llm(usage=response.usage)
+        self._emit_llm(usage=response.usage)
         return response.result
+    
+    def _emit_llm(self, usage: LLMUsage, scope='agent'):
+        hub = EventHub.get_active_hub(event_type=EventType.LLM)
+        if not hub:
+            return
+
+        event = Event(
+            type=EventType.LLM,
+            lines=(0, 0),
+            scope=scope,
+            script=None,
+            statement="",
+            payload=dict(usage=usage, name=self.llm.get_name(), internal_usage=True),
+        )
+        hub.emit(event)
 
 
-# TODO: handle Opaque passing
 class ReActAgent(Agent):
     """Agents implementing the Reason-Act-Observe run paradigm"""
     from nemantix.core.tools import Toolset
@@ -295,13 +309,24 @@ class ReActAgent(Agent):
 
             script_content = script.read(read_as_lines_list=True)
             assert isinstance(script_content, list)
+
+            imports_tools_frames = []
+            nodes = list(script.toolset_imports.values()) + script.toolsets_decl + script.frames
+
+            for node in nodes:
+                content = agent.expertise.coder._read_node_nxs(script_content, node,
+                                                               read_as_list=True)
+                imports_tools_frames.extend(content)
+
+            imports_tools_frames = '\n'.join(imports_tools_frames)
+
             action_content = agent.expertise.coder._read_node_nxs(script_content, action,
                                                                   read_as_list=True)
-
             action_body = '\n'.join(action_content[2:-1])
             plan_qualifier = action_content[0]
             micro_prompt = ' '.join(action.prompt.prompt.split())
-            deliberate_str = ReActAgent._WRAP_ACTION_TEMPLATE.format(action.name,
+            deliberate_str = ReActAgent._WRAP_ACTION_TEMPLATE.format(imports_tools_frames,
+                                                                     action.name,
                                                                      micro_prompt,
                                                                      plan_qualifier,
                                                                      action_body)
@@ -417,9 +442,9 @@ class ReActAgent(Agent):
 
                     actual_val = state_struct.get(v)
                     if actual_val is not None:
-                        k = var_name
-                        v = actual_val  # TODO: passing the opaque is not necessary
                         v_type = "opaque"
+
+                    v = var_name
 
                 elif isinstance(v, bool):
                     v_type = 'bool'
@@ -441,18 +466,27 @@ class ReActAgent(Agent):
             action_args = agent.executor._inputs_from_request(required_inputs=args)
             return action_args
 
-        @staticmethod
-        def _maybe_handle_opaque(agent: 'ReActAgent', result: Any, outputs: list[ActionOutput]):
+        @classmethod
+        def _maybe_handle_opaque(cls, agent: 'ReActAgent', result: Any, outputs: list[ActionOutput]):
             if isinstance(result, nmx_runtime.Opaque):
-                # TODO: generalize
-                # get the name of the opaque in out block
-                state_key = f'__opaque_{outputs[0].name}__'
-                agent.opaque_map[result.identifier] = state_key
+                cls._store_opaque(agent, opaque=result)
 
-                logger.info(f'Setting Opaque object "{result}" in agent state as field "{state_key}"')
-                agent.update_state(**{state_key: result})
+            elif isinstance(result, nmx_runtime.Struct) and result.contains_opaques():
+                # wrap struct into an Opaque
+                result = nmx_runtime.Opaque(obj=result)
+                cls._store_opaque(agent, opaque=result)
 
             return result
+
+        @staticmethod
+        def _store_opaque(agent: 'ReActAgent', opaque: nmx_runtime.Opaque):
+            state_key = f"__opaque_{len(agent.opaque_map)}__"
+            agent.opaque_map[opaque.identifier] = state_key
+
+            logger.info(
+                f'Setting Opaque object "{opaque}" in agent state as field "{state_key}"'
+            )
+            agent.update_state(**{state_key: opaque})
 
     # TODO: include feedback on error?
     class ReActSchema(BaseModel):
@@ -477,6 +511,7 @@ class ReActAgent(Agent):
         ALL = auto()
 
     _WRAP_ACTION_TEMPLATE = """
+{}
 deliberate {} when >> {} <<:
     {}
     plan:
@@ -524,6 +559,7 @@ __deliberate
         if should_register_tools:
             from nemantix.core import Toolset
 
+            logger.warning('Tool registering not yet implemented...')
             for tool_name, tool in Toolset.REGISTRY.items():
                 pass
 
@@ -606,7 +642,7 @@ __deliberate
 
             messages = self.llm.messages_from([('assistant', prompt)])
             result = self.llm.invoke_structured(messages, schema=self.ReActSchema)
-            self.executor._emit_llm(usage=result.usage)
+            self._emit_llm(usage=result.usage)
 
             response = result.result
             assert isinstance(response, self.ReActSchema)
@@ -615,6 +651,7 @@ __deliberate
             logger.info(f'though: "{"\n".join(textwrap.wrap(response.thought, width=100))}"')
             self.history['thoughts'].append(response.thought)
 
+            # TODO: should return the opaque's wrapped object if it is the last result?
             if response.task_completed:
                 logger.info('Task complete')
 
@@ -624,7 +661,7 @@ __deliberate
                               f'Since the task is now complete, do not suggest next steps, and'
                               f'do not add any commentary or opinion."')
                     response = self.llm.invoke(prompt)
-                    self.executor._emit_llm(usage=response.usage)
+                    self._emit_llm(usage=response.usage)
 
                     return self.RunSchema(last_output, response.text)
                 else:
@@ -666,14 +703,11 @@ __deliberate
             self.history['errors'].append(last_error)
             self.history['tools'].append(tool_name)
 
-    # TODO: handle Opaque, etc
     def convert_to_str(self, content) -> str:
         if isinstance(content, nmx_runtime.DocRef):
             return self._doc_to_str(doc=content)
 
         if isinstance(content, nmx_runtime.Opaque):
-            # ref_id = f"__opaque_{content.identifier}__"
-
             try:
                 preview = self._opaque_preview(opaque=content)
             except Exception:
@@ -692,7 +726,7 @@ __deliberate
                 if isinstance(arg, nmx_runtime.DocRef):
                     arg = self._doc_to_str(doc=arg)
 
-                elif isinstance(arg, (nmx_runtime.Struct, nmx_runtime.Opaque)):
+                elif isinstance(arg, nmx_runtime.Struct):
                     arg = self.convert_to_str(content=arg)
 
                 string.append(f'{i}: {arg}')
@@ -701,7 +735,7 @@ __deliberate
                 if isinstance(v, nmx_runtime.DocRef):
                     v = self._doc_to_str(doc=v)
 
-                elif isinstance(v, (nmx_runtime.Struct, nmx_runtime.Opaque)):
+                elif isinstance(v, nmx_runtime.Struct):
                     v = self.convert_to_str(content=v)
 
                 string.append(f'{k}: {v}')
@@ -710,8 +744,8 @@ __deliberate
 
         return str(content)
 
-    @staticmethod
-    def _opaque_preview(opaque: nmx_runtime.Opaque):
+    @classmethod
+    def _opaque_preview(cls, opaque: nmx_runtime.Opaque):
         """Helper to generate a lightweight text summary of complex objects."""
         obj = opaque.unbox()
         type_name = type(obj).__name__
@@ -732,6 +766,19 @@ __deliberate
         except ImportError:
             pass
 
+        # TODO: improve
+        if isinstance(obj, nmx_runtime.Struct):
+            args, kwargs = obj.to_args_and_kwargs()
+            string = []
+
+            for i, arg in enumerate(args):
+                string.append(f"{i}: {cls._opaque_preview(arg)}")
+
+            for k, v in kwargs.items():
+                string.append(f"{k}: {cls._opaque_preview(v)}")
+
+            return f"{{{', '.join(string)}}}"
+        
         # Fallback for generic objects
         return f"<{type_name} object>"
     

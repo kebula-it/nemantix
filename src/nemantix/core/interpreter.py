@@ -1435,14 +1435,18 @@ class Interpreter:
 
         self._discover_imported_actions(script)
         self._discover_actions(script, deliberate=deliberate)
+        self._discover_frames(script)
+        self._discover_toolsets_and_imports(script)
 
+    def _discover_frames(self, script: Script):
         for frame in script.frames:
             frame_key = frame.name.upper()
 
             if frame_key not in self.context.frames:
                 frame = self.interpret_frame(frame=frame)
                 self.context.frames[frame_key] = frame
-
+    
+    def _discover_toolsets_and_imports(self, script: Script):
         for toolset_decl in script.toolsets_decl:
             if toolset_decl.name not in self.context.toolsets:
                 self.interpret_tool_declaration(toolset_decl)

@@ -17,6 +17,17 @@ Instantiates an Agent:
 - `llm_proxy`: The LLM proxy used for natural language processing (including a proxy for OpenAI or others). If None,
 it uses the LLM proxy used by the provided Expertise.
 - `external_vars`: external variables visible to scripts, used for holding secrets, configurations, etc.
+External variables are accessible within an NXS script through a special `ENV` identifier: for example,
+an external variable named `secret` can be accessed by `[ENV:secret]`. 
+> The content of external variables associated with the special key `secrets` is only visible by tools of a `Toolset`.
+> These "obfuscated" variables can be defined as follows: 
+```python
+external_variables=dict(db_url="db:url", 
+                        secrets=dict(password='obfuscated_string'))
+
+# do print using [[ENV:db_url]]  # prints db:url  
+# do print using [[ENV:password]]  # prints Secret(name=password)  
+```
 - `use_embedder`: enables the use of embedding models to compute textual similarity. If not specified, the similarity 
 is evaluated by the LLM proxy.
 - `use_knowledge_base`: if True, enables the use of the knowledge base. 

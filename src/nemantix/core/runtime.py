@@ -290,7 +290,17 @@ class ExternalVariables(Struct):
     def __init__(self, **kwargs):
         super().__init__()
 
+        secrets = kwargs.pop("secrets", {})
+        if not isinstance(secrets, dict):
+            secrets = dict(secrets=secrets)
+
         for k, v in kwargs.items():
+            super().set(value=v, key=k)
+
+        for k, v in secrets.items():
+            if k in self:
+                logger.warning(f'Key "{k}" already exists in external variables. It will be overwritten!')
+
             super().set(value=Secret.box(v, k), key=k)
 
     def set(self, value, key: Optional[str | int] = None):
@@ -310,6 +320,24 @@ class ExternalVariables(Struct):
 
     def can_be_seen_as_list(self) -> bool:
         return False
+
+    @staticmethod
+    def get_names(variables: dict) -> list[str]:
+        secrets = variables.get('secrets', dict())
+        names = []
+
+        if isinstance(secrets, dict):
+            names.extend(secrets.keys())
+        else:
+            names.append('secrets')
+
+        for k in variables.keys():
+            if k == 'secrets':
+                continue
+
+            names.append(k)
+
+        return names
 
     def __repr__(self):
         return f'ExternalVariables(num_vars={len(self)})'

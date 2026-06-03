@@ -44,10 +44,10 @@ class Agent:
         if not isinstance(external_vars, dict):
             logger.warning(f'Provided external_vars is not a dict but a "{type(external_vars)}",'
                            f'defaulting to an empty dict.')
-            external_vars = dict()
+            external_vars = dict(secrets={})
 
         self.expertise = expertise
-        self.expertise.set_external_vars_names([k for k in external_vars.keys()])
+        self.expertise.set_external_vars_names(nmx_runtime.ExternalVariables.get_names(external_vars))
 
         if llm_proxy is None:
             self.llm = self.expertise.coder.llm_proxy

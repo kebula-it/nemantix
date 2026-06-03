@@ -94,9 +94,9 @@ IMPORTED_TOOLSETS = {}
 
 @dataclass
 class AsFrame:
-    '''Simulate node to temporarily store file meta of AS clause in producing clause (do)'''
-    value:str
-    meta:dict
+    """Simulate node to temporarily store file meta of AS clause in producing clause (do)"""
+    value: str
+    meta: dict
 
 
 # =============================================================================
@@ -921,9 +921,9 @@ class AstTransformer(Transformer):
         return items[0]
 
     @v_args(meta=True)
-    def frame_apply(self, meta, items):
-        appl = AsFrame(value=items[0][0].value, meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
-        return appl
+    def frame_apply(self, meta, items) -> AsFrame:
+        apply = AsFrame(value=items[0][0].value, meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return apply
 
     @v_args(meta=True)
     def structure_prefix(self, meta, items):

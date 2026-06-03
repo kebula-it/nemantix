@@ -28,6 +28,7 @@ from nemantix.core.node import (
     UnaryOperationEnum,
     VariableTypeEnum,
 )
+from nemantix.core.parser import AsFrame
 from nemantix.core.prompt import (
     LEFT_SEM_INCL_PROMPT,
     RIGHT_SEM_INCL_PROMPT,
@@ -1015,8 +1016,8 @@ class Interpreter:
             frame_name = schemed_collection.value.upper()
             collection = schemed_collection.dataframe
         else:
-            assert isinstance(schemed_collection.dataframe, str)
-            frame_name = schemed_collection.dataframe.upper()
+            assert isinstance(schemed_collection.dataframe, AsFrame)
+            frame_name = schemed_collection.dataframe.value.upper()
             collection = schemed_collection.value
 
         if enclosing_frame is not None:

@@ -15,6 +15,7 @@ from nemantix.core.exceptions import (
 from nemantix.core.node import (
     ActionBlock,
     BlockStatement,
+    CallableTypeEnum,
     Deliberate,
     DoStatement,
     FileMeta,
@@ -34,6 +35,7 @@ from nemantix.core.prompt import (
     COMPLETE_ACTION_RULES,
     COMPLETE_DELIBERATE_BREAKDOWN_RULES,
     COMPLETE_DELIBERATE_RULES,
+    DO_AS_FRAMES_PROMPT,
     DRAFT_ACTION_RULES,
     DRAFT_DELIBERATE_BREAKDOWN_RULES,
     DRAFT_DELIBERATE_RULES,
@@ -96,7 +98,6 @@ class Coder:
         self.external_vars_names = None
         self.knowledge_base = None
         self.enable_fixer = False
-        self.include_action_body_in_semantics = False
 
     def coding(self, script: Script, required_scripts: list[Script], external_vars_names: list[str] = None):
         """
@@ -279,6 +280,148 @@ class Coder:
             new_content += nxs_content + "\n\n"
 
         return new_content
+    
+    def code_do_as_frames(self, script: Script, node: Statement, required_scripts: list[Script], max_retries: int = 6):
+        # TODO should handle this coding only at runtime?
+        if not isinstance(node, ActionBlock) and not isinstance(node, Deliberate):
+            return None, None
+
+        coded = []
+        content_list = script.read_as_list()
+        frame_parser = _get_frame_parser()
+        do_stmts = []
+
+        def _collect_do_statements(nodes, collected):
+            if not nodes:
+                return
+            for node in nodes:
+                if not node:
+                    continue
+                if isinstance(node, DoStatement) and isinstance(node.producing_schema, MicroPrompt):
+                    collected.append(node)
+                if isinstance(node, BlockStatement):
+                    _collect_do_statements(node.children or [], collected)
+
+        if isinstance(node, ActionBlock):
+            _collect_do_statements(node.children, do_stmts)
+        elif isinstance(node, Deliberate):
+            plan = node.get_plan()
+            if plan:
+                _collect_do_statements(plan.children, do_stmts)
+            generated_actions = getattr(node, "generated_actions", None)
+            if generated_actions:
+                for action in generated_actions:
+                    _collect_do_statements(action.children, do_stmts)
+
+        if not do_stmts:
+            return None, None
+
+        all_action_semantics = self._extract_actions_semantics(script, required_scripts)
+        all_toolset_map = self._extract_toolset_docs_map(list(script.toolset_imports.values()))
+
+        # Process in reverse line order so earlier line numbers remain valid after each replacement
+        frame_results = {}  # id(statement) -> coded frame string
+
+        for statement in sorted(do_stmts, key=lambda s: s.meta['file_meta'].line[0], reverse=True):
+            fn_name = statement.name
+            logger.info(f"Coding 'as' clause for do {fn_name} call in {node.name} action/deliberate.")
+            callable_type = statement.callable_type
+            do_stmt_text = self._read_node_nxs(content_list, statement, read_as_list=False)
+
+            if callable_type == CallableTypeEnum.ACTION:
+                callable_info = {fn_name: all_action_semantics.get(fn_name, "action")}
+            elif callable_type == CallableTypeEnum.TOOL:
+                toolset_ref = fn_name.split(".")[0] if fn_name and "." in fn_name else fn_name
+                tool_method = fn_name.split(".")[-1] if fn_name and "." in fn_name else fn_name
+                toolset_info = all_toolset_map.get(toolset_ref, {})
+                callable_info = {fn_name: toolset_info.get(tool_method, toolset_info)}
+            else:
+                if fn_name in all_action_semantics:
+                    callable_info = {fn_name: all_action_semantics[fn_name]}
+                else:
+                    toolset_ref = fn_name.split(".")[0] if fn_name and "." in fn_name else fn_name
+                    tool_method = fn_name.split(".")[-1] if fn_name and "." in fn_name else fn_name
+                    toolset_info = all_toolset_map.get(toolset_ref, {})
+                    callable_info = {fn_name: toolset_info.get(tool_method, toolset_info) if toolset_info else "built-in function"}
+
+            callable_info_str = json.dumps(callable_info, indent=2, ensure_ascii=False)
+            base_user_content = DO_AS_FRAMES_PROMPT.format(
+                do_statement=do_stmt_text,
+                callable_info=callable_info_str
+            )
+
+            prev_frame = None
+            prev_error = None
+            frame = None
+            attempt = 0
+
+            self._emit_coding_start(script, scope=fn_name, kind='frame')
+
+            for attempt in range(max_retries):
+                user_content = base_user_content
+
+                if prev_frame:
+                    user_content += f"\n--- PREVIOUS FRAME ---\n{prev_frame}\n---------------------\n"
+
+                if prev_error:
+                    user_content += (
+                        f"\nATTENTION: The previously generated frame failed during parsing with "
+                        f"the following error:\n{prev_error}\n"
+                        f"Analyze this error in the context of the previous frame. "
+                        f"Ensure you fix the specific line or logic causing the issue in this new attempt."
+                    )
+
+                response = self.llm_proxy.invoke(prompt=[dict(role="user", content=user_content)])
+                self._emit_llm(scope=fn_name, usage=response.usage)
+                frame = response.text
+
+                try:
+                    frame_parser.parse(frame)
+                    break
+                except Exception as e:
+                    prev_error = str(e)
+                    prev_frame = frame
+                    logger.warning(f'Error during do-as frame coding: {e}')
+
+            if frame is None:
+                self._emit_coding_error(error=f'Cannot code frame for do statement "{fn_name}"',
+                                        code='', lines=(0, 0), scope='frame')
+                raise NemantixRuntimeException(f'Cannot code frame for do statement "{fn_name}"')
+
+            self._emit_coding_end(script, scope=fn_name, kind='frame', attempts=attempt + 1)
+            frame_results[id(statement)] = frame
+
+            # Derive the frame name and update the do statement's as clause
+            temp_script = Script("_temp.nxs", None, content=frame)
+            temp_script.parse(enable_fixer=self.enable_fixer)
+            frame_name = temp_script.frames[0].name
+
+            statement.producing_schema = frame_name
+            new_do_nxs = statement.to_nxs()
+
+            # Preserve original indentation
+            file_meta = statement.meta['file_meta']
+            block_start_line = file_meta.line[0] - 1
+            block_end_line = file_meta.line[1] - 1
+            original_first_line = content_list[block_start_line]
+            leading_space = len(original_first_line) - len(original_first_line.lstrip())
+            indented_do_nxs = textwrap.indent(new_do_nxs, ' ' * leading_space)
+
+            updated_content = self.replace_nxs_code_block(content_list, block_start_line, block_end_line,
+                                                           indented_do_nxs, indent=False)
+            content_list = updated_content.split('\n')
+
+        # Collect coded frames in original forward order
+        coded = [frame_results[id(s)] for s in do_stmts]
+
+        # Extract the updated node code from the modified content_list
+        node_file_meta = node.meta['file_meta']
+        node_start = node_file_meta.line[0] - 1
+        node_end = node_file_meta.line[1]
+        node_code = '\n'.join(content_list[node_start:node_end])
+
+        return node_code, '\n\n'.join(coded)
+
 
     def code_script_toolsets(self, script: Script, max_retries: int = 6):
         """
@@ -458,6 +601,17 @@ class Coder:
         res, attempts = self._check_and_fix_generated_code(messages, resp, relative_start, relative_end, orig_code,
                                                            scope=action_name)
 
+        temp_script = Script("_temp.nxs", None, content=res)
+        temp_script.parse(enable_fixer=self.enable_fixer)
+        temp_script.toolset_imports = script.toolset_imports
+        temp_action = next(iter(temp_script.actions.values()), None)
+        if temp_action is None:
+            temp_action = next(iter(getattr(temp_script, 'private_actions', {}).values()), None)
+        if temp_action is not None:
+            node_code, coded_frames = self.code_do_as_frames(temp_script, temp_action, required_scripts)
+            if node_code is not None:
+                res = coded_frames + "\n\n" + node_code
+
         # TODO: should handle missing or removed @completion qualifier?
 
         self._emit_coding_end(script, scope=action_name, attempts=attempts, kind='action', request=user_request)
@@ -518,6 +672,15 @@ class Coder:
         # add none->none qualifier if there was no @completion
         elif coded_qual is None and qual is None:
             res = "@completion: _->_ \n" + res
+
+        temp_script_df = Script("_temp.nxs", None, content=res)
+        temp_script_df.parse(enable_fixer=self.enable_fixer)
+        temp_script_df.toolset_imports = script.toolset_imports
+        temp_delib = next(iter(temp_script_df.deliberates.values()), None)
+        if temp_delib is not None:
+            node_code, coded_frames = self.code_do_as_frames(temp_script_df, temp_delib, required_scripts)
+            if node_code is not None:
+                res = coded_frames + "\n\n" + node_code
 
         self._emit_coding_end(script, scope=deliberate_name, attempts=attempts, kind='deliberate', request=user_request)
         return res

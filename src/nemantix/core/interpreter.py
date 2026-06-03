@@ -28,11 +28,11 @@ from nemantix.core.node import (
     UnaryOperationEnum,
     VariableTypeEnum,
 )
-from nemantix.core.parser import AsFrame
 from nemantix.core.prompt import (
     LEFT_SEM_INCL_PROMPT,
     RIGHT_SEM_INCL_PROMPT,
     SEM_INCL_TEMPLATE,
+    SCHEMA_APPLY_PROMPT,
 )
 from nemantix.core.runtime import Builtin, Struct
 from nemantix.core.script import Script
@@ -763,6 +763,13 @@ class Interpreter:
                     else:
                         result = callable_fn(*args, **kwargs)
 
+            producing_schema = getattr(do, 'producing_schema', None)
+            schema_applied = False
+
+            if isinstance(producing_schema, str) and fn_name != "llm" and outputs is not None:
+                result = self._apply_frame_schema(do, result, producing_schema)
+                schema_applied = True
+
             if isinstance(outputs, nmx_nodes.Variable):
                 assert isinstance(outputs.name, str)
                 packed_value = self.pack_return_value(value=result)
@@ -775,7 +782,8 @@ class Interpreter:
                 for i, var in enumerate(outputs.value):
                     assert isinstance(var, nmx_nodes.Variable)
                     assert isinstance(var.name, str)
-                    self.context.env.set(var_name=var.name, value=packed_value.get(i))
+                    val = packed_value.get(var.name) if schema_applied else packed_value.get(i)
+                    self.context.env.set(var_name=var.name, value=val)
 
     def interpret_conditional(self, conditional: nmx_nodes.ConditionBlock) -> tuple[Any, ReturnType]:
         for block in conditional.children:
@@ -1595,6 +1603,83 @@ class Interpreter:
             args = [args]
 
         return args, {}
+
+    def _apply_frame_schema(self, do: nmx_nodes.DoStatement, result, frame_name: str):
+        """
+        Format the callable result to conform to the named frame schema.
+
+        For a single producing variable the frame is applied directly to the result Struct.
+        For multiple producing variables the LLM is asked to map each variable name to a
+        frame slot name (no actual values are sent — privacy is preserved), then the
+        frame-conforming Struct is built from actual values using that mapping.
+        """
+        import ast as _ast
+
+        frame_key = frame_name.upper()
+        if frame_key not in self.context.frames:
+            raise self._runtime_exception(
+                f'Undefined frame "{frame_name}" referenced in producing_schema', statement=do)
+
+        rt_frame = self.context.frames[frame_key]
+        slot_names = list(getattr(rt_frame, 'slots', {}).keys())
+
+        # Collect producing variable names from the AST — no values, for privacy
+        producing_expr = do.producing
+        if isinstance(producing_expr, nmx_nodes.Variable):
+            producing_names = [producing_expr.name]
+        elif isinstance(producing_expr, nmx_nodes.Collection):
+            producing_names = [v.name for v in producing_expr.value
+                               if isinstance(v, nmx_nodes.Variable)]
+        else:
+            return result
+
+        if not producing_names or not slot_names:
+            return result
+
+        if len(producing_names) == 1:
+            # Single output variable: apply the frame directly without calling the LLM
+            packed = self.pack_return_value(result)
+            if isinstance(packed, nmx_runtime.Struct):
+                return rt_frame.apply_postfix(packed)
+            return packed
+
+        # Multiple output variables: ask LLM to map variable names → slot names.
+        # Only names are sent, never the actual runtime values.
+        prompt = SCHEMA_APPLY_PROMPT.format(frame_name = frame_name, 
+                                            producing_names = producing_names, 
+                                            slot_names = slot_names)
+
+        response = Builtin.ask_llm(self.llm, prompt)
+        self._emit_llm(stmt=do, prompt=prompt, usage=response.usage, internal=True)
+
+        try:
+            name_mapping = _ast.literal_eval(response.text.strip())
+            if not isinstance(name_mapping, dict):
+                raise ValueError("LLM did not return a dict")
+        except Exception:
+            # Fallback: positional mapping
+            name_mapping = {producing_names[i]: slot_names[i]
+                            for i in range(min(len(producing_names), len(slot_names)))}
+
+        # Extract actual values per producing variable from the packed result
+        packed = self.pack_return_value(result)
+        actual_values = {}
+        if isinstance(packed, nmx_runtime.Struct):
+            for i, name in enumerate(producing_names):
+                actual_values[name] = packed.get(i)
+        elif isinstance(result, (list, tuple)):
+            for i, name in enumerate(producing_names):
+                actual_values[name] = result[i] if i < len(result) else None
+        else:
+            actual_values[producing_names[0]] = result
+
+        # Build frame-conforming Struct using the LLM-provided mapping
+        frame_struct = nmx_runtime.Struct()
+        for var_name, slot_name in name_mapping.items():
+            if var_name in actual_values and slot_name in slot_names:
+                frame_struct.set(value=actual_values[var_name], key=slot_name)
+
+        return rt_frame.apply_postfix(frame_struct)
 
     def _unpack_user_inputs(self, expression: nmx_nodes.Expression | None = None):
         assert not isinstance(expression, (nmx_nodes.SchemedCollection, nmx_nodes.MetaExpression))

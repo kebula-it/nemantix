@@ -4,7 +4,7 @@ You are working with NXS, a DSL made of structured blocks.
 CORE CONCEPTS
 - An NXS file can include other NXS files, define reusable schemas with `frame`, declare tools with `toolset`, define executable units with `action`, and define a runnable workflow with `deliberate`.
 - An `action` is like a function: it can declare inputs (`in:`), outputs (`out:`), and a `body:` with logic such as expressions, calls, conditionals, loops, and control flow.
-- A `deliberate` is the main executable workflow: it includes a `when` trigger, `guidelines`, and a `plan`.
+- A `deliberate` is the main executable workflow: it includes a `when` trigger, `guidelines`, a `plan` and in some special case some private `action`s.
 - The `plan` of a `deliberate` is the orchestration logic that aggregates and coordinates multiple `action` call to achieve the desired outcome following the `guidelines`. Like an `action`, it can declare inputs (`in:`), outputs (`out:`), and a `body:`.
 """
 
@@ -639,8 +639,8 @@ Produce three fields:
 """
 
 # TODO: cardinality description
-GEN_FRAME_PROMPT = PROLOGUE + """
-Generate a NXS Frame based on the provided name, and custom DSL usage syntax.
+FRAMES_DSL = """
+FRAMES DSL SYNTAX
 Example frames:
 ```
 frame Person:
@@ -671,6 +671,7 @@ __frame
 Available slot types: [TEXT | INT | BOOL | FLOAT | STRUCT | slot_enum | frame_name]
 NOTE: "frame_name" means that a slot can be another frame, resulting in definition of 
 nested frames.
+NOTE: use STRUCT for both lists and dictionaries.
 
 Strictly follow these rules:
     1. The frame must be named exactly as requested in the 'Name' field.
@@ -680,6 +681,30 @@ Strictly follow these rules:
     4. If 'Previous Frame' and an error are provided, use the previous frame as your
         baseline. Correct ONLY the logic or syntax that caused the error, preserving
         the valid parts of the frame structure.
+    5. The name of the frame must not contain any white space, use camel case or snake case.
+"""
+
+GEN_FRAME_PROMPT = PROLOGUE + """
+Generate a NXS Frame based on the provided name, and custom DSL usage syntax.""" + FRAMES_DSL
+
+
+DO_AS_FRAMES_PROMPT  =  PROLOGUE + """
+Generate a NXS Frame based on the provided custom DSL usage syntax.
+The generated frame must follow the description given in the `as` clause of this `do` statement and the information about the called function. 
+The purpose of the frame is to give an output format for the tool/action/built-in that is being called.
+Output only the frame and nothing else.
+DO STATEMENT
+{do_statement}
+CALLABLE INFO
+{callable_info}
+""" + FRAMES_DSL
+
+SCHEMA_APPLY_PROMPT = """
+Map each output variable name to the most appropriate slot of frame '{frame_name}'.
+Output variable names: {producing_names}
+Frame '{frame_name}' slot names: {slot_names}
+Return ONLY a valid Python dict literal, e.g. {{\"var_a\": \"slot_x\"}}.
+Omit variables with no clear slot match.
 """
 
 # Interpreter: semantic inclusion prompts

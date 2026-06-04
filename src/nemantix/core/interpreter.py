@@ -114,11 +114,21 @@ class Interpreter:
         score: float
 
     class CallEvent:
-        def __init__(self, interpreter: 'Interpreter', stmt, name: str = None, kind: str = None):
+        def __init__(self, interpreter: 'Interpreter', stmt, name: str = None, kind: str = None,
+                     args: list | None = None):
             self.interpreter = interpreter
             self.stmt = stmt
             self.callable_name = name
             self.callable_type = kind
+            self.callable_prompt = ''
+
+            if isinstance(args, (list, tuple)):
+                llm_prompt = (
+                    args[0]
+                    if name == "llm" and isinstance(args[0], str)
+                    else ""
+                )
+                self.callable_prompt = llm_prompt
 
             if isinstance(stmt, nmx_nodes.Deliberate):
                 self.callable_name = stmt.name
@@ -133,7 +143,8 @@ class Interpreter:
 
         def __enter__(self):
             self.interpreter._emit_call_enter(stmt=self.stmt, callable_name=self.callable_name,
-                                              callable_type=self.callable_type)
+                                              callable_type=self.callable_type,
+                                              callable_prompt=self.callable_prompt)
 
         def __exit__(self, *_):
             self.interpreter._emit_call_exit(stmt=self.stmt)
@@ -643,8 +654,25 @@ class Interpreter:
                             response = Builtin.ask_llm(self.llm, prompt, **kwargs_)
                             self._emit_llm(stmt=do, prompt=prompt, usage=response.usage)
                             return response.text
+
                         callable_fn = __llm_call
 
+                    elif builtin_name == BuiltinFunctionEnum.PRINT:
+
+                        def __print_call(*args_, **kwargs_):
+                            Builtin.print(*args_, **kwargs_)
+                            parts = ["<NONE>" if a is None else str(a) for a in args_]
+
+                            if kwargs_:
+                                parts.append(str(kwargs_))
+
+                            self._emit_event(
+                                do,
+                                EventType.OUTPUT,
+                                payload={"text": " ".join(parts) + "\n"},
+                            )
+                        callable_fn = __print_call
+                    
                     elif builtin_name == BuiltinFunctionEnum.RETRIEVE:
                         def __retrieve(*args_, **kwargs_):
                             self._emit_retrieve(stmt=do, knowledge_base=self.knowledge_base,
@@ -697,10 +725,10 @@ class Interpreter:
         else:
             kind = 'builtin'
 
-        with self.CallEvent(self, stmt=do, name=fn_name, kind=kind):
-            outputs = do.producing
-            args, kwargs = self._parse_do_using(do=do)
-
+        outputs = do.producing
+        args, kwargs = self._parse_do_using(do=do)
+        
+        with self.CallEvent(self, stmt=do, name=fn_name, kind=kind, args=args):
             # LLM with schema call
             if fn_name == "llm" and getattr(do, 'producing_schema', None):
                 frame_name = do.producing_schema
@@ -953,9 +981,15 @@ class Interpreter:
             args = [self.interpret_expression(expression=arg) for arg in expression.args]
 
             try:
+                _builtin_name = expression.function.name.lower()
+                _builtin_prompt = (
+                    args[0]
+                    if _builtin_name == "llm" and args and isinstance(args[0], str)
+                    else ""
+                )
                 self._emit_line(stmt=expression, trim=True)
                 self._emit_call_enter(stmt=expression, trim=True, callable_type='builtin',
-                                      callable_name=expression.function.name.lower())
+                                      callable_name=_builtin_name, callable_prompt=_builtin_prompt)
 
                 if len(args) == 0:
                     return __call_builtin(function)
@@ -1869,7 +1903,11 @@ class Interpreter:
         self._emit_event(stmt, event_type=EventType.LINE, scope=scope, payload=dict(interpreter=self), **kwargs)
 
     def _emit_call_enter(self, stmt: nmx_nodes.Statement, scope=None, **kwargs):
-        payload = dict(name=kwargs.pop('callable_name'), type=kwargs.pop('callable_type'))
+        payload = dict(
+            name=kwargs.pop("callable_name"),
+            type=kwargs.pop("callable_type"),
+            prompt=kwargs.pop("callable_prompt", ""),
+        )
         self._emit_event(stmt, event_type=EventType.CALL_ENTER, scope=scope,
                          payload=payload, **kwargs)
 

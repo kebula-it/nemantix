@@ -1,8 +1,7 @@
 import time
-
-from enum import Enum, auto
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from enum import Enum, auto
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nemantix.core.script import Script
@@ -31,6 +30,7 @@ class EventType(Enum):
     EXPAND = auto()
     EXTEND = auto()
     GENERALIZE = auto()
+    OUTPUT = auto()
 
 
 @dataclass

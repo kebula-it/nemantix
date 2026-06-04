@@ -28,11 +28,12 @@ from nemantix.core.node import (
     UnaryOperationEnum,
     VariableTypeEnum,
 )
+from nemantix.core.parser import AsFrame
 from nemantix.core.prompt import (
     LEFT_SEM_INCL_PROMPT,
     RIGHT_SEM_INCL_PROMPT,
-    SEM_INCL_TEMPLATE,
     SCHEMA_APPLY_PROMPT,
+    SEM_INCL_TEMPLATE,
 )
 from nemantix.core.runtime import Builtin, Struct
 from nemantix.core.script import Script
@@ -150,7 +151,7 @@ class Interpreter:
             self.interpreter._emit_call_exit(stmt=self.stmt)
 
     def __init__(self, expertise: Expertise, llm: AbstractLLMProxy, embedder=None, knowledge_base=None,
-                 external_variables: nmx_runtime.ExternalVariables = None,
+                 external_variables: nmx_runtime.ExternalVariables | None = None,
                  agent_state: Optional[nmx_runtime.Struct] = None):
         # operational memory
         self.metadata = nmx_runtime.Metadata()
@@ -322,7 +323,6 @@ class Interpreter:
             self.interpret_intentable(metadata=import_stmt.meta, stmt=import_stmt)
 
             tool_class = import_stmt.name
-            tool_alias = None
             tool_alias = import_stmt.alias
             arguments = None
 
@@ -1521,7 +1521,7 @@ class Interpreter:
 
         return rt_frame
 
-    def _frame_to_pydantic_schema(self, frame_path: str, resolved_frames: dict = None,
+    def _frame_to_pydantic_schema(self, frame_path: str, resolved_frames: dict | None = None,
                                   statement: nmx_nodes.Statement | None = None) -> Type[BaseModel]:
         """
         Dynamically converts a Nemantix Frame (by fully qualified path)

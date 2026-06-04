@@ -98,6 +98,7 @@ class Coder:
         self.external_vars_names = None
         self.knowledge_base = None
         self.enable_fixer = False
+        self.include_action_body_in_semantics = False
 
     def coding(self, script: Script, required_scripts: list[Script], external_vars_names: list[str] = None):
         """
@@ -286,7 +287,6 @@ class Coder:
         if not isinstance(node, ActionBlock) and not isinstance(node, Deliberate):
             return None, None
 
-        coded = []
         content_list = script.read_as_list()
         frame_parser = _get_frame_parser()
         do_stmts = []
@@ -294,13 +294,13 @@ class Coder:
         def _collect_do_statements(nodes, collected):
             if not nodes:
                 return
-            for node in nodes:
-                if not node:
+            for node_ in nodes:
+                if not node_:
                     continue
-                if isinstance(node, DoStatement) and isinstance(node.producing_schema, MicroPrompt):
-                    collected.append(node)
-                if isinstance(node, BlockStatement):
-                    _collect_do_statements(node.children or [], collected)
+                if isinstance(node_, DoStatement) and isinstance(node_.producing_schema, MicroPrompt):
+                    collected.append(node_)
+                if isinstance(node_, BlockStatement):
+                    _collect_do_statements(node_.children or [], collected)
 
         if isinstance(node, ActionBlock):
             _collect_do_statements(node.children, do_stmts)
@@ -308,7 +308,7 @@ class Coder:
             plan = node.get_plan()
             if plan:
                 _collect_do_statements(plan.children, do_stmts)
-            generated_actions = getattr(node, "generated_actions", None)
+            generated_actions = getattr(node, "generated_actions", [])
             if generated_actions:
                 for action in generated_actions:
                     _collect_do_statements(action.children, do_stmts)
@@ -676,9 +676,9 @@ class Coder:
         temp_script_df = Script("_temp.nxs", None, content=res)
         temp_script_df.parse(enable_fixer=self.enable_fixer)
         temp_script_df.toolset_imports = script.toolset_imports
-        temp_delib = next(iter(temp_script_df.deliberates.values()), None)
-        if temp_delib is not None:
-            node_code, coded_frames = self.code_do_as_frames(temp_script_df, temp_delib, required_scripts)
+        temp_deliberate = next(iter(temp_script_df.deliberates.values()), None)
+        if temp_deliberate is not None:
+            node_code, coded_frames = self.code_do_as_frames(temp_script_df, temp_deliberate, required_scripts)
             if node_code is not None:
                 res = coded_frames + "\n\n" + node_code
 

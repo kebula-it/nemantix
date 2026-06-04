@@ -5,9 +5,20 @@ from dataclasses import dataclass
 import pytest
 from lark import LarkError
 
+from nemantix.core import coder as coder_module
 from nemantix.core.coder import CodeOperationEnum, Coder, qualifier_coding_map
 from nemantix.core.exceptions import NemantixException
-from nemantix.core.node import BlockStatement, DoStatement, FileMeta, PlanQualifierEnum
+from nemantix.core.node import (
+    ActionBlock,
+    BlockStatement,
+    CallableTypeEnum,
+    Deliberate,
+    DoStatement,
+    FileMeta,
+    Frame,
+    MicroPrompt,
+    PlanQualifierEnum,
+)
 from nemantix.core.script import Script
 from nemantix.core.tools import Toolset
 from nemantix.hub.event_hub import EventHub
@@ -407,3 +418,227 @@ def test_check_and_fix_retries_emit_one_llm_event_per_retry(monkeypatch, isolate
     assert len(llm_events) == 1
     assert llm_events[0].payload["usage"].input_tokens == 30
     assert llm_events[0].payload["usage"].output_tokens == 10
+
+
+# =============================================================================
+# code_do_as_frames Tests
+# =============================================================================
+
+
+def test_code_do_as_frames_invalid_node():
+    """Test that passing a node that is neither ActionBlock nor Deliberate returns None, None."""
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[], raw_responses=[]))
+    script = type("ScriptObj", (), {})()
+
+    res_code, res_frames = coder.code_do_as_frames(script, DummyStatement(1, 2), [])
+
+    assert res_code is None
+    assert res_frames is None
+
+
+def test_code_do_as_frames_no_generative_schemas():
+    """Test that passing an ActionBlock with no generative DoStatements returns None, None."""
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[], raw_responses=[]))
+    script = type("ScriptObj", (), {})()
+    script.read_as_list = lambda: []
+
+    normal_do = make_do_statement("my_tool", 2, 2)
+    normal_do.producing_schema = "ALREADY_EXISTING_FRAME"  # Not a MicroPrompt
+
+    action = ActionBlock.__new__(ActionBlock)
+    action.name = "A"
+    action.meta = {"file_meta": FileMeta((1, 3), (0, 0))}
+    action.children = [normal_do]
+
+    res_code, res_frames = coder.code_do_as_frames(script, action, [])
+
+    assert res_code is None
+    assert res_frames is None
+
+
+def test_code_do_as_frames_success_action_block(monkeypatch):
+    """Test successful generation and replacement of a generative schema within an ActionBlock."""
+    llm = FakeLLMProxy(
+        responses=[],
+        raw_responses=["frame NEW_FRAME:\n  slot example of type TEXT\n__frame"],
+    )
+    coder = Coder(llm_proxy=llm)
+
+    monkeypatch.setattr(coder, "_extract_actions_semantics", lambda *args: {})
+    monkeypatch.setattr(coder, "_extract_toolset_docs_map", lambda *args: {})
+
+    class DummyParser:
+        def parse(self, text):
+            pass
+
+    monkeypatch.setattr(coder_module, "_get_frame_parser", lambda: DummyParser())
+
+    def mock_script_parse(self, **kwargs):
+        self.frames = [Frame("NEW_FRAME", meta={"file_meta": FileMeta((1, 1), (1, 1))})]
+        self.actions = {}
+        self.deliberates = {}
+
+    monkeypatch.setattr(Script, "parse", mock_script_parse)
+
+    script = type("ScriptObj", (), {})()
+    script.content = "action A:\n  do my_tool as >> make a frame <<\n__action"
+    script.read_as_list = lambda: script.content.split("\n")
+    script.toolset_imports = {}
+
+    do_node = make_do_statement("my_tool", 2, 2)
+    do_node.callable_type = CallableTypeEnum.TOOL
+    do_node.producing_schema = MicroPrompt(
+        "make a frame", meta={"file_meta": FileMeta((2, 2), (2, 2))}
+    )
+    do_node.to_nxs = lambda **kwargs: "do my_tool as {NEW_FRAME}"
+
+    action = ActionBlock.__new__(ActionBlock)
+    action.name = "A"
+    action.meta = {"file_meta": FileMeta((1, 3), (0, 0))}
+    action.children = [do_node]
+
+    updated_code, coded_frames = coder.code_do_as_frames(script, action, [])
+
+    assert len(llm.raw_calls) == 1
+    assert "frame NEW_FRAME" in coded_frames
+    assert "do my_tool as {NEW_FRAME}" in updated_code
+
+
+def test_code_do_as_frames_success_deliberate(monkeypatch):
+    """Test successful generative schema replacement within a Deliberate's plan."""
+    llm = FakeLLMProxy(
+        responses=[], raw_responses=["frame D_FRAME:\n  slot test\n__frame"]
+    )
+    coder = Coder(llm_proxy=llm)
+
+    monkeypatch.setattr(coder, "_extract_actions_semantics", lambda *args: {})
+    monkeypatch.setattr(coder, "_extract_toolset_docs_map", lambda *args: {})
+
+    class DummyParser:
+        def parse(self, text):
+            pass
+
+    monkeypatch.setattr(coder_module, "_get_frame_parser", lambda: DummyParser())
+
+    def mock_script_parse(self, **kwargs):
+        self.frames = [Frame("D_FRAME", meta={"file_meta": FileMeta((1, 1), (1, 1))})]
+        self.actions = {}
+        self.deliberates = {}
+
+    monkeypatch.setattr(Script, "parse", mock_script_parse)
+
+    script = type("ScriptObj", (), {})()
+    script.content = "deliberate D:\n  plan:\n    do my_action as >> gen frame <<\n  __plan\n__deliberate"
+    script.read_as_list = lambda: script.content.split("\n")
+    script.toolset_imports = {}
+
+    do_node = make_do_statement("my_action", 3, 3)
+    do_node.callable_type = CallableTypeEnum.ACTION
+    do_node.producing_schema = MicroPrompt(
+        "gen frame", meta={"file_meta": FileMeta((3, 3), (3, 3))}
+    )
+    do_node.to_nxs = lambda **kwargs: "do my_action as {D_FRAME}"
+
+    deliberate = Deliberate.__new__(Deliberate)
+    deliberate.name = "D"
+    deliberate.meta = {"file_meta": FileMeta((1, 5), (0, 0))}
+    deliberate.generated_actions = []
+
+    plan = BlockStatement.__new__(BlockStatement)
+    plan.children = [do_node]
+    deliberate.get_plan = lambda: plan
+
+    updated_code, coded_frames = coder.code_do_as_frames(script, deliberate, [])
+
+    assert len(llm.raw_calls) == 1
+    assert "frame D_FRAME" in coded_frames
+    assert "do my_action as {D_FRAME}" in updated_code
+
+
+def test_code_do_as_frames_retries_on_parser_error(monkeypatch):
+    """Test that the function retries generating the frame if a parsing error occurs."""
+    llm = FakeLLMProxy(
+        responses=[], raw_responses=["invalid", "frame FIXED_FRAME:\n__frame"]
+    )
+    coder = Coder(llm_proxy=llm)
+
+    monkeypatch.setattr(coder, "_extract_actions_semantics", lambda *args: {})
+    monkeypatch.setattr(coder, "_extract_toolset_docs_map", lambda *args: {})
+
+    class DummyParser:
+        def parse(self, text):
+            if "invalid" in text:
+                raise SyntaxError("bad syntax")
+
+    monkeypatch.setattr(coder_module, "_get_frame_parser", lambda: DummyParser())
+
+    def mock_script_parse(self, **kwargs):
+        if "invalid" in self.content:
+            raise SyntaxError("bad syntax")
+        self.frames = [
+            Frame("FIXED_FRAME", meta={"file_meta": FileMeta((1, 1), (1, 1))})
+        ]
+        self.actions = {}
+        self.deliberates = {}
+
+    monkeypatch.setattr(Script, "parse", mock_script_parse)
+
+    script = type("ScriptObj", (), {})()
+    script.content = "action A:\n  do my_tool as >> gen <<\n__action"
+    script.read_as_list = lambda: script.content.split("\n")
+    script.toolset_imports = {}
+
+    do_node = make_do_statement("my_tool", 2, 2)
+    do_node.producing_schema = MicroPrompt(
+        "gen", meta={"file_meta": FileMeta((2, 2), (2, 2))}
+    )
+    do_node.callable_type = None
+    do_node.to_nxs = lambda **kwargs: "do my_tool as {FIXED_FRAME}"
+
+    action = ActionBlock.__new__(ActionBlock)
+    action.name = "A"
+    action.meta = {"file_meta": FileMeta((1, 3), (0, 0))}
+    action.children = [do_node]
+
+    updated_code, coded_frames = coder.code_do_as_frames(script, action, [])
+
+    assert len(llm.raw_calls) == 2
+    assert "frame FIXED_FRAME" in coded_frames
+    assert "do my_tool as {FIXED_FRAME}" in updated_code
+
+
+def test_code_do_as_frames_raises_exception_max_retries(monkeypatch):
+    """Test that an exception is raised when max retries are exceeded due to continuous parser errors."""
+    llm = FakeLLMProxy(responses=[], raw_responses=["invalid"] * 6)
+    coder = Coder(llm_proxy=llm)
+
+    monkeypatch.setattr(coder, "_extract_actions_semantics", lambda *args: {})
+    monkeypatch.setattr(coder, "_extract_toolset_docs_map", lambda *args: {})
+
+    class DummyParser:
+        def parse(self, text):
+            raise SyntaxError("bad syntax")
+
+    monkeypatch.setattr(coder_module, "_get_frame_parser", lambda: DummyParser())
+
+    script = type("ScriptObj", (), {})()
+    script.content = "action A:\n  do my_tool as >> gen <<\n__action"
+    script.read_as_list = lambda: script.content.split("\n")
+    script.toolset_imports = {}
+
+    do_node = make_do_statement("my_tool", 2, 2)
+    do_node.callable_type = None
+    do_node.producing_schema = MicroPrompt(
+        "gen", meta={"file_meta": FileMeta((2, 2), (2, 2))}
+    )
+
+    action = ActionBlock.__new__(ActionBlock)
+    action.name = "A"
+    action.meta = {"file_meta": FileMeta((1, 3), (0, 0))}
+    action.children = [do_node]
+
+    # Coder falls through to Script.parse() which throws a SyntaxError on "invalid"
+    with pytest.raises(SyntaxError):
+        coder.code_do_as_frames(script, action, [])
+
+    assert len(llm.raw_calls) == 6

@@ -1,12 +1,17 @@
 import inspect
 import json
-from typing import Any, Iterator, Dict, List, Optional, Type, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type, Union
 
 from pydantic import BaseModel
 
 from nemantix.common.logger import get_package_logger
-from nemantix.llm.abstract_proxy import (AbstractLLMProxy, LLMProxyException,
-                                         LLMResponse, LLMUsage, StructuredLLMResponse)
+from nemantix.llm.abstract_proxy import (
+    AbstractLLMProxy,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+    StructuredLLMResponse,
+)
 
 if TYPE_CHECKING:
     from nemantix.core.tools import Toolset
@@ -14,7 +19,8 @@ if TYPE_CHECKING:
 try:
     from ollama import chat
 except ImportError as e:
-    raise ImportError("Please install the Ollama Python library: `pip install ollama`") from e
+    raise ImportError("Please install the Ollama Python library, with:"
+                      " `pip install nemantix[coder_extra]` or `pip install ollama`") from e
 
 logger = get_package_logger(__name__)
 

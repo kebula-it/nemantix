@@ -26,6 +26,7 @@ from nemantix.core.node import (
 )
 from nemantix.core.parser import _get_frame_parser
 from nemantix.core.prompt import (
+    CODE_SUMMARY_PROMPT,
     CODING_ADDITIONAL_INFO,
     CODING_DELIBERATE_ADDITIONAL_INFO,
     CODING_SYSTEM_PROMPT,
@@ -45,7 +46,7 @@ from nemantix.core.prompt import (
     FIX_GENERATION,
     GEN_FRAME_PROMPT,
     GEN_TOOLSET_PROMPT,
-    USER_REQUEST, CODE_SUMMARY_PROMPT,
+    USER_REQUEST,
 )
 from nemantix.core.runtime import get_globals
 from nemantix.core.script import Script
@@ -53,7 +54,6 @@ from nemantix.core.tools import Toolset
 from nemantix.hub.events import Event, EventType
 from nemantix.llm import AbstractLLMProxy
 from nemantix.llm.abstract_proxy import LLMUsage
-from nemantix.llm.llama_proxy import LlamaProxy
 
 logger = get_package_logger(__name__)
 
@@ -92,16 +92,22 @@ qualifier_coding_map = {
 
 
 class Coder:
-    def __init__(self, llm_proxy: AbstractLLMProxy, create_summary: bool = False):
+    def __init__(self, llm_proxy: AbstractLLMProxy, create_summary: bool = False, summarizer_model='phi4-mini'):
         self.llm_proxy = llm_proxy
         self.action_semantics_map: dict[str, dict[str, str]] = {}  # dict[deliberate_name, dict[action_name, semantics]]
         self.runtime_globals = get_globals()
         self.external_vars_names = None
         self.knowledge_base = None
         self.enable_fixer = False
-        self.summarizer = LlamaProxy(model_name="phi4-mini")
-        self.create_summary = create_summary
+        self.create_summary = bool(create_summary)
         self.include_action_body_in_semantics = False
+        
+        if self.create_summary:
+            from nemantix.llm.llama_proxy import LlamaProxy
+
+            self.summarizer = LlamaProxy(model_name=summarizer_model)
+        else:
+            self.summarizer = None
 
     def coding(self, script: Script, required_scripts: list[Script], external_vars_names: list[str] = None):
         """
@@ -632,6 +638,8 @@ class Coder:
         return res
 
     def summarize(self, code):
+        assert self.summarizer is not None
+        
         doc = self.summarizer.invoke(CODE_SUMMARY_PROMPT.format(action=code)).text
         doc = doc.replace("`", "").replace("'","").replace('"','').replace("\n"," ")
         doc = doc.replace("action", "code").replace("plaintext","").replace("plan block", "code block")
@@ -686,8 +694,8 @@ class Coder:
         temp_scr.parse(enable_fixer=self.enable_fixer)
 
         # copy old qualifier if the coding removed it
-        new_delib = [v for v in temp_scr.deliberates.values()][0]
-        coded_qual = new_delib.qualifier
+        new_deliberate = [v for v in temp_scr.deliberates.values()][0]
+        coded_qual = new_deliberate.qualifier
 
         if coded_qual is None and qual is not None:
             res = "@completion: " + f'{qual[0].value}->{qual[1].value}' + "\n" + res
@@ -707,7 +715,7 @@ class Coder:
 
         # add summary for frozen deliberates
         if coding_level == CodeOperationEnum.COMPLETE and self.create_summary:
-            new_plan = new_delib.get_plan()
+            new_plan = new_deliberate.get_plan()
             new_plan_meta = new_plan.meta["file_meta"]
             new_plan_start_line, new_plan_end_line = new_plan_meta.line[0] - 1, new_plan_meta.line[1] - 1
             plan_code = "\n".join(res.split("\n")[new_plan_start_line:new_plan_end_line])

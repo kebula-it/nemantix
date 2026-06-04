@@ -62,12 +62,17 @@ class LLMProxyFactory:
 
         elif vendor in ['OpenRouter', 'open-router', 'open_router']:
             return OpenRouterLLMProxy(model_name, grammar_path=grammar_path, **kwargs)
-
+        
         elif vendor in ['llama.cpp', 'llama-cpp', 'llama-cpp-remote']:
             from nemantix.experimental.llama_cpp_remote_proxy import (
                 LlamaCppRemoteLLMProxy,
             )
             return LlamaCppRemoteLLMProxy(model_name, **kwargs)
+
+        elif vendor == "ollama":
+            from nemantix.llm.llama_proxy import LlamaProxy
+
+            return LlamaProxy(model_name, **kwargs)
 
         elif vendor == 'local':
             from nemantix.llm.local_proxy import LocalLLMProxy

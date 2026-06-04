@@ -45,7 +45,7 @@ from nemantix.core.prompt import (
     FIX_GENERATION,
     GEN_FRAME_PROMPT,
     GEN_TOOLSET_PROMPT,
-    USER_REQUEST,
+    USER_REQUEST, CODE_SUMMARY_PROMPT,
 )
 from nemantix.core.runtime import get_globals
 from nemantix.core.script import Script
@@ -53,6 +53,7 @@ from nemantix.core.tools import Toolset
 from nemantix.hub.events import Event, EventType
 from nemantix.llm import AbstractLLMProxy
 from nemantix.llm.abstract_proxy import LLMUsage
+from nemantix.llm.llama_proxy import LlamaProxy
 
 logger = get_package_logger(__name__)
 
@@ -91,13 +92,15 @@ qualifier_coding_map = {
 
 
 class Coder:
-    def __init__(self, llm_proxy: AbstractLLMProxy):
+    def __init__(self, llm_proxy: AbstractLLMProxy, create_summary: bool = False):
         self.llm_proxy = llm_proxy
         self.action_semantics_map: dict[str, dict[str, str]] = {}  # dict[deliberate_name, dict[action_name, semantics]]
         self.runtime_globals = get_globals()
         self.external_vars_names = None
         self.knowledge_base = None
         self.enable_fixer = False
+        self.summarizer = LlamaProxy(model_name="phi4-mini")
+        self.create_summary = create_summary
         self.include_action_body_in_semantics = False
 
     def coding(self, script: Script, required_scripts: list[Script], external_vars_names: list[str] = None):
@@ -601,6 +604,17 @@ class Coder:
         res, attempts = self._check_and_fix_generated_code(messages, resp, relative_start, relative_end, orig_code,
                                                            scope=action_name)
 
+        # summary
+        if coding_level == CodeOperationEnum.COMPLETE and self.create_summary:
+            doc = self.summarize(res)
+            doc_str = "@intent.summary: " + str(doc)
+            # indent
+            first_line = res.splitlines()[0]
+            indent = first_line[:len(first_line) - len(first_line.lstrip(" \t"))]
+            doc_str = indent + doc_str
+            # append
+            res = doc_str + res
+
         temp_script = Script("_temp.nxs", None, content=res)
         temp_script.parse(enable_fixer=self.enable_fixer)
         temp_script.toolset_imports = script.toolset_imports
@@ -616,6 +630,13 @@ class Coder:
 
         self._emit_coding_end(script, scope=action_name, attempts=attempts, kind='action', request=user_request)
         return res
+
+    def summarize(self, code):
+        doc = self.summarizer.invoke(CODE_SUMMARY_PROMPT.format(action=code)).text
+        doc = doc.replace("`", "").replace("'","").replace('"','').replace("\n"," ")
+        doc = doc.replace("action", "code").replace("plaintext","").replace("plan block", "code block")
+        doc = '"' + doc + '"'
+        return doc
 
     def code_deliberate(self, coding_level: CodeOperationEnum, deliberate_name: str, script: Script,
                         required_scripts: list[Script], user_request=None):
@@ -665,7 +686,9 @@ class Coder:
         temp_scr.parse(enable_fixer=self.enable_fixer)
 
         # copy old qualifier if the coding removed it
-        coded_qual = [v for v in temp_scr.deliberates.values()][0].qualifier
+        new_delib = [v for v in temp_scr.deliberates.values()][0]
+        coded_qual = new_delib.qualifier
+
         if coded_qual is None and qual is not None:
             res = "@completion: " + f'{qual[0].value}->{qual[1].value}' + "\n" + res
 
@@ -681,6 +704,21 @@ class Coder:
             node_code, coded_frames = self.code_do_as_frames(temp_script_df, temp_deliberate, required_scripts)
             if node_code is not None:
                 res = coded_frames + "\n\n" + node_code
+
+        # add summary for frozen deliberates
+        if coding_level == CodeOperationEnum.COMPLETE and self.create_summary:
+            new_plan = new_delib.get_plan()
+            new_plan_meta = new_plan.meta["file_meta"]
+            new_plan_start_line, new_plan_end_line = new_plan_meta.line[0] - 1, new_plan_meta.line[1] - 1
+            plan_code = "\n".join(res.split("\n")[new_plan_start_line:new_plan_end_line])
+            doc = self.summarize(plan_code)
+            doc_str = "@intent.summary: " + str(doc) + ("\n" if not str(doc).endswith("\n") else "")
+            # indent
+            first_line = res.splitlines()[0]
+            indent = first_line[:len(first_line) - len(first_line.lstrip(" \t"))]
+            doc_str = indent + doc_str
+            # append
+            res = doc_str + res
 
         self._emit_coding_end(script, scope=deliberate_name, attempts=attempts, kind='deliberate', request=user_request)
         return res

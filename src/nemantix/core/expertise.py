@@ -371,7 +371,8 @@ class Expertise:
     @classmethod
     def from_local_scripts(cls, paths: list[PathLike] | list[Script], verifier: BaseVerifier,
                            llm: AbstractLLMProxy | None = None,
-                           export_location: PathLike = None, export=True, **kwargs) -> "Expertise":
+                           export_location: PathLike = None, export=True, create_summary= False,
+                           **kwargs) -> "Expertise":
         """Instantiates an Expertise assuming local source files or Script list."""
         if not all(isinstance(p, Script) for p in paths):
             scripts = [Script(location=path, source_manager=LocalSourceManager())
@@ -396,7 +397,7 @@ class Expertise:
             llm = cls.get_default_llm(**kwargs)
 
         assert isinstance(llm, AbstractLLMProxy)
-        coder = Coder(llm_proxy=llm)
+        coder = Coder(llm_proxy=llm, create_summary=create_summary)
         return Expertise(script_list=scripts, coder=coder, verifier=verifier, observers=observers,
                          export_location=export_location, export=export,
                          allow_fallback_deliberate=allow_fallback,

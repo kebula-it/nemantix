@@ -729,3 +729,28 @@ LEFT_SEM_INCL_PROMPT = ('Semantic inclusion (a <~ b) is a form of conceptual imp
 SEM_INCL_TEMPLATE = ('Task: Evaluate the expression: [{}]. Return true or false,'
                      'along with a score in 0-1 range that quantifies the degree of '
                      'semantic inclusion (0: weak or none, 1: full or strong).')
+
+
+##################################################################
+CODE_SUMMARY_PROMPT = \
+"""You are an expert in the NXS programming language.
+
+Read the following NXS code block and generate its docstring.
+
+The docstring must be a simple plain-text description written in natural language.
+
+It must describe, at a high level, the purpose of the block, what it does, and the main logic it follows.
+
+Output format requirements:
+Return only one plain-text paragraph.
+Do not return JSON, YAML, XML, Markdown, a dictionary, an object, a list, or bullet points.
+Do not include field names, labels, titles, separators, quotes, braces, brackets, or code fences.
+Do not write anything before or after the docstring.
+Do not explain the format.
+Do not explain the code line by line.
+
+The entire response must be only the docstring text.
+
+NXS action block:
+{action}
+"""

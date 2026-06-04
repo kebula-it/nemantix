@@ -13,7 +13,7 @@ from nemantix.core.node import (
     Frame,
     ImportToolsetStatement,
     PythonToolDeclaration,
-    Require,
+    Require, SingleValue,
 )
 from nemantix.core.parser import ParserLark
 from nemantix.core.source_manager import SourceManager
@@ -45,15 +45,23 @@ def _nxc_deliberate_completeness_check(deliberates: list[Deliberate], location: 
 
 class Script:
     class SemanticInfo:
-        def __init__(self, semantics, ins, outs, body=None):
+        def __init__(self, semantics, ins, outs, summary=None, body=None):
             self.semantics = semantics
             self.ins = ins
             self.outs = outs
             self.body = body
+            self.summary = summary
 
         def to_dict(self):
-            return {"semantics": self.semantics, "ins": [str(i) for i in self.ins],
-                    "outs": [str(o) for o in self.outs]}
+            d = {"semantics": self.semantics,
+                "ins": [str(i) for i in self.ins],
+                "outs": [str(o) for o in self.outs],
+                }
+            if self.summary is not None:
+                d["summary"] = self.summary
+            if self.body is not None:
+                d["body"] = str(self.body)
+            return d
 
     def __init__(self, location: PathLike, source_manager: SourceManager, content: str = None):
         self._location = Path(location) if not isinstance(location, Path) else location
@@ -164,7 +172,13 @@ class Script:
                     ins = None
                     outs = None
 
-                self.delib_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs)
+                summary = None
+                try:
+                    summary = n.get_annotation_value("intent.summary")
+                except:
+                    pass
+                summary = summary.value if isinstance(summary, SingleValue) else summary
+                self.delib_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs, summary=summary)
 
                 # add deliberate private actions with deliberate.name prefix
                 for private_action in n.generated_actions:
@@ -184,8 +198,14 @@ class Script:
                 semantics = n.prompt.prompt
                 ins = n.input
                 outs = n.output
+                summary = None
+                try:
+                    summary = n.get_annotation_value("intent.summary")
+                except:
+                    pass
+                summary = summary.value if isinstance(summary, SingleValue) else summary
                 self.action_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs,
-                                                                      body=n.children)
+                                                                      summary=summary)
             elif isinstance(n, Require):
                 self.requires.append(n)
 

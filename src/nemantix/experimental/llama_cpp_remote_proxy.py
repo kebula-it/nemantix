@@ -134,11 +134,7 @@ class LlamaCppRemoteLLMProxy(AbstractLLMProxy):
     def invoke(
         self, prompt: Union[str, list], tool_choice="auto", **kwargs: Any
     ) -> LLMResponse:
-        messages = (
-            self.messages_from([("user", prompt)])
-            if isinstance(prompt, str)
-            else prompt
-        )
+        messages = self._flatten_messages(prompt)
 
         req: Dict[str, Any] = {"model": self._model_name, "messages": messages}
 
@@ -215,36 +211,7 @@ class LlamaCppRemoteLLMProxy(AbstractLLMProxy):
         Invokes llama.cpp directly passing a raw GBNF (GGML BNF) grammar string
         via extra payload mappings.
         """
-        messages = (
-            self.messages_from([("user", prompt)])
-            if isinstance(prompt, str)
-            else prompt
-        )
-
-        req: Dict[str, Any] = {"model": self._model_name, "messages": messages}
-        if self._temperature is not None:
-            req["temperature"] = self._temperature
-        if self._max_output_tokens is not None:
-            req["max_tokens"] = self._max_output_tokens
-
-        # Pass GBNF string into llama-server's native extra body property
-        if self._grammar:
-            req["extra_body"] = {"grammar": self._grammar}
-
-        req.update(kwargs)
-
-        try:
-            resp = self._client.chat.completions.create(**req)
-            msg = resp.choices[0].message
-            return LLMResponse(
-                text=msg.content or "",
-                tool_calls=[],
-                usage=self._build_usage(resp.usage),
-            )
-        except Exception as e:
-            raise LLMProxyException(
-                f"Error invoking Llama.cpp grammar endpoint: {e}"
-            ) from e
+        return self.invoke(prompt, **kwargs)
 
     def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
         req: Dict[str, Any] = {
@@ -331,3 +298,30 @@ class LlamaCppRemoteLLMProxy(AbstractLLMProxy):
                 role, prompt = value[0], value[1]
             messages.append({"role": role, "content": prompt})
         return messages
+
+    def _flatten_messages(self, prompt: Union[str, list]) -> List[Dict[str, Any]]:
+        """
+        Extracts and flattens rich content arrays into plain strings.
+        llama-server throws 'unsupported content[].type' if it sees complex objects.
+        """
+        if isinstance(prompt, str):
+            return self.messages_from([("user", prompt)])
+
+        safe_messages = []
+        for msg in prompt:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+
+            # Flatten array structures (e.g., OpenAI multimodal content blocks)
+            if isinstance(content, list):
+                texts = []
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        texts.append(item.get("text", ""))
+                    elif isinstance(item, str):
+                        texts.append(item)
+                content = "\n".join(texts)
+
+            safe_messages.append({"role": role, "content": str(content)})
+
+        return safe_messages

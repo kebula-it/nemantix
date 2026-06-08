@@ -27,7 +27,7 @@ or in a `.env` file. Each vendor has its own API_KEY.
 * **Antrophic** (`vendor='antrophic'`)
 * **OpenRouter** (`vendor='open_router'`): the proxy uses OpenAI-compatible APIs.
 * **Local LLM** (`vendor='local'`): use for self-hosted LLM on local machine, 
-it uses `llama.cpp` backend for CPU inference, and `vllm` backend for GPU inference.
+it uses `llama.cpp` backend for both CPU and GPU inference.
 ```python
 class LocalLLMProxy(AbstractLLMProxy):
 

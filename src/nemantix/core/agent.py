@@ -50,15 +50,15 @@ class Agent:
         self.expertise = expertise
         self.expertise.set_external_vars_names(nmx_runtime.ExternalVariables.get_names(external_vars))
 
-        if proxy_config is None or not isinstance(proxy_config, LLMProxyConfig):
-            logger.info('Using default LLMProxyConfig.')
-            self.llm_config = LLMProxyConfig()
-        else:
-            self.llm_config = proxy_config
+        # if proxy_config is None or not isinstance(proxy_config, LLMProxyConfig):
+        #     logger.info('Using default LLMProxyConfig.')
+        #     self.llm_config = LLMProxyConfig()
+        # else:
+        #     self.llm_config = proxy_config
     
         if llm_proxy is None:
-            self.llm = self.llm_config.get(proxy='default')
-            logger.info('Using default LLM proxy.')
+            self.llm = self.expertise.coder.llm_proxy
+            logger.info("Using Expertise's LLM proxy.")
         else:
             self.llm = llm_proxy
 
@@ -97,7 +97,7 @@ class Agent:
         self.executor = Executor(
             expertise=expertise,
             llm=self.llm,
-            proxy_config=self.llm_config,
+            proxy_config=None,
             embedder=self.embedder,
             knowledge_base=self.knowledge_base,
             external_vars=external_vars,

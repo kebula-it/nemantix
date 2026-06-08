@@ -72,9 +72,6 @@ knowledge = [
 observer = [
     "psutil~=7.1.3"
 ]
-coder_extra = [
-    "ollama~=0.6.1"
-]
 llm_extra = [
     "outlines~=1.2.13",
     "llama-cpp-python~=0.3.23",

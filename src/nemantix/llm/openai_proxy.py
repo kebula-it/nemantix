@@ -31,51 +31,49 @@ ToolSpec = Dict[
 ]  # expected to be {"type":"function","function":{"name":..., "parameters": {...}}}
 
 
-class OpenAILLMProxy(AbstractLLMProxy):
-    """
-    LLM proxy for OpenAI models using the official SDK (no LangChain).
-    Keeps the same public interface as AbstractLLMProxy.
-    """
+
+class OpenAICompatibleProxy(AbstractLLMProxy):
+    """Base class for OpenAI-compatible API LLM proxies"""
 
     def __init__(
-            self,
-            model_name: str,
-            temperature: Optional[float] = None,
-            max_output_tokens: Optional[int] = None,
-            base_url: Optional[str] = None,
-            grammar_path: Optional[str] = None,
-            reasoning_effort="medium",
-            **kwargs: Any,
+        self,
+        model_name: str,
+        api_key_name: str,  # Injected by the subclass
+        base_url: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_output_tokens: Optional[int] = None,
+        grammar_path: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
+        client_kwargs: Optional[Dict[str, Any]] = None,  # For custom headers/settings
+        **kwargs: Any,
     ):
         self.model_name = model_name
         self._bound_tools: List[ToolSpec] = []
-        # self._tools: dict[str, dict] = {}
-        self._toolset_class: Type["Toolset"] = None
+        self._toolset_class: Type["Toolset"] | None = None
         self._reasoning_effort = reasoning_effort
 
-        api_key = self._get_api_key("openai_api_key", **kwargs)
+        api_key = self._get_api_key(api_key_name, required=False, **kwargs)
 
-        client_kwargs: Dict[str, Any] = {"api_key": api_key}
-        if base_url is not None:
-            client_kwargs["base_url"] = base_url
-        # organization etc. can be passed via kwargs if needed
-        for k in ("organization", "project"):
-            if k in kwargs and kwargs[k] is not None:
-                client_kwargs[k] = kwargs[k]
+        final_client_kwargs: Dict[str, Any] = {"api_key": api_key or "no-key-required"}
+        if base_url:
+            final_client_kwargs["base_url"] = base_url
+        if client_kwargs:
+            final_client_kwargs.update(client_kwargs)
 
         try:
-            self._client = OpenAI(**client_kwargs)
+            self._client = OpenAI(**final_client_kwargs)
         except Exception as e:
-            raise LLMProxyException(f"Failed to initialize OpenAI client: {e}") from e
+            raise LLMProxyException(
+                f"Failed to initialize compatible client: {e}"
+            ) from e
 
-        # default request options
         self._temperature = temperature
         self._max_output_tokens = max_output_tokens
 
+        self._grammar = None
         if grammar_path is not None:
             with open(grammar_path, "r") as f:
-                grammar = f.read()
-            self._grammar = grammar
+                self._grammar = f.read()
 
     # ----------------------------- helpers -----------------------------
     @staticmethod
@@ -126,7 +124,7 @@ class OpenAILLMProxy(AbstractLLMProxy):
     # ----------------------------- interface -----------------------------
 
     def get_name(self) -> str:
-        return f'OpenAI {self.model_name}'
+        raise NotImplementedError
 
     def invoke(self, prompt: str | list, tool_choice='auto', **kwargs: Any) -> LLMResponse:
         try:
@@ -351,7 +349,7 @@ class OpenAILLMProxy(AbstractLLMProxy):
         return True
 
     def bind_tools(self, toolset_class: Type["Toolset"],
-                   tool_names: List[str] = None) -> "OpenAILLMProxy":
+                   tool_names: List[str] = None) -> "OpenAICompatibleProxy":
         try:
             bound_tools = []
 
@@ -398,7 +396,7 @@ class OpenAILLMProxy(AbstractLLMProxy):
         except Exception as e:
             raise LLMProxyException(f"Failed to bind tools to OpenAI LLM: {e}") from e
 
-    def unbind_tools(self) -> "OpenAILLMProxy":
+    def unbind_tools(self) -> "OpenAICompatibleProxy":
         self._bound_tools = []
         return self
 
@@ -416,7 +414,6 @@ class OpenAILLMProxy(AbstractLLMProxy):
                 prompt = value[1]
                 role = value[0]
 
-            # message = {"role": role, "content": [{"type": "input_text", "text": prompt}]}
             message = {"role": role, "content": prompt}
             messages.append(message)
 
@@ -455,8 +452,28 @@ class OpenAILLMProxy(AbstractLLMProxy):
             messages.append(dict(role='tool', tool_call_id=tool_call.id,
                                  name=fn_name, content=tool_result_str))
 
-        # 5. Second LLM call: Send the tool results back to get the final answer
+        # Second LLM call: Send the tool results back to get the final answer
         request["messages"] = messages
         resp_final = self._client.chat.completions.create(**request)
         msg = resp_final.choices[0].message
         return msg
+
+
+class OpenAILLMProxy(OpenAICompatibleProxy):
+    """
+    LLM proxy for OpenAI models using the official SDK (no LangChain).
+    Keeps the same public interface as AbstractLLMProxy.
+    """
+
+    def __init__(self, model_name: str, **kwargs):
+        # Extract OpenAI-specific kwargs
+        client_kwargs = {}
+        for k in ("organization", "project"):
+            if k in kwargs and kwargs[k] is not None:
+                client_kwargs[k] = kwargs.pop(k)
+
+        super().__init__(model_name=model_name, api_key_name='openai_api_key',
+                         client_kwargs=client_kwargs, **kwargs)
+
+    def get_name(self) -> str:
+        return f'OpenAI {self.model_name}'

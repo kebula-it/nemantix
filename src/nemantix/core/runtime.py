@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-import re
 import math
+import re
+from collections import OrderedDict
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
 import numpy as np
 
-from typing import TYPE_CHECKING
-
 from nemantix.common.logger import get_package_logger
-from nemantix.llm import AbstractLLMProxy, LLMResponse
 from nemantix.core import node as nmx_nodes
+from nemantix.llm import AbstractLLMProxy, LLMResponse
 
 if TYPE_CHECKING:
     from nemantix.knowledge_base import NemantixKnowledgeBase
 
-from collections import OrderedDict
-from typing import Optional, Dict, Any
 
 logger = get_package_logger(__name__)
 
@@ -114,6 +113,19 @@ class Struct(OrderedDict):
 
     def can_be_seen_as_list(self) -> bool:
         return len(self.key_to_idx) == 0
+
+    def contains_opaques(self) -> bool:
+        args, kwargs = self.to_args_and_kwargs()
+        values = [a for a in args] + [v for v in kwargs.values()]
+
+        for v in values:
+            if isinstance(v, Opaque):
+                return True
+
+            if isinstance(v, Struct) and v.contains_opaques():
+                return True
+
+        return False
 
     @classmethod
     def unbox_in(cls, value: list | dict | Any) -> Any:
@@ -278,7 +290,17 @@ class ExternalVariables(Struct):
     def __init__(self, **kwargs):
         super().__init__()
 
+        secrets = kwargs.pop("secrets", {})
+        if not isinstance(secrets, dict):
+            secrets = dict(secrets=secrets)
+
         for k, v in kwargs.items():
+            super().set(value=v, key=k)
+
+        for k, v in secrets.items():
+            if k in self:
+                logger.warning(f'Key "{k}" already exists in external variables. It will be overwritten!')
+
             super().set(value=Secret.box(v, k), key=k)
 
     def set(self, value, key: Optional[str | int] = None):
@@ -298,6 +320,24 @@ class ExternalVariables(Struct):
 
     def can_be_seen_as_list(self) -> bool:
         return False
+
+    @staticmethod
+    def get_names(variables: dict) -> list[str]:
+        secrets = variables.get('secrets', dict())
+        names = []
+
+        if isinstance(secrets, dict):
+            names.extend(secrets.keys())
+        else:
+            names.append('secrets')
+
+        for k in variables.keys():
+            if k == 'secrets':
+                continue
+
+            names.append(k)
+
+        return names
 
     def __repr__(self):
         return f'ExternalVariables(num_vars={len(self)})'
@@ -605,7 +645,6 @@ class Frame:
         return f'Frame({", ".join(strings)})'
 
 
-# TODO: make read-only (cannot modify and add new fields)
 class DocRef(Struct):
     """Reference to knowledge base's document"""
 
@@ -985,35 +1024,43 @@ class Builtin:
         return docs
 
     @staticmethod
-    def expand(knowledge_base: NemantixKnowledgeBase, node_id) -> list[DocRef]:
-        results = knowledge_base.expand(node_id=node_id)
+    def expand(knowledge_base: NemantixKnowledgeBase, node_id: 'str | list[str]') -> list[DocRef]:
+        if not isinstance(node_id, list):
+            node_id = [node_id]
+
         docs = []
+        for id_ in set(node_id):
+            results = knowledge_base.expand(node_id=id_)
 
-        if isinstance(results, dict):
-            results = [results]
+            if isinstance(results, dict):
+                results = [results]
 
-        for result in results:
-            docs.append(DocRef(node_id=result['node_id'], score=0.0,
-                               content=result['content'], breadcrumbs=''))
+            for result in results:
+                docs.append(DocRef(node_id=result['node_id'], score=0.0,
+                                   content=result['content'], breadcrumbs=''))
         return docs
 
     @staticmethod
-    def extend(knowledge_base: NemantixKnowledgeBase, node_id) -> list[DocRef]:
-        results = knowledge_base.extend(node_id=node_id)
+    def extend(knowledge_base: NemantixKnowledgeBase, node_id: 'str | list[str]') -> list[DocRef]:
+        if not isinstance(node_id, list):
+            node_id = [node_id]
+
         docs = []
+        for id_ in set(node_id):
+            results = knowledge_base.extend(node_id=id_)
 
-        for result in [results.get('previous_sibling', None),
-                       results.get('next_sibling', None)]:
-            if result is None:
-                continue
+            for result in [results.get('previous_sibling', None),
+                           results.get('next_sibling', None)]:
+                if result is None:
+                    continue
 
-            assert isinstance(result, dict)
-            docs.append(DocRef(node_id=result['node_id'], score=0.0,
-                               content=result['content'], breadcrumbs=''))
+                assert isinstance(result, dict)
+                docs.append(DocRef(node_id=result['node_id'], score=0.0,
+                                   content=result['content'], breadcrumbs=''))
         return docs
 
     @staticmethod
-    def generalize(knowledge_base: NemantixKnowledgeBase, node_id) -> DocRef:
+    def generalize(knowledge_base: NemantixKnowledgeBase, node_id: 'str') -> DocRef:
         result = knowledge_base.generalize(node_id=node_id)
         return DocRef(node_id=result['node_id'], score=0.0,
                       content=result['content'], breadcrumbs='')
@@ -1045,7 +1092,7 @@ def get_globals() -> dict[str, Any]:
 
 # TODO: could wrap __import__ to improve security? or import commonly used libraries names (pd, np)?
 def _allowed_builtins() -> dict:
-    from typing import Optional, Set, List, Union, Dict, Any, Callable, Tuple
+    from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
     return {
         "Exception": Exception, "TypeError": TypeError, "False": False, "min": min, "max": max,

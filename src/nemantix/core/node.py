@@ -118,14 +118,36 @@ class BlockStatement(Statement):
         try:
             qualifier = self.get_annotation_value("completion")
 
+            # Unwrap SingleValue if present
+            if hasattr(qualifier, "value"):
+                qualifier = qualifier.value
+
+            # Convert to list if it was parsed as a raw string
+            if isinstance(qualifier, str):
+                if "->" in qualifier:
+                    qualifier = qualifier.split("->")
+                else:
+                    qualifier = [qualifier]
+            
             if isinstance(qualifier, list | tuple):
+                # unwrap SingleValues inside lists
+                def _get_str(item):
+                    return (
+                        str(item.value).strip()
+                        if hasattr(item, "value")
+                        else str(item).strip()
+                    )
+
                 if len(qualifier) == 1:
-                    qualifier = [plan_qualifier_map[str(qualifier[0])],
-                                 plan_qualifier_map[str(qualifier[0])]]
+                    val = _get_str(qualifier[0])
+                    qualifier = [plan_qualifier_map[val], plan_qualifier_map[val]]
 
                 elif len(qualifier) == 2:
-                    qualifier = [plan_qualifier_map[str(qualifier[0])],
-                                 plan_qualifier_map[str(qualifier[1])]]
+                    qualifier = [plan_qualifier_map[_get_str(qualifier[0])],
+                                 plan_qualifier_map[_get_str(qualifier[1])]]
+            else:
+                raise NemantixException(f'Received {type(qualifier)} as completion qualifier!')
+
             return qualifier
 
         except NemantixException:
@@ -142,8 +164,9 @@ class BlockStatement(Statement):
         for name in ['intent.goal', 'goal']:
             try:
                 intent = self.get_annotation_value(name)
-            except:
+            except NemantixException:
                 pass
+
             if intent:
                 return intent
 
@@ -627,25 +650,41 @@ class DoStatement(LeafStatement):
 
     def to_nxs(self, **kwargs):
         code = ['do']
+        lines = self.meta['file_meta'].line
+        is_multiline = lines[1] - lines[0] > 0
 
         if self.callable_type is not None:
             code.append(str(self.callable_type.value).lower())
 
         code.append(str(self.name))
 
+        if is_multiline:
+            code = [' '.join(code) + ':']
+            char = '\n'
+            space = '  '
+        else:
+            char = ' '
+            space = ''
+
         if self.using is not None:
-            code.append(f'using [{self.using.to_nxs(**kwargs)}]')
+            code.append(f'{space}using [{self.using.to_nxs(**kwargs)}]')
 
         if self.producing is not None:
-            code.append(f'producing [{self.producing.to_nxs(**kwargs)}]')
+            code.append(f'{space}producing [{self.producing.to_nxs(**kwargs)}]')
 
         if isinstance(self.producing_schema, str):
-            code.append(f'as {{{self.producing_schema}}}')
+            code.append(f'{space}as {{{self.producing_schema}}}')
 
-        if isinstance(self.prompt, MicroPrompt):
-            code.append(f'>> {self.prompt.prompt} <<')
+        if is_multiline:
+            if isinstance(self.prompt, MicroPrompt):
+                code.append(f"__do >> {self.prompt.prompt} <<")
+            else:
+                code.append("__do")
+        else:
+            if isinstance(self.prompt, MicroPrompt):
+                code.append(f">> {self.prompt.prompt} <<")
 
-        return ' '.join(code)
+        return char.join(code)
 
 
 class Return(LeafStatement):
@@ -854,11 +893,6 @@ class ImportStatement(LeafStatement):
 
     def __str__(self):
         return f"ImportStatement(name={self.name}, elements={self.elements})"
-
-
-class ImportDeliberateStatement(ImportStatement):
-    def __init__(self, name: str, elements: list[str], meta: dict[str, Meta | None]):
-        super().__init__(name, elements, meta)
 
 
 class ImportToolsetStatement(ImportStatement):

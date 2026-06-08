@@ -1,26 +1,33 @@
 from __future__ import annotations
 
-import re
 import json
 import logging
-
+import re
+import textwrap
 from enum import Enum, auto
-from typing import Any, Type, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional, Type
 
 if TYPE_CHECKING:
     from nemantix.knowledge_base.core.nemantix_knowledge_base import KnowledgeBaseConfig
 
-from pydantic import BaseModel, ValidationError
 from dataclasses import dataclass
 
-from nemantix.core.expertise import Expertise
+from pydantic import BaseModel, ValidationError
+
 from nemantix.common.logger import get_package_logger, update_logger_levels
+from nemantix.core import runtime as nmx_runtime
 from nemantix.core.exceptions import NemantixException, NemantixRuntimeException
 from nemantix.core.executor import Executor
-from nemantix.core import runtime as nmx_runtime
-from nemantix.core.node import ActionBlock, Deliberate, ActionInput, NodeMeta
-from nemantix.llm import AbstractLLMProxy
-from nemantix.hub import EventType, Event, EventHub
+from nemantix.core.expertise import Expertise
+from nemantix.core.node import (
+    ActionBlock,
+    ActionInput,
+    ActionOutput,
+    Deliberate,
+    NodeMeta,
+)
+from nemantix.hub import Event, EventHub, EventType
+from nemantix.llm import AbstractLLMProxy, LLMProxyConfig, LLMUsage
 
 logger = get_package_logger(__name__)
 
@@ -29,19 +36,26 @@ class Agent:
     def __init__(self, expertise: Expertise, llm_proxy: AbstractLLMProxy | None = None,
                  external_vars: dict[str, Any] | None = None, use_embedder=False,
                  use_knowledge_base=False, build_on_start=True,
-                 kb_config: KnowledgeBaseConfig | None = None, log_level=None, **__):
+                 kb_config: KnowledgeBaseConfig | None = None, log_level=None, 
+                 proxy_config: LLMProxyConfig | None = None, **__):
         if log_level is not None:
             logger.info(f"Updating logger level to {logging.getLevelName(log_level)}")
             update_logger_levels(level=log_level)
-
+        
         if not isinstance(external_vars, dict):
             logger.warning(f'Provided external_vars is not a dict but a "{type(external_vars)}",'
                            f'defaulting to an empty dict.')
-            external_vars = dict()
+            external_vars = dict(secrets={})
 
         self.expertise = expertise
-        self.expertise.set_external_vars_names([k for k in external_vars.keys()])
+        self.expertise.set_external_vars_names(nmx_runtime.ExternalVariables.get_names(external_vars))
 
+        # if proxy_config is None or not isinstance(proxy_config, LLMProxyConfig):
+        #     logger.info('Using default LLMProxyConfig.')
+        #     self.llm_config = LLMProxyConfig()
+        # else:
+        #     self.llm_config = proxy_config
+    
         if llm_proxy is None:
             self.llm = self.expertise.coder.llm_proxy
             logger.info("Using Expertise's LLM proxy.")
@@ -53,7 +67,9 @@ class Agent:
         self.state = AgentState()
 
         if use_embedder:
-            from nemantix.knowledge_base.models.embedding import SentenceTransformerWrapper
+            from nemantix.knowledge_base.models.embedding import (
+                SentenceTransformerWrapper,
+            )
             self.embedder = SentenceTransformerWrapper()
 
         if use_knowledge_base:
@@ -62,7 +78,9 @@ class Agent:
                     "The 'kb_config' (KnowledgeBaseConfig) is mandatory when 'use_knowledge_base' is True."
                 )
 
-            from nemantix.knowledge_base.core.nemantix_knowledge_base import NemantixKnowledgeBase
+            from nemantix.knowledge_base.core.nemantix_knowledge_base import (
+                NemantixKnowledgeBase,
+            )
 
             self.knowledge_base = NemantixKnowledgeBase(config=kb_config)
             self.expertise.set_knowledge_base(knowledge_base=self.knowledge_base)
@@ -79,6 +97,7 @@ class Agent:
         self.executor = Executor(
             expertise=expertise,
             llm=self.llm,
+            proxy_config=None,
             embedder=self.embedder,
             knowledge_base=self.knowledge_base,
             external_vars=external_vars,
@@ -107,7 +126,7 @@ class Agent:
             return
 
         event = Event(type=EventType.MONITOR_STOP, lines=(0, 0), scope='agent',
-                          script=None, statement='')
+                      script=None, statement='')
         hub.emit(event)
 
     def run(self, user_request: str, schema: Type[BaseModel] | None = None,
@@ -262,11 +281,25 @@ class Agent:
             f"RAW DATA:\n{outputs}")
 
         response = self.llm.invoke_structured(prompt=prompt, schema=schema)
-        self.executor._emit_llm(usage=response.usage)
+        self._emit_llm(usage=response.usage)
         return response.result
+    
+    def _emit_llm(self, usage: LLMUsage, scope='agent'):
+        hub = EventHub.get_active_hub(event_type=EventType.LLM)
+        if not hub:
+            return
+
+        event = Event(
+            type=EventType.LLM,
+            lines=(0, 0),
+            scope=scope,
+            script=None,
+            statement="",
+            payload=dict(usage=usage, name=self.llm.get_name(), internal_usage=True),
+        )
+        hub.emit(event)
 
 
-# TODO: handle Opaque passing
 class ReActAgent(Agent):
     """Agents implementing the Reason-Act-Observe run paradigm"""
     from nemantix.core.tools import Toolset
@@ -274,22 +307,34 @@ class ReActAgent(Agent):
     class NemantixToolset(Toolset):
         @classmethod
         def register_action(cls, action: ActionBlock, agent: Agent):
+            from pathlib import Path
+
             from nemantix.core.script import Script
             from nemantix.core.source_manager import LocalSourceManager
-            from pathlib import Path
 
             script_loc = agent.expertise.action_to_script_loc[action.name]
             script = agent.expertise.script_by_loc[script_loc]
 
             script_content = script.read(read_as_lines_list=True)
             assert isinstance(script_content, list)
+
+            imports_tools_frames = []
+            nodes = list(script.toolset_imports.values()) + script.toolsets_decl + script.frames
+
+            for node in nodes:
+                content = agent.expertise.coder._read_node_nxs(script_content, node,
+                                                               read_as_list=True)
+                imports_tools_frames.extend(content)
+
+            imports_tools_frames = '\n'.join(imports_tools_frames)
+
             action_content = agent.expertise.coder._read_node_nxs(script_content, action,
                                                                   read_as_list=True)
-
             action_body = '\n'.join(action_content[2:-1])
             plan_qualifier = action_content[0]
             micro_prompt = ' '.join(action.prompt.prompt.split())
-            deliberate_str = ReActAgent._WRAP_ACTION_TEMPLATE.format(action.name,
+            deliberate_str = ReActAgent._WRAP_ACTION_TEMPLATE.format(imports_tools_frames,
+                                                                     action.name,
                                                                      micro_prompt,
                                                                      plan_qualifier,
                                                                      action_body)
@@ -303,9 +348,11 @@ class ReActAgent(Agent):
                 deliberate = temp_script.deliberates[action.name]
                 action_args = cls.extract_inputs(agent, **kwargs)
 
-                return agent.executor.interpreter.interpret_coded_request(temp_script,
-                                                                          deliberate,
-                                                                          action_args)
+                result = agent.executor.interpreter.interpret_coded_request(temp_script,
+                                                                            deliberate,
+                                                                            action_args)
+
+                return cls._maybe_handle_opaque(agent, result, outputs=action.output)
 
             inputs = [f'- {arg.name}: required={arg.required}, default={arg.default}'
                       for arg in action.input]
@@ -332,18 +379,20 @@ class ReActAgent(Agent):
             return str(temp_loc), temp_script, action.name
 
         @classmethod
-        def register_deliberate(cls, deliberate: Deliberate, agent: Agent):
+        def register_deliberate(cls, deliberate: Deliberate, agent: 'ReActAgent'):
             def call_deliberate(*_, **kwargs):
                 action_args = cls.extract_inputs(agent, **kwargs)
                 script = agent.expertise.get_script_from_deliberate(deliberate.name)
-                return agent.executor.interpreter.interpret_coded_request(script, deliberate,
-                                                                          user_inputs=action_args)
+                result = agent.executor.interpreter.interpret_coded_request(script, deliberate,
+                                                                            user_inputs=action_args)
+                return cls._maybe_handle_opaque(agent, result,
+                                                outputs=deliberate.get_plan().output)
 
             plan = deliberate.get_plan()
             inputs = [f'- {arg.name}: required={arg.required}, default={arg.default}'
                       for arg in plan.input]
             outputs = [f'- {arg.name} ({arg.prompt.prompt})'
-                      for arg in plan.output]
+                       for arg in plan.output]
 
             node_meta = deliberate.meta['node_meta']
             intent = ''
@@ -363,19 +412,19 @@ class ReActAgent(Agent):
             parameters = {arg.name: cls.param_from_input(arg) for arg in plan.input}
 
             cls.REGISTRY[f'{cls.__name__}.{deliberate.name}'] = dict(
-                    cls=cls,
-                    cls_name=cls.__name__,
-                    fn_name=f'call_{deliberate.name}',
-                    fn=call_deliberate,
-                    docstring=docstring.strip(),
-                    parameters=parameters)
+                cls=cls,
+                cls_name=cls.__name__,
+                fn_name=f'call_{deliberate.name}',
+                fn=call_deliberate,
+                docstring=docstring.strip(),
+                parameters=parameters)
 
             return deliberate.name
-
+        
         @staticmethod
         def param_from_input(input_arg: ActionInput):
-            from inspect import Parameter
             from collections import namedtuple
+            from inspect import Parameter
             from typing import Any
 
             param = namedtuple('Param', ['annotation', 'default'])
@@ -394,7 +443,18 @@ class ReActAgent(Agent):
             for k, v in kwargs.items():
                 v_type = 'str'
 
-                if isinstance(v, bool):
+                # intercept reference to opaque object
+                if isinstance(v, str) and v.startswith('__opaque_') and v.endswith('__'):
+                    state_struct = agent.state.get()
+                    var_name = '_'.join(v.split('_')[3:-2])
+
+                    actual_val = state_struct.get(v)
+                    if actual_val is not None:
+                        v_type = "opaque"
+
+                    v = var_name
+
+                elif isinstance(v, bool):
                     v_type = 'bool'
 
                 elif isinstance(v, int):
@@ -413,6 +473,28 @@ class ReActAgent(Agent):
 
             action_args = agent.executor._inputs_from_request(required_inputs=args)
             return action_args
+
+        @classmethod
+        def _maybe_handle_opaque(cls, agent: 'ReActAgent', result: Any, outputs: list[ActionOutput]):
+            if isinstance(result, nmx_runtime.Opaque):
+                cls._store_opaque(agent, opaque=result)
+
+            elif isinstance(result, nmx_runtime.Struct) and result.contains_opaques():
+                # wrap struct into an Opaque
+                result = nmx_runtime.Opaque(obj=result)
+                cls._store_opaque(agent, opaque=result)
+
+            return result
+
+        @staticmethod
+        def _store_opaque(agent: 'ReActAgent', opaque: nmx_runtime.Opaque):
+            state_key = f"__opaque_{len(agent.opaque_map)}__"
+            agent.opaque_map[opaque.identifier] = state_key
+
+            logger.info(
+                f'Setting Opaque object "{opaque}" in agent state as field "{state_key}"'
+            )
+            agent.update_state(**{state_key: opaque})
 
     # TODO: include feedback on error?
     class ReActSchema(BaseModel):
@@ -437,6 +519,7 @@ class ReActAgent(Agent):
         ALL = auto()
 
     _WRAP_ACTION_TEMPLATE = """
+{}
 deliberate {} when >> {} <<:
     {}
     plan:
@@ -449,7 +532,7 @@ __deliberate
 
     def __init__(self, expertise: Expertise, llm_proxy: AbstractLLMProxy | None = None,
                  external_vars: dict | None = None, use_embedder=False,
-                 run_mode = RunModeEnum.DELIBERATE, log_level=None,
+                 run_mode=RunModeEnum.DELIBERATE, log_level=None,
                  kb_config: KnowledgeBaseConfig | None = None,
                  use_knowledge_base=False, build_on_start=True, **__):
         super().__init__(expertise, llm_proxy, external_vars, use_embedder,
@@ -463,6 +546,8 @@ __deliberate
         should_register_deliberates = run_mode in [self.RunModeEnum.ALL, self.RunModeEnum.DELIBERATE,
                                                    self.RunModeEnum.DELIBERATE_ACTION,
                                                    self.RunModeEnum.DELIBERATE_TOOL]
+        should_register_tools = run_mode in [self.RunModeEnum.TOOL, self.RunModeEnum.ACTION_TOOL,
+                                             self.RunModeEnum.DELIBERATE_TOOL, self.RunModeEnum.ALL]
         update_expertise = []
 
         for script in self.expertise.script_by_loc.values():
@@ -476,20 +561,29 @@ __deliberate
 
             if should_register_deliberates:
                 for deliberate in script.deliberates.values():
-                    if deliberate.name == '__Dummy__':
-                        continue
-
                     self.NemantixToolset.register_deliberate(deliberate, self)
                     registered_names.append(deliberate.name)
+
+        if should_register_tools:
+            from nemantix.core import Toolset
+
+            logger.warning('Tool registering not yet implemented...')
+            for tool_name, tool in Toolset.REGISTRY.items():
+                pass
 
         for loc, script, name in update_expertise:
             self.expertise.script_by_loc[loc] = script
             self.expertise.deliberate_to_script_loc[name] = loc
 
         self.available_tools = registered_names
+        self.history = dict(thoughts=[], tools=[], arguments=[], outputs=[],
+                            feedbacks=[], errors=[])
+        self.opaque_map = dict()
 
+    # TODO: detect loops
+    # TODO: predict a plan, then execute and revise it at each step?
     def run(self, user_request: str, schema: Type[BaseModel] | None = None,
-            reformulate_answer=True, **kwargs) -> RunSchema:
+            reformulate_answer=True, human_approval=False, **kwargs) -> RunSchema:
         system_prompt = ('You are an helpful agent assistant. You have access to tools '
                          '(lookup [[tools]]). '
                          'You must assess the goal (lookup [[user_request]]) and '
@@ -520,38 +614,52 @@ __deliberate
         [[user_request]]
         "{}"
         and the agent context
-        
+
         [[context]]
         "{}"
         determine which tool you should call (see [[tools]]), with which arguments 
         (as JSON), and why.
-        
+
         [[tools]]
         "{}"
+        
+        MEMORY RULE:
+        If a previous tool saved an object to memory and returned a reference ID (e.g., "__opaque_1234__"), 
+        and you need to use that object in your next step, pass that exact reference ID string as the 
+        argument for the new tool.
         
         NOTE: If the last output answers the [[user_request]] then, no tool call is 
         necessary and the task is solved.
         [[last_output]]
         "{}"
+        
+        [[errors]]
+        "{}"
+        If an error occurred during the last tool call, revise it: either select another tool,
+        or adjust the input arguments accordingly to avoid the execution error again.
         """
+
         last_output = ''
+        last_error = ''
 
         # TODO: add internal prompt to initial request?
         # TODO: catch exception and eventually ask user?
         while True:
             prompt = reason_template.format(user_request, context_to_str(),
-                                            tools_str, last_output)
+                                            tools_str, last_output, last_error)
 
             messages = self.llm.messages_from([('assistant', prompt)])
             result = self.llm.invoke_structured(messages, schema=self.ReActSchema)
-            self.executor._emit_llm(usage=result.usage)
+            self._emit_llm(usage=result.usage)
 
             response = result.result
             assert isinstance(response, self.ReActSchema)
 
             context.append(('assistant', response.thought))
-            logger.info(f'though: "{response.thought}"')
+            logger.info(f'though: "{"\n".join(textwrap.wrap(response.thought, width=100))}"')
+            self.history['thoughts'].append(response.thought)
 
+            # TODO: should return the opaque's wrapped object if it is the last result?
             if response.task_completed:
                 logger.info('Task complete')
 
@@ -561,39 +669,139 @@ __deliberate
                               f'Since the task is now complete, do not suggest next steps, and'
                               f'do not add any commentary or opinion."')
                     response = self.llm.invoke(prompt)
-                    self.executor._emit_llm(usage=response.usage)
+                    self._emit_llm(usage=response.usage)
 
                     return self.RunSchema(last_output, response.text)
                 else:
                     return self.RunSchema(last_output, last_output)
 
             tool_name = response.tool_name
-            tool = self.NemantixToolset.get_tool(f'NemantixToolset.{tool_name}')
+            tool_alias = f'NemantixToolset.{tool_name}'
 
-            arguments = response.tool_arguments
-            logger.info(f'Calling tool "{tool_name}" with arguments: {arguments}')
+            if tool_alias in self.NemantixToolset.REGISTRY:
+                tool = self.NemantixToolset.get_tool(tool_alias)
 
-            tool_out = tool(**arguments)
-            last_output = self.convert_to_str(tool_out).replace('\n', ' ')
+                arguments = response.tool_arguments
+                logger.info(f'Calling tool "{tool_name}" with arguments: {arguments}')
 
-            # TODO: add tool args?
-            context.append(('tool', f'{tool_name}: {last_output}'))
+                try:
+                    tool_out = tool(**arguments)
+                    last_error = ''
 
-    @staticmethod
-    def convert_to_str(content) -> str:
+                    last_output = self.convert_to_str(tool_out).replace('\n', ' ')
+
+                    # TODO: add tool args?
+                    context.append(('tool', f'{tool_name}: {last_output}'))
+                    self.history['arguments'].append(arguments)
+
+                    if human_approval:
+                        feedback = self._ask_user(last_output)
+                        context.append(('user', feedback))
+                        self.history['feedbacks'].append(feedback)
+
+                except Exception as e:
+                    # TODO: could also put the error in 'tool' message
+                    last_error = f'Error occurred in tool "{tool_name}": "{e}"!'
+            else:
+                context.append(('tool', f'Tool "{tool_name}" is not a valid toolset name: either '
+                                        'make a valid tool call or mark the task as completed if '
+                                        'no more tool calls are necessary.'))
+
+            self.history['outputs'].append(last_output)
+            self.history['errors'].append(last_error)
+            self.history['tools'].append(tool_name)
+
+    def convert_to_str(self, content) -> str:
+        if isinstance(content, nmx_runtime.DocRef):
+            return self._doc_to_str(doc=content)
+
+        if isinstance(content, nmx_runtime.Opaque):
+            try:
+                preview = self._opaque_preview(opaque=content)
+            except Exception:
+                preview = "<Complex Object>"
+
+            key = self.opaque_map[content.identifier]
+            return (f"[Saved to agent internal state 'STATE' as '{key}'. Preview: {preview}\n"
+                    f"IMPORTANT: To use this object in your next tool call, you MUST pass the "
+                    f"EXACT string '{key}' as the input argument.]")
+
         if isinstance(content, nmx_runtime.Struct):
             args, kwargs = content.to_args_and_kwargs()
             string = []
 
             for i, arg in enumerate(args):
+                if isinstance(arg, nmx_runtime.DocRef):
+                    arg = self._doc_to_str(doc=arg)
+
+                elif isinstance(arg, nmx_runtime.Struct):
+                    arg = self.convert_to_str(content=arg)
+
                 string.append(f'{i}: {arg}')
 
             for k, v in kwargs.items():
+                if isinstance(v, nmx_runtime.DocRef):
+                    v = self._doc_to_str(doc=v)
+
+                elif isinstance(v, nmx_runtime.Struct):
+                    v = self.convert_to_str(content=v)
+
                 string.append(f'{k}: {v}')
 
             return f"{{{', '.join(string)}}}"
 
         return str(content)
+
+    @classmethod
+    def _opaque_preview(cls, opaque: nmx_runtime.Opaque):
+        """Helper to generate a lightweight text summary of complex objects."""
+        obj = opaque.unbox()
+        type_name = type(obj).__name__
+
+        try:
+            import pandas as pd
+
+            if isinstance(obj, pd.DataFrame):
+                return f"DataFrame(shape={obj.shape}, columns={list(obj.columns)})"
+        except ImportError:
+            pass
+
+        try:
+            import numpy as np
+
+            if isinstance(obj, np.ndarray):
+                return f"np.ndarray({str(obj)})"
+        except ImportError:
+            pass
+
+        # TODO: improve
+        if isinstance(obj, nmx_runtime.Struct):
+            args, kwargs = obj.to_args_and_kwargs()
+            string = []
+
+            for i, arg in enumerate(args):
+                string.append(f"{i}: {cls._opaque_preview(arg)}")
+
+            for k, v in kwargs.items():
+                string.append(f"{k}: {cls._opaque_preview(v)}")
+
+            return f"{{{', '.join(string)}}}"
+        
+        # Fallback for generic objects
+        return f"<{type_name} object>"
+    
+    @staticmethod
+    def _ask_user(output) -> str:
+        lines = textwrap.wrap(output, width=100)
+        user_prompt = (f'[Last step output]\n{"\n".join(lines)}\n\n[Feedback]'
+                       f'\nWrite user feedback: ')
+        feedback = input(user_prompt)
+        return feedback
+
+    @staticmethod
+    def _doc_to_str(doc: nmx_runtime.DocRef) -> str:
+        return (f'{{"node_id": "{doc.node_id}", "content": "{doc.content}",'
+                f'"breadcrumbs": "{doc.breadcrumbs}"}}')
 
 
 class AgentState:

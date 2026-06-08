@@ -4,9 +4,8 @@ import pytest
 
 from nemantix.hub.event_hub import EventHub
 from nemantix.hub.events import Event, EventType
-from nemantix.hub.profiler import CallNode, CodingNode
+from nemantix.hub.profiler import CallNode
 from nemantix.hub.tracer import Tracer, _NavNode
-
 
 # =============================================================================
 # Event helpers (reuse same pattern as test_profiler.py)
@@ -173,7 +172,7 @@ def test_compute_base_time_empty_returns_zero(tracer):
 # =============================================================================
 
 def test_build_nav_tree_execution_section_present(hub, subscribed_tracer):
-    """With completed roots, _build_nav_tree returns a node labelled 'Execution <name>'."""
+    """With completed roots, _build_nav_tree returns a node labeled 'Execution <name>'."""
     hub.emit(make_enter_event("my_action", "action", timestamp=0.0))
     hub.emit(make_exit_event(timestamp=1.0))
 
@@ -267,7 +266,7 @@ def test_call_to_nav_recursive_children(tracer):
 # =============================================================================
 
 def test_on_call_enter_adds_root(hub, subscribed_tracer):
-    """Root-level calls are added to completed_roots (inherited Profiler behaviour)."""
+    """Root-level calls are added to completed_roots (inherited Profiler behavior)."""
     hub.emit(make_enter_event("my_action", "action", timestamp=0.0))
     hub.emit(make_exit_event(timestamp=1.0))
 
@@ -445,7 +444,7 @@ def test_render_breadcrumb_shown(capsys):
 # =============================================================================
 
 def _run_session(tracer: Tracer, nodes, commands: list[str], breadcrumb=None):
-    """Drive _interactive_session by feeding `commands` one at a time via monkeypatched input."""
+    """Drive _interactive_session by feeding `commands` one at a time via monkey patched input."""
     it = iter(commands)
 
     original_input = __builtins__["input"] if isinstance(__builtins__, dict) else __builtins__.input

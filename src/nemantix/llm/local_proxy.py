@@ -1,6 +1,7 @@
-from pydantic import BaseModel
 from pathlib import Path
-from typing import Any, Type, List, Iterator, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Iterator, List, Type, Union
+
+from pydantic import BaseModel
 
 from nemantix.common.logger import get_package_logger
 from nemantix.core.custom_types import PathLike
@@ -13,31 +14,22 @@ logger = get_package_logger(__name__)
 
 
 class LocalLLMProxy(AbstractLLMProxy):
-    """An LLM proxy for local language models"""
+    """An LLM proxy for local language models (llama.cpp backend)"""
 
     def __init__(self, weights_path: PathLike, context_size=16_384,
                  temperature=1.0, top_p=0.95, max_tokens=2048,
-                 device='cpu', dtype='bfloat16', role_start_token='',
-                 role_stop_token='', **__):
+                 role_start_token='', role_stop_token='', **llama_cpp_kwargs):
         import outlines
+        from llama_cpp import Llama
 
         self.role_start_token = role_start_token  # e.g., <start_of_turn>
         self.role_stop_token = role_stop_token  # e.e.g, <end_of_turn>
         self.model_name = Path(weights_path).name
 
-        if device.lower() == 'cpu':
-            from llama_cpp import Llama
-            self._model = Llama(model_path=str(weights_path),
-                                n_ctx=int(context_size), verbose=False)
-            self.llm = outlines.models.LlamaCpp(self._model)
-            self.params = None
-        else:
-            from vllm import LLM, SamplingParams
-            self._model = LLM(model=str(weights_path),
-                              max_model_len=context_size, dtype=dtype)
-            self.llm = outlines.from_vllm_offline(self._model)
-            self.params = SamplingParams(temperature=float(temperature),
-                                         max_tokens=max_tokens)
+        self._model = Llama(model_path=str(weights_path), n_ctx=int(context_size),
+                            verbose=False, **llama_cpp_kwargs)
+        self.llm = outlines.models.LlamaCpp(self._model)
+        self.params = None
 
         self.temperature = float(temperature)
         self.top_p = float(top_p)

@@ -4,6 +4,7 @@ import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -11,16 +12,19 @@ from pydantic import BaseModel
 
 from nemantix.core import exceptions as nmx_ex
 from nemantix.core import node as nmx_nodes
+from nemantix.core import runtime as nmx_runtime
 from nemantix.core.interpreter import Interpreter
 from nemantix.core.node import (
-    VariableTypeEnum,
     BinaryOperationEnum,
-    UnaryOperationEnum,
+    FileMeta,
+    NodeMeta,
     SimilarityEnum,
     SimilarityQualifierEnum,
-    SlotTypesEnum, FileMeta, NodeMeta,
+    SlotTypesEnum,
+    UnaryOperationEnum,
+    VariableTypeEnum,
 )
-from nemantix.core import runtime as nmx_runtime
+from nemantix.core.parser import AsFrame
 
 HERE = Path(__file__).parent
 
@@ -28,6 +32,7 @@ HERE = Path(__file__).parent
 # =============================================================================
 # Minimal Expertise stub (real object, no MagicMock)
 # =============================================================================
+
 
 class DummyExpertise:
     def __init__(self):
@@ -40,7 +45,10 @@ class DummyExpertise:
 # Robust node builders (work across minor signature differences)
 # =============================================================================
 
-def _pick_enum(enum_cls, preferred_names: list[str], exclude_names: set[str] | None = None):
+
+def _pick_enum(
+    enum_cls, preferred_names: list[str], exclude_names: set[str] | None = None
+):
     exclude_names = exclude_names or set()
     for n in preferred_names:
         if hasattr(enum_cls, n):
@@ -86,7 +94,9 @@ def make_node(cls, **attrs):
 def make_value(val, type_enum: VariableTypeEnum | None = None):
     if val is None:
         inferred = getattr(VariableTypeEnum, "NONE", list(VariableTypeEnum)[0])
-        return make_node(nmx_nodes.SingleValue, value=None, inferred_type=inferred, meta=make_meta())
+        return make_node(
+            nmx_nodes.SingleValue, value=None, inferred_type=inferred, meta=make_meta()
+        )
 
     if type_enum is None:
         if isinstance(val, bool):
@@ -100,20 +110,28 @@ def make_value(val, type_enum: VariableTypeEnum | None = None):
         else:
             raise RuntimeError(f"Unsupported literal type: {type(val)}")
 
-    return make_node(nmx_nodes.SingleValue, value=val, inferred_type=type_enum, meta=make_meta())
+    return make_node(
+        nmx_nodes.SingleValue, value=val, inferred_type=type_enum, meta=make_meta()
+    )
 
 
 def make_var(name: str, path=None):
     # Variable(path=[]) is used for nested struct navigation
-    return make_node(nmx_nodes.Variable, name=name, path=path or [], prompt=None, meta=make_meta())
+    return make_node(
+        nmx_nodes.Variable, name=name, path=path or [], prompt=None, meta=make_meta()
+    )
 
 
 def make_binary_op(op, left, right):
     return make_node(
         nmx_nodes.BinaryOperation,
         operation=op,
-        first=make_value(left) if not isinstance(left, (nmx_nodes.Variable, nmx_nodes.SingleValue)) else left,
-        second=make_value(right) if not isinstance(right, (nmx_nodes.Variable, nmx_nodes.SingleValue)) else right,
+        first=make_value(left)
+        if not isinstance(left, (nmx_nodes.Variable, nmx_nodes.SingleValue))
+        else left,
+        second=make_value(right)
+        if not isinstance(right, (nmx_nodes.Variable, nmx_nodes.SingleValue))
+        else right,
         meta=make_meta(),
     )
 
@@ -121,6 +139,7 @@ def make_binary_op(op, left, right):
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 class DummyEmbedder:
     def __init__(self):
@@ -138,7 +157,7 @@ class DummyLLM:
         self.calls = []
 
     def get_name(self) -> str:
-        return 'dummy-llm'
+        return "dummy-llm"
 
     def messages_from(self, prompts_with_roles: list):
         return prompts_with_roles
@@ -157,8 +176,12 @@ class DummyLLM:
         # If it looks like a boolean check (e.g., has an 'is_included' or 'result' field of type bool), return True.
         dummy_data = {}
         for field_name, field_info in schema.model_fields.items():
-            if (field_name == 'holds' or field_info.annotation is bool or
-                    field_name == 'score' or field_info.annotation is float):
+            if (
+                field_name == "holds"
+                or field_info.annotation is bool
+                or field_name == "score"
+                or field_info.annotation is float
+            ):
                 dummy_data = Interpreter.SimilaritySchema(holds=True, score=1.0)
                 break
 
@@ -168,7 +191,9 @@ class DummyLLM:
         else:
             result = dummy_data
 
-        return SimpleNamespace(result=result, usage=SimpleNamespace(input_tokens=0, output_tokens=0))
+        return SimpleNamespace(
+            result=result, usage=SimpleNamespace(input_tokens=0, output_tokens=0)
+        )
 
 
 @pytest.fixture
@@ -183,6 +208,7 @@ def interpreter_instance():
 # Tests
 # =============================================================================
 
+
 def test_initialization(interpreter_instance):
     assert interpreter_instance.context.env is not None
     assert interpreter_instance.context.frames is not None
@@ -194,8 +220,9 @@ def test_initialization(interpreter_instance):
 
 # --- Assignments ---
 
+
 def test_simple_assignment(interpreter_instance):
-    """ x = 10 """
+    """x = 10"""
     assignment = make_node(
         nmx_nodes.Assignment,
         var=make_var("x"),
@@ -241,23 +268,29 @@ def test_assignment_to_special_var_raises(interpreter_instance):
         value=make_value(123),
         meta=make_meta(),
     )
-    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"Cannot assign special variable"):
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r"Cannot assign special variable"
+    ):
         interpreter_instance.interpret_statement(assignment)
 
 
 # --- Binary Operations: Arithmetic ---
 
-@pytest.mark.parametrize("op, left, right, expected", [
-    (BinaryOperationEnum.ADD, 5, 3, 8),
-    (BinaryOperationEnum.SUB, 10, 4, 6),
-    (BinaryOperationEnum.MUL, 6, 7, 42),
-    (BinaryOperationEnum.DIV, 20, 5, 4.0),
-    (BinaryOperationEnum.MOD, 10, 3, 1),
-    (BinaryOperationEnum.POW, 2, 3, 8),
-    (BinaryOperationEnum.ADD, 2.5, 3.5, 6.0),
-    (BinaryOperationEnum.MUL, 3, 1.5, 4.5),
-    (BinaryOperationEnum.ADD, -5, -3, -8),
-])
+
+@pytest.mark.parametrize(
+    "op, left, right, expected",
+    [
+        (BinaryOperationEnum.ADD, 5, 3, 8),
+        (BinaryOperationEnum.SUB, 10, 4, 6),
+        (BinaryOperationEnum.MUL, 6, 7, 42),
+        (BinaryOperationEnum.DIV, 20, 5, 4.0),
+        (BinaryOperationEnum.MOD, 10, 3, 1),
+        (BinaryOperationEnum.POW, 2, 3, 8),
+        (BinaryOperationEnum.ADD, 2.5, 3.5, 6.0),
+        (BinaryOperationEnum.MUL, 3, 1.5, 4.5),
+        (BinaryOperationEnum.ADD, -5, -3, -8),
+    ],
+)
 def test_arithmetic_operations(interpreter_instance, op, left, right, expected):
     expr = make_binary_op(op, left, right)
     assert interpreter_instance.interpret_expression(expr) == expected
@@ -270,12 +303,16 @@ def test_division_by_zero(interpreter_instance):
 
 # --- Binary Operations: Logical ---
 
-@pytest.mark.parametrize("op, left, right, expected", [
-    (BinaryOperationEnum.LOGICAL_AND, True, True, True),
-    (BinaryOperationEnum.LOGICAL_AND, True, False, False),
-    (BinaryOperationEnum.LOGICAL_OR, False, True, True),
-    (BinaryOperationEnum.LOGICAL_XOR, True, True, False),
-])
+
+@pytest.mark.parametrize(
+    "op, left, right, expected",
+    [
+        (BinaryOperationEnum.LOGICAL_AND, True, True, True),
+        (BinaryOperationEnum.LOGICAL_AND, True, False, False),
+        (BinaryOperationEnum.LOGICAL_OR, False, True, True),
+        (BinaryOperationEnum.LOGICAL_XOR, True, True, False),
+    ],
+)
 def test_logical_operations(interpreter_instance, op, left, right, expected):
     expr = make_binary_op(op, left, right)
     assert interpreter_instance.interpret_expression(expr) == expected
@@ -283,23 +320,28 @@ def test_logical_operations(interpreter_instance, op, left, right, expected):
 
 # --- Binary Operations: Comparison ---
 
-@pytest.mark.parametrize("op, left, right, expected", [
-    (BinaryOperationEnum.EQ, 5, 5, True),
-    (BinaryOperationEnum.EQ, 5, 6, False),
-    (BinaryOperationEnum.NE, 5, 6, True),
-    (BinaryOperationEnum.GT, 10, 5, True),
-    (BinaryOperationEnum.LT, 5, 10, True),
-    (BinaryOperationEnum.GTE, 5, 5, True),
-    (BinaryOperationEnum.LTE, 6, 5, False),
-    (BinaryOperationEnum.EQ, "apple", "apple", True),
-    (BinaryOperationEnum.LT, "apple", "banana", True),
-])
+
+@pytest.mark.parametrize(
+    "op, left, right, expected",
+    [
+        (BinaryOperationEnum.EQ, 5, 5, True),
+        (BinaryOperationEnum.EQ, 5, 6, False),
+        (BinaryOperationEnum.NE, 5, 6, True),
+        (BinaryOperationEnum.GT, 10, 5, True),
+        (BinaryOperationEnum.LT, 5, 10, True),
+        (BinaryOperationEnum.GTE, 5, 5, True),
+        (BinaryOperationEnum.LTE, 6, 5, False),
+        (BinaryOperationEnum.EQ, "apple", "apple", True),
+        (BinaryOperationEnum.LT, "apple", "banana", True),
+    ],
+)
 def test_comparison_operations(interpreter_instance, op, left, right, expected):
     expr = make_binary_op(op, left, right)
     assert interpreter_instance.interpret_expression(expr) == expected
 
 
 # --- Binary Operations: String/Misc ---
+
 
 def test_string_concat(interpreter_instance):
     expr = make_binary_op(BinaryOperationEnum.CONCAT, "Hello", "World")
@@ -314,34 +356,34 @@ def test_string_concat_fail(interpreter_instance):
 
 def test_logical_op(interpreter_instance):
     expr = make_binary_op(BinaryOperationEnum.LOGICAL_OR, True, False)
-    assert interpreter_instance.interpret_expression(expr) == True
+    assert interpreter_instance.interpret_expression(expr) is True
 
 
 def test_logical_op_fail(interpreter_instance):
     with pytest.raises(nmx_ex.NemantixOperationException):
-        expr = make_binary_op(BinaryOperationEnum.LOGICAL_OR, True, 'None')
+        expr = make_binary_op(BinaryOperationEnum.LOGICAL_OR, True, "None")
         interpreter_instance.interpret_expression(expr)
 
 
 def test_equality_op_none(interpreter_instance):
     expr = make_binary_op(BinaryOperationEnum.EQ, None, None)
-    assert interpreter_instance.interpret_expression(expr) == True
+    assert interpreter_instance.interpret_expression(expr) is True
 
 
 def test_equality_op(interpreter_instance):
     expr = make_binary_op(BinaryOperationEnum.EQ, 1, 2)
-    assert interpreter_instance.interpret_expression(expr) == False
+    assert interpreter_instance.interpret_expression(expr) is False
 
 
 def test_equality_op_fail(interpreter_instance):
     with pytest.raises(nmx_ex.NemantixOperationException):
-        expr = make_binary_op(BinaryOperationEnum.EQ, True, 'None')
+        expr = make_binary_op(BinaryOperationEnum.EQ, True, "None")
         interpreter_instance.interpret_expression(expr)
 
 
 def test_comparison_op(interpreter_instance):
     expr = make_binary_op(BinaryOperationEnum.LT, 1, 2)
-    assert interpreter_instance.interpret_expression(expr) == True
+    assert interpreter_instance.interpret_expression(expr) is True
 
 
 def test_comparison_op_none(interpreter_instance):
@@ -352,7 +394,7 @@ def test_comparison_op_none(interpreter_instance):
 
 def test_comparison_op_fail(interpreter_instance):
     with pytest.raises(nmx_ex.NemantixOperationException):
-        expr = make_binary_op(BinaryOperationEnum.GT, None, 'None')
+        expr = make_binary_op(BinaryOperationEnum.GT, None, "None")
         interpreter_instance.interpret_expression(expr)
 
 
@@ -369,7 +411,7 @@ def test_arithmetic_op_fail_bool(interpreter_instance):
 
 def test_arithmetic_op_fail(interpreter_instance):
     with pytest.raises(nmx_ex.NemantixOperationException):
-        expr = make_binary_op(BinaryOperationEnum.DIV, 1, 'True')
+        expr = make_binary_op(BinaryOperationEnum.DIV, 1, "True")
         interpreter_instance.interpret_expression(expr)
 
 
@@ -384,69 +426,111 @@ def test_fallback_operator(interpreter_instance):
 
 # --- Unary Operations ---
 
+
 def test_unary_math(interpreter_instance):
-    neg_expr = make_node(nmx_nodes.UnaryOperation, operation=UnaryOperationEnum.NEG, operand=make_value(5),
-                         meta=make_meta())
+    neg_expr = make_node(
+        nmx_nodes.UnaryOperation,
+        operation=UnaryOperationEnum.NEG,
+        operand=make_value(5),
+        meta=make_meta(),
+    )
     assert interpreter_instance.interpret_expression(neg_expr) == -5
 
-    pos_expr = make_node(nmx_nodes.UnaryOperation, operation=UnaryOperationEnum.POS, operand=make_value(5),
-                         meta=make_meta())
+    pos_expr = make_node(
+        nmx_nodes.UnaryOperation,
+        operation=UnaryOperationEnum.POS,
+        operand=make_value(5),
+        meta=make_meta(),
+    )
     assert interpreter_instance.interpret_expression(pos_expr) == 5
 
 
 def test_unary_none(interpreter_instance):
     with pytest.raises(nmx_ex.NemantixOperationException):
-        neg_expr = make_node(nmx_nodes.UnaryOperation, operation=UnaryOperationEnum.NEG,
-                             operand=make_value(None), meta=make_meta())
+        neg_expr = make_node(
+            nmx_nodes.UnaryOperation,
+            operation=UnaryOperationEnum.NEG,
+            operand=make_value(None),
+            meta=make_meta(),
+        )
         interpreter_instance.interpret_expression(neg_expr)
 
-    pos_expr = make_node(nmx_nodes.UnaryOperation, operation=UnaryOperationEnum.POS, operand=make_value(5),
-                         meta=make_meta())
+    pos_expr = make_node(
+        nmx_nodes.UnaryOperation,
+        operation=UnaryOperationEnum.POS,
+        operand=make_value(5),
+        meta=make_meta(),
+    )
     assert interpreter_instance.interpret_expression(pos_expr) == 5
 
 
 def test_unary_not(interpreter_instance):
-    not_expr = make_node(nmx_nodes.UnaryOperation, operation=UnaryOperationEnum.NOT,
-                         operand=make_value(True, VariableTypeEnum.BOOL), meta=make_meta())
+    not_expr = make_node(
+        nmx_nodes.UnaryOperation,
+        operation=UnaryOperationEnum.NOT,
+        operand=make_value(True, VariableTypeEnum.BOOL),
+        meta=make_meta(),
+    )
     assert interpreter_instance.interpret_expression(not_expr) is False
 
 
 def test_unary_not_fail(interpreter_instance):
     with pytest.raises(nmx_ex.NemantixOperationException):
-        neg_expr = make_node(nmx_nodes.UnaryOperation, operation=UnaryOperationEnum.NOT,
-                             operand=make_value('String', VariableTypeEnum.STRING), meta=make_meta())
+        neg_expr = make_node(
+            nmx_nodes.UnaryOperation,
+            operation=UnaryOperationEnum.NOT,
+            operand=make_value("String", VariableTypeEnum.STRING),
+            meta=make_meta(),
+        )
         interpreter_instance.interpret_expression(neg_expr)
 
 
 def test_unary_neg_bool_fail(interpreter_instance):
     with pytest.raises(nmx_ex.NemantixOperationException):
-        neg_expr = make_node(nmx_nodes.UnaryOperation, operation=UnaryOperationEnum.NEG,
-                             operand=make_value(True, VariableTypeEnum.BOOL), meta=make_meta())
+        neg_expr = make_node(
+            nmx_nodes.UnaryOperation,
+            operation=UnaryOperationEnum.NEG,
+            operand=make_value(True, VariableTypeEnum.BOOL),
+            meta=make_meta(),
+        )
         interpreter_instance.interpret_expression(neg_expr)
 
 
 def test_unary_neg_fail(interpreter_instance):
     with pytest.raises(nmx_ex.NemantixOperationException):
-        neg_expr = make_node(nmx_nodes.UnaryOperation, operation=UnaryOperationEnum.NEG,
-                             operand=make_value('string', VariableTypeEnum.BOOL), meta=make_meta())
+        neg_expr = make_node(
+            nmx_nodes.UnaryOperation,
+            operation=UnaryOperationEnum.NEG,
+            operand=make_value("string", VariableTypeEnum.BOOL),
+            meta=make_meta(),
+        )
         interpreter_instance.interpret_expression(neg_expr)
 
 
 def test_unary_pos_fail(interpreter_instance):
     with pytest.raises(nmx_ex.NemantixOperationException):
-        neg_expr = make_node(nmx_nodes.UnaryOperation, operation=UnaryOperationEnum.POS,
-                             operand=make_value('string', VariableTypeEnum.STRING), meta=make_meta())
+        neg_expr = make_node(
+            nmx_nodes.UnaryOperation,
+            operation=UnaryOperationEnum.POS,
+            operand=make_value("string", VariableTypeEnum.STRING),
+            meta=make_meta(),
+        )
         interpreter_instance.interpret_expression(neg_expr)
 
 
 def test_unary_pos_bool_fail(interpreter_instance):
     with pytest.raises(nmx_ex.NemantixOperationException):
-        neg_expr = make_node(nmx_nodes.UnaryOperation, operation=UnaryOperationEnum.POS,
-                             operand=make_value(False, VariableTypeEnum.BOOL), meta=make_meta())
+        neg_expr = make_node(
+            nmx_nodes.UnaryOperation,
+            operation=UnaryOperationEnum.POS,
+            operand=make_value(False, VariableTypeEnum.BOOL),
+            meta=make_meta(),
+        )
         interpreter_instance.interpret_expression(neg_expr)
 
 
 # --- Control Flow: If/Elif/Else ---
+
 
 def test_if_elif_else(interpreter_instance):
     """
@@ -459,21 +543,45 @@ def test_if_elif_else(interpreter_instance):
     if_block = make_node(
         nmx_nodes.IfBlock,
         condition=make_value(False, VariableTypeEnum.BOOL),
-        children=[make_node(nmx_nodes.Assignment, var=x_var, value=make_value(1), meta=make_meta())],
-        body=[make_node(nmx_nodes.Assignment, var=x_var, value=make_value(1), meta=make_meta())],  # compat
+        children=[
+            make_node(
+                nmx_nodes.Assignment, var=x_var, value=make_value(1), meta=make_meta()
+            )
+        ],
+        body=[
+            make_node(
+                nmx_nodes.Assignment, var=x_var, value=make_value(1), meta=make_meta()
+            )
+        ],  # compat
         meta=make_meta(),
     )
     elif_block = make_node(
         nmx_nodes.ElifBlock,
         condition=make_value(True, VariableTypeEnum.BOOL),
-        children=[make_node(nmx_nodes.Assignment, var=x_var, value=make_value(2), meta=make_meta())],
-        body=[make_node(nmx_nodes.Assignment, var=x_var, value=make_value(2), meta=make_meta())],
+        children=[
+            make_node(
+                nmx_nodes.Assignment, var=x_var, value=make_value(2), meta=make_meta()
+            )
+        ],
+        body=[
+            make_node(
+                nmx_nodes.Assignment, var=x_var, value=make_value(2), meta=make_meta()
+            )
+        ],
         meta=make_meta(),
     )
     else_block = make_node(
         nmx_nodes.ElseBlock,
-        children=[make_node(nmx_nodes.Assignment, var=x_var, value=make_value(3), meta=make_meta())],
-        body=[make_node(nmx_nodes.Assignment, var=x_var, value=make_value(3), meta=make_meta())],
+        children=[
+            make_node(
+                nmx_nodes.Assignment, var=x_var, value=make_value(3), meta=make_meta()
+            )
+        ],
+        body=[
+            make_node(
+                nmx_nodes.Assignment, var=x_var, value=make_value(3), meta=make_meta()
+            )
+        ],
         meta=make_meta(),
     )
 
@@ -486,6 +594,7 @@ def test_if_elif_else(interpreter_instance):
 
 
 # --- Loops ---
+
 
 def test_repeat_while(interpreter_instance):
     """
@@ -627,7 +736,9 @@ def test_repeat_times(interpreter_instance):
         meta=make_meta(),
     )
 
-    loop = make_node(nmx_nodes.RepeatTimesBlock, as_vars=None, times=5, meta=make_meta())
+    loop = make_node(
+        nmx_nodes.RepeatTimesBlock, as_vars=None, times=5, meta=make_meta()
+    )
     loop.children = [body_stmt]
 
     interpreter_instance.interpret_statement(loop)
@@ -736,6 +847,7 @@ def test_loop_continue(interpreter_instance):
 
 # --- Similarity ---
 
+
 def test_similarity_expression(interpreter_instance):
     """
     "A" ~ "B" with CLOSE qualifier; embeddings are set to yield similarity 1.0
@@ -754,19 +866,24 @@ def test_similarity_expression(interpreter_instance):
     assert interpreter_instance.interpret_expression(sim_op) is True
 
 
-@pytest.mark.parametrize("qualifier, sim_score, expected", [
-    (SimilarityQualifierEnum.CLOSE, 0.9, True),
-    (SimilarityQualifierEnum.CLOSE, 0.8, False),
-    (SimilarityQualifierEnum.STRICT, 0.95, True),
-    (SimilarityQualifierEnum.STRICT, 0.90, False),
-    (SimilarityQualifierEnum.LOOSE, 0.65, True),
-    (SimilarityQualifierEnum.LOOSE, 0.5, False),
-    (SimilarityQualifierEnum.FAR, 0.3, True),
-    (SimilarityQualifierEnum.FAR, 0.5, False),
-    (SimilarityQualifierEnum.ABOUT, 0.76, True),
-    (SimilarityQualifierEnum.ABOUT, 0.70, False),
-])
-def test_similarity_qualifiers_static(interpreter_instance, qualifier, sim_score, expected):
+@pytest.mark.parametrize(
+    "qualifier, sim_score, expected",
+    [
+        (SimilarityQualifierEnum.CLOSE, 0.9, True),
+        (SimilarityQualifierEnum.CLOSE, 0.8, False),
+        (SimilarityQualifierEnum.STRICT, 0.95, True),
+        (SimilarityQualifierEnum.STRICT, 0.90, False),
+        (SimilarityQualifierEnum.LOOSE, 0.65, True),
+        (SimilarityQualifierEnum.LOOSE, 0.5, False),
+        (SimilarityQualifierEnum.FAR, 0.3, True),
+        (SimilarityQualifierEnum.FAR, 0.5, False),
+        (SimilarityQualifierEnum.ABOUT, 0.76, True),
+        (SimilarityQualifierEnum.ABOUT, 0.70, False),
+    ],
+)
+def test_similarity_qualifiers_static(
+    interpreter_instance, qualifier, sim_score, expected
+):
     # Directly test the qualifier function (more stable than embedding dot-products)
     assert Interpreter._apply_similarity_qualifier(sim_score, qualifier) is expected
 
@@ -809,6 +926,7 @@ def test_similarity_struct_filtering(interpreter_instance):
 
 # --- Semantic inclusion ---
 
+
 def test_right_inclusion_expression(interpreter_instance):
     """
     "A" ~> "B" with CLOSE qualifier; embeddings are set to yield similarity 1.0
@@ -843,19 +961,24 @@ def test_left_inclusion_expression(interpreter_instance):
     assert result is True
 
 
-@pytest.mark.parametrize("qualifier, sim_score, expected", [
-    (SimilarityQualifierEnum.CLOSE, 0.9, True),
-    (SimilarityQualifierEnum.CLOSE, 0.8, False),
-    (SimilarityQualifierEnum.STRICT, 0.95, True),
-    (SimilarityQualifierEnum.STRICT, 0.90, False),
-    (SimilarityQualifierEnum.LOOSE, 0.75, True),
-    (SimilarityQualifierEnum.LOOSE, 0.5, False),
-    (SimilarityQualifierEnum.FAR, 0.3, True),
-    (SimilarityQualifierEnum.FAR, 0.5, False),
-    (SimilarityQualifierEnum.ABOUT, 0.86, True),
-    (SimilarityQualifierEnum.ABOUT, 0.70, False),
-])
-def test_semantic_qualifiers_static(interpreter_instance, qualifier, sim_score, expected):
+@pytest.mark.parametrize(
+    "qualifier, sim_score, expected",
+    [
+        (SimilarityQualifierEnum.CLOSE, 0.9, True),
+        (SimilarityQualifierEnum.CLOSE, 0.8, False),
+        (SimilarityQualifierEnum.STRICT, 0.95, True),
+        (SimilarityQualifierEnum.STRICT, 0.90, False),
+        (SimilarityQualifierEnum.LOOSE, 0.75, True),
+        (SimilarityQualifierEnum.LOOSE, 0.5, False),
+        (SimilarityQualifierEnum.FAR, 0.3, True),
+        (SimilarityQualifierEnum.FAR, 0.5, False),
+        (SimilarityQualifierEnum.ABOUT, 0.86, True),
+        (SimilarityQualifierEnum.ABOUT, 0.70, False),
+    ],
+)
+def test_semantic_qualifiers_static(
+    interpreter_instance, qualifier, sim_score, expected
+):
     # Directly test the qualifier function (more stable than embedding dot-products)
     assert Interpreter._apply_semantic_qualifier(sim_score, qualifier) is expected
 
@@ -866,6 +989,7 @@ def test_semantic_numeric_qualifier(interpreter_instance):
 
 
 # --- Tool Call Errors ---
+
 
 def test_do_statement_unknown_tool(interpreter_instance):
     do_stmt = make_node(
@@ -886,6 +1010,7 @@ def test_do_statement_unknown_tool(interpreter_instance):
 # =============================================================================
 # Action Input Validation Tests (new _set_action_inputs behavior)
 # =============================================================================
+
 
 @dataclass
 class DummyActionInput:
@@ -950,7 +1075,9 @@ def test_action_inputs_extra_kwarg_raises_error(interpreter_instance):
         meta=make_meta(),
     )
 
-    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"unexpected keyword arguments: baz"):
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r"unexpected keyword arguments: baz"
+    ):
         interpreter_instance._set_block_inputs(action, args)
 
 
@@ -963,7 +1090,9 @@ def test_action_inputs_too_many_positional_raises_error(interpreter_instance):
         meta=make_meta(),
     )
 
-    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"expects at most 1 positional arguments"):
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r"expects at most 1 positional arguments"
+    ):
         interpreter_instance._set_block_inputs(action, [10, 20])
 
 
@@ -979,7 +1108,9 @@ def test_action_inputs_missing_required_raises_error(interpreter_instance):
         meta=make_meta(),
     )
 
-    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r'Missing required argument "bar"'):
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r'Missing required argument "bar"'
+    ):
         interpreter_instance._set_block_inputs(action, args)
 
 
@@ -991,7 +1122,10 @@ def test_action_inputs_uses_defaults_for_missing_optional(interpreter_instance):
     # default is an Expression, so we pass a SingleValue(99)
     action = DummyAction(
         name="my_action",
-        input=[DummyActionInput("foo", True), DummyActionInput("bar", False, default=make_value(99))],
+        input=[
+            DummyActionInput("foo", True),
+            DummyActionInput("bar", False, default=make_value(99)),
+        ],
         output=[],
         children=[],
         meta=make_meta(),
@@ -1005,6 +1139,7 @@ def test_action_inputs_uses_defaults_for_missing_optional(interpreter_instance):
 # =============================================================================
 # Do LLM with producing_schema tests (new: schema via frame path navigator)
 # =============================================================================
+
 
 def test_do_llm_structured_output(interpreter_instance):
     # Put a runtime Frame in frames memory
@@ -1052,7 +1187,10 @@ def test_do_llm_structured_missing_frame(interpreter_instance):
         meta=make_meta(),
     )
 
-    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"Undefined root frame referenced: GHOST_FRAME"):
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Undefined root frame referenced: GHOST_FRAME",
+    ):
         interpreter_instance.interpret_do_statement(do_stmt)
 
 
@@ -1065,17 +1203,23 @@ def test_do_llm_unsupported_generative_schema(interpreter_instance):
         using=make_value("hi", _STRING_TYPE),
         prompt=None,
         producing=make_var("out"),
-        producing_schema=make_node(nmx_nodes.MicroPrompt, prompt="make it up", meta=make_meta()),
+        producing_schema=make_node(
+            nmx_nodes.MicroPrompt, prompt="make it up", meta=make_meta()
+        ),
         meta=make_meta(),
     )
 
-    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"Generative schema blocks are not yet supported"):
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Generative schema blocks are not yet supported",
+    ):
         interpreter_instance.interpret_do_statement(do_stmt)
 
 
 # =============================================================================
 # Action implicit/explicit return tests (works with DummyAction + real statements)
 # =============================================================================
+
 
 @dataclass
 class DummyActionOutput:
@@ -1103,8 +1247,18 @@ def test_action_implicit_return_single_out(interpreter_instance):
 
 
 def test_action_implicit_return_multiple_out(interpreter_instance):
-    assign1 = make_node(nmx_nodes.Assignment, var=make_var("res1"), value=make_value(10), meta=make_meta())
-    assign2 = make_node(nmx_nodes.Assignment, var=make_var("res2"), value=make_value(20), meta=make_meta())
+    assign1 = make_node(
+        nmx_nodes.Assignment,
+        var=make_var("res1"),
+        value=make_value(10),
+        meta=make_meta(),
+    )
+    assign2 = make_node(
+        nmx_nodes.Assignment,
+        var=make_var("res2"),
+        value=make_value(20),
+        meta=make_meta(),
+    )
 
     action = DummyAction(
         name="test_implicit_multiple",
@@ -1119,8 +1273,15 @@ def test_action_implicit_return_multiple_out(interpreter_instance):
 
 
 def test_action_explicit_return_overrides_implicit(interpreter_instance):
-    assign = make_node(nmx_nodes.Assignment, var=make_var("my_result"), value=make_value(42), meta=make_meta())
-    explicit_return = make_node(nmx_nodes.Return, val=[make_value(99)], meta=make_meta())
+    assign = make_node(
+        nmx_nodes.Assignment,
+        var=make_var("my_result"),
+        value=make_value(42),
+        meta=make_meta(),
+    )
+    explicit_return = make_node(
+        nmx_nodes.Return, val=[make_value(99)], meta=make_meta()
+    )
 
     action = DummyAction(
         name="test_explicit_override",
@@ -1138,12 +1299,15 @@ def test_action_explicit_return_overrides_implicit(interpreter_instance):
 # New feature coverage: _frame_to_pydantic_schema nested frame paths
 # =============================================================================
 
+
 def test_frame_to_pydantic_schema_nested_frame(interpreter_instance):
     root = nmx_runtime.Frame("ROOT")
     inner = nmx_runtime.Frame("INNER")
     inner.add_slot("code", cardinality="1", types=[{"name": SlotTypesEnum.TEXT}])
     root.add_frame(inner)
-    root.add_slot("child", cardinality="1", types=[{"type": SlotTypesEnum.FRAME, "name": "INNER"}])
+    root.add_slot(
+        "child", cardinality="1", types=[{"type": SlotTypesEnum.FRAME, "name": "INNER"}]
+    )
 
     interpreter_instance.context.frames["ROOT"] = root
 
@@ -1153,3 +1317,177 @@ def test_frame_to_pydantic_schema_nested_frame(interpreter_instance):
     nested_type = schema.model_fields["child"].annotation
     assert isinstance(nested_type, type) and issubclass(nested_type, BaseModel)
     assert "code" in nested_type.model_fields
+
+
+# -----------------------------------------------------------------------------
+# Schemed collection Tests
+# -----------------------------------------------------------------------------
+
+
+def test_eval_schemed_collection_pre_apply_as_frame(interpreter_instance):
+    """
+    Tests evaluation using an AsFrame dataframe, resolving from the global context,
+    and applying a PRE (prefix) schema.
+    """
+    # 1. Setup frame in context
+    frame = nmx_runtime.Frame("MY_FRAME")
+    frame.apply_prefix = MagicMock(return_value="pre_applied_struct")
+    interpreter_instance.context.frames["MY_FRAME"] = frame
+
+    # 2. Setup SchemedCollection using AsFrame
+    as_frame = AsFrame(value="my_frame", meta=make_meta())
+    inner_collection = make_node(
+        nmx_nodes.Collection,
+        value=[make_value(42)],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    schemed_col = make_node(
+        nmx_nodes.SchemedCollection,
+        value=inner_collection,
+        dataframe=as_frame,
+        apply_type=nmx_nodes.FrameApplyEnum.PRE,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    # 3. Execute
+    result = interpreter_instance.eval_schemed_collection(schemed_col)
+
+    # 4. Assert
+    frame.apply_prefix.assert_called_once()
+    assert result == "pre_applied_struct"
+
+
+def test_eval_schemed_collection_post_apply_collection_df(interpreter_instance):
+    """
+    Tests evaluation when the dataframe is a Collection (value becomes the frame name),
+    resolving from the global context, and applying a POST (suffix) schema.
+    """
+    # 1. Setup frame in context
+    frame = nmx_runtime.Frame("OTHER_FRAME")
+    frame.apply_postfix = MagicMock(return_value="post_applied_struct")
+    interpreter_instance.context.frames["OTHER_FRAME"] = frame
+
+    # 2. Setup SchemedCollection where dataframe is a Collection
+    inner_collection = make_node(
+        nmx_nodes.Collection,
+        value=[make_value("data")],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    schemed_col = make_node(
+        nmx_nodes.SchemedCollection,
+        value="other_frame",  # In this branch, value contains the frame name string
+        dataframe=inner_collection,
+        apply_type=nmx_nodes.FrameApplyEnum.POST,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    # 3. Execute
+    result = interpreter_instance.eval_schemed_collection(schemed_col)
+
+    # 4. Assert
+    frame.apply_postfix.assert_called_once()
+    assert result == "post_applied_struct"
+
+
+def test_eval_schemed_collection_with_enclosing_frame(interpreter_instance):
+    """
+    Tests evaluation where the frame is resolved via a provided enclosing_frame.
+    """
+    # 1. Setup enclosing frame with a sub-frame
+    enclosing_frame = nmx_runtime.Frame("PARENT")
+    sub_frame = nmx_runtime.Frame("SUB")
+    sub_frame.apply_prefix = MagicMock(return_value="sub_pre_applied")
+    enclosing_frame.frames["SUB"] = sub_frame
+
+    # 2. Setup SchemedCollection
+    as_frame = AsFrame(value="sub", meta=make_meta())
+    inner_collection = make_node(
+        nmx_nodes.Collection,
+        value=[make_value(1)],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    schemed_col = make_node(
+        nmx_nodes.SchemedCollection,
+        value=inner_collection,
+        dataframe=as_frame,
+        apply_type=nmx_nodes.FrameApplyEnum.PRE,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    # 3. Execute with enclosing_frame passed
+    result = interpreter_instance.eval_schemed_collection(
+        schemed_col, enclosing_frame=enclosing_frame
+    )
+
+    # 4. Assert
+    sub_frame.apply_prefix.assert_called_once()
+    assert result == "sub_pre_applied"
+
+
+def test_eval_schemed_collection_missing_frame_raises(interpreter_instance):
+    """
+    Tests that a NemantixRuntimeException is raised if the target global frame is undefined.
+    """
+    as_frame = AsFrame(value="missing_frame", meta=make_meta())
+    inner_collection = make_node(
+        nmx_nodes.Collection,
+        value=[],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    schemed_col = make_node(
+        nmx_nodes.SchemedCollection,
+        value=inner_collection,
+        dataframe=as_frame,
+        apply_type=nmx_nodes.FrameApplyEnum.PRE,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r'Undefined frame "MISSING_FRAME"'
+    ):
+        interpreter_instance.eval_schemed_collection(schemed_col)
+
+
+def test_eval_schemed_collection_missing_subframe_raises(interpreter_instance):
+    """
+    Tests that a NemantixRuntimeException is raised if the target sub-frame is missing
+    from the enclosing_frame.
+    """
+    enclosing_frame = nmx_runtime.Frame("PARENT")
+
+    as_frame = AsFrame(value="missing_sub", meta=make_meta())
+    inner_collection = make_node(
+        nmx_nodes.Collection,
+        value=[],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    schemed_col = make_node(
+        nmx_nodes.SchemedCollection,
+        value=inner_collection,
+        dataframe=as_frame,
+        apply_type=nmx_nodes.FrameApplyEnum.PRE,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r'Undefined frame "MISSING_SUB" in frame "PARENT"',
+    ):
+        interpreter_instance.eval_schemed_collection(
+            schemed_col, enclosing_frame=enclosing_frame
+        )

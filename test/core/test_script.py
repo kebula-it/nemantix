@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from nemantix.core.exceptions import NemantixException
 from nemantix.core.script import Script, ScriptTypeEnum, extension_map
-
 
 # ==========================================
 # Dummy AST node types (to satisfy isinstance)
@@ -51,6 +50,7 @@ class DummyAction:
         self.prompt = DummyPrompt(semantics)
         self.input = ins or []
         self.output = outs or []
+        self.children = []
 
 
 class DummyPlan:

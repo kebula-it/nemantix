@@ -1,1 +1,1 @@
-from nemantix.stl.web_search.base import WebSearchToolset
+from nemantix.stl.web_search.base import WebSearchToolset as WebSearchToolset

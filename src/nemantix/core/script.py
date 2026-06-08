@@ -1,14 +1,22 @@
 from enum import Enum
-from typing import Any
 from pathlib import Path
+from typing import Any
 
+from nemantix.common.logger import get_package_logger
 from nemantix.core.custom_types import PathLike
 from nemantix.core.exceptions import NemantixException
-from nemantix.core.node import (Deliberate, Require, PythonToolDeclaration, Frame, ActionBlock,
-                                ImportToolsetStatement, DoStatement, BlockStatement)
+from nemantix.core.node import (
+    ActionBlock,
+    BlockStatement,
+    Deliberate,
+    DoStatement,
+    Frame,
+    ImportToolsetStatement,
+    PythonToolDeclaration,
+    Require, SingleValue,
+)
 from nemantix.core.parser import ParserLark
 from nemantix.core.source_manager import SourceManager
-from nemantix.common.logger import get_package_logger
 
 logger = get_package_logger(__name__)
 
@@ -37,14 +45,23 @@ def _nxc_deliberate_completeness_check(deliberates: list[Deliberate], location: 
 
 class Script:
     class SemanticInfo:
-        def __init__(self, semantics, ins, outs):
+        def __init__(self, semantics, ins, outs, summary=None, body=None):
             self.semantics = semantics
             self.ins = ins
             self.outs = outs
+            self.body = body
+            self.summary = summary
 
         def to_dict(self):
-            return {"semantics": self.semantics, "ins": [str(i) for i in self.ins],
-                    "outs": [str(o) for o in self.outs]}
+            d = {"semantics": self.semantics,
+                "ins": [str(i) for i in self.ins],
+                "outs": [str(o) for o in self.outs],
+                }
+            if self.summary is not None:
+                d["summary"] = self.summary
+            if self.body is not None:
+                d["body"] = str(self.body)
+            return d
 
     def __init__(self, location: PathLike, source_manager: SourceManager, content: str = None):
         self._location = Path(location) if not isinstance(location, Path) else location
@@ -142,7 +159,6 @@ class Script:
             if isinstance(n, Deliberate):
                 self.deliberates[n.name] = n
 
-                # TODO raise exception or just a warning?
                 if n.name in self.delib_semantics_map:
                     raise NemantixException(f"Cannot instantiate two deliberates with the same name ({n.name})")
 
@@ -156,7 +172,13 @@ class Script:
                     ins = None
                     outs = None
 
-                self.delib_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs)
+                summary = None
+                try:
+                    summary = n.get_annotation_value("intent.summary")
+                except:
+                    pass
+                summary = summary.value if isinstance(summary, SingleValue) else summary
+                self.delib_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs, summary=summary)
 
                 # add deliberate private actions with deliberate.name prefix
                 for private_action in n.generated_actions:
@@ -169,14 +191,21 @@ class Script:
 
             elif isinstance(n, ActionBlock):
                 self.actions[n.name] = n
-                # TODO raise exception or just a warning?
+
                 if n.name in self.action_semantics_map:
                     raise NemantixException(f"Cannot instantiate two actions with the same name ({n.name})")
+
                 semantics = n.prompt.prompt
                 ins = n.input
                 outs = n.output
-                self.action_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs)
-
+                summary = None
+                try:
+                    summary = n.get_annotation_value("intent.summary")
+                except:
+                    pass
+                summary = summary.value if isinstance(summary, SingleValue) else summary
+                self.action_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs,
+                                                                      summary=summary)
             elif isinstance(n, Require):
                 self.requires.append(n)
 
@@ -239,6 +268,10 @@ class Script:
             # FileMeta is 1-indexed; convert to 0-indexed for Python arrays
             start_line = file_meta.line[0] - 1
             end_line = file_meta.line[1] - 1
+            is_multiline = file_meta.line[1] - file_meta.line[0] > 0
+
+            if is_multiline:
+                end_line += 1  # to account for final "__do"
 
             # Extract the old code to see if the Fixer actually changed anything
             old_code = "\n".join(content_lines[start_line:end_line + 1])

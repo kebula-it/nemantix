@@ -1,8 +1,5 @@
 # Tests inclusion of other deliberates and undefined plans.
 
-from deliberate Stairs use step
-from deliberate Sidewalk use step
-
 action run_example >> print example <<:
     body:
         do print using ["example, do nothing"]

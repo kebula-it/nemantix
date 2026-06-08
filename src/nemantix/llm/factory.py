@@ -1,17 +1,12 @@
-from typing import TYPE_CHECKING
-
-from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException
-from nemantix.llm.azure_openai_proxy import AzureOpenAILLMProxy
-from nemantix.llm.openai_proxy import OpenAILLMProxy
-from nemantix.llm.google_proxy import GoogleLLMProxy
-from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
-
-if TYPE_CHECKING:
-    from nemantix.llm.local_proxy import LocalLLMProxy
-
-
 from pathlib import Path
 from typing import Any
+
+from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException
+from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
+from nemantix.llm.azure_openai_proxy import AzureOpenAILLMProxy
+from nemantix.llm.google_proxy import GoogleLLMProxy
+from nemantix.llm.open_router_proxy import OpenRouterLLMProxy
+from nemantix.llm.openai_proxy import OpenAILLMProxy
 
 
 def get_grammar_path():
@@ -64,6 +59,20 @@ class LLMProxyFactory:
 
         elif vendor == 'antrophic':
             return AnthropicLLMProxy(model_name, **kwargs)
+
+        elif vendor in ['OpenRouter', 'open-router', 'open_router']:
+            return OpenRouterLLMProxy(model_name, grammar_path=grammar_path, **kwargs)
+        
+        elif vendor in ['llama.cpp', 'llama-cpp', 'llama-cpp-remote']:
+            from nemantix.experimental.llama_cpp_remote_proxy import (
+                LlamaCppRemoteLLMProxy,
+            )
+            return LlamaCppRemoteLLMProxy(model_name, **kwargs)
+
+        elif vendor == "ollama":
+            from nemantix.llm.llama_proxy import LlamaProxy
+
+            return LlamaProxy(model_name, **kwargs)
 
         elif vendor == 'local':
             from nemantix.llm.local_proxy import LocalLLMProxy

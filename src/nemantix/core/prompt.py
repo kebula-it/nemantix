@@ -4,7 +4,7 @@ You are working with NXS, a DSL made of structured blocks.
 CORE CONCEPTS
 - An NXS file can include other NXS files, define reusable schemas with `frame`, declare tools with `toolset`, define executable units with `action`, and define a runnable workflow with `deliberate`.
 - An `action` is like a function: it can declare inputs (`in:`), outputs (`out:`), and a `body:` with logic such as expressions, calls, conditionals, loops, and control flow.
-- A `deliberate` is the main executable workflow: it includes a `when` trigger, `guidelines`, and a `plan`.
+- A `deliberate` is the main executable workflow: it includes a `when` trigger, `guidelines`, a `plan` and in some special case some private `action`s.
 - The `plan` of a `deliberate` is the orchestration logic that aggregates and coordinates multiple `action` call to achieve the desired outcome following the `guidelines`. Like an `action`, it can declare inputs (`in:`), outputs (`out:`), and a `body:`.
 """
 
@@ -177,7 +177,7 @@ action AnalyzeUsers >> Demonstrate conditionals, loops, semantic comparisons, an
         # - you can use the f-string to format a string with the value of a variable, example:
         [ [user_stat] = "users number is [stats:user_count]" ]  # will be formatted to "users number is 3" where 3 is the value of stats:user_count
         # - REMEMBER: Square brackets in nxs are special symbols. If you need square brackets in the text of a string, you need to escape them (with ONE backslash for each bracket), example:
-        [ [example] = "This is a square bracket symbol: \[." ]
+        [ [example] = "This is a square bracket symbol: \\[." ]
 
 
         return [report_text] # CONTROL FLOW: return with expression. For multiple values: [[v1], [v2]]
@@ -239,7 +239,7 @@ BUILT-IN FUNCTIONS LIST:
 - size: Returns a “size” depending on type (e.g., len for strings/Struct; 0/1 for Opaque; 1/0 for DocRef leaf/non-leaf; otherwise 0).
 - type: Returns a string describing the type of the input variable. Possible types are: none; num (for integers and floats); 
 str (strings); bool (booleans); struct (for Nemantix structures, i.e., the ones within "(...)"); doc (for Nemantix Docref objects);
-and opaue (for Nemantix Opaque objects).
+and opaque (for Nemantix Opaque objects).
 - substring: Converts x to string and returns the slice [start:end] (safe defaults if inputs are invalid).
 - to_num: Explicit numeric conversion (handles numbers, booleans, numeric strings); returns 0 on failure.
 - to_bool: Explicit boolean conversion (handles booleans, numbers, strings like "true"/"false"/"none"); defaults to False.
@@ -639,8 +639,8 @@ Produce three fields:
 """
 
 # TODO: cardinality description
-GEN_FRAME_PROMPT = PROLOGUE + """
-Generate a NXS Frame based on the provided name, and custom DSL usage syntax.
+FRAMES_DSL = """
+FRAMES DSL SYNTAX
 Example frames:
 ```
 frame Person:
@@ -671,6 +671,7 @@ __frame
 Available slot types: [TEXT | INT | BOOL | FLOAT | STRUCT | slot_enum | frame_name]
 NOTE: "frame_name" means that a slot can be another frame, resulting in definition of 
 nested frames.
+NOTE: use STRUCT for both lists and dictionaries.
 
 Strictly follow these rules:
     1. The frame must be named exactly as requested in the 'Name' field.
@@ -680,6 +681,30 @@ Strictly follow these rules:
     4. If 'Previous Frame' and an error are provided, use the previous frame as your
         baseline. Correct ONLY the logic or syntax that caused the error, preserving
         the valid parts of the frame structure.
+    5. The name of the frame must not contain any white space, use camel case or snake case.
+"""
+
+GEN_FRAME_PROMPT = PROLOGUE + """
+Generate a NXS Frame based on the provided name, and custom DSL usage syntax.""" + FRAMES_DSL
+
+
+DO_AS_FRAMES_PROMPT  =  PROLOGUE + """
+Generate a NXS Frame based on the provided custom DSL usage syntax.
+The generated frame must follow the description given in the `as` clause of this `do` statement and the information about the called function. 
+The purpose of the frame is to give an output format for the tool/action/built-in that is being called.
+Output only the frame and nothing else.
+DO STATEMENT
+{do_statement}
+CALLABLE INFO
+{callable_info}
+""" + FRAMES_DSL
+
+SCHEMA_APPLY_PROMPT = """
+Map each output variable name to the most appropriate slot of frame '{frame_name}'.
+Output variable names: {producing_names}
+Frame '{frame_name}' slot names: {slot_names}
+Return ONLY a valid Python dict literal, e.g. {{\"var_a\": \"slot_x\"}}.
+Omit variables with no clear slot match.
 """
 
 # Interpreter: semantic inclusion prompts
@@ -704,3 +729,28 @@ LEFT_SEM_INCL_PROMPT = ('Semantic inclusion (a <~ b) is a form of conceptual imp
 SEM_INCL_TEMPLATE = ('Task: Evaluate the expression: [{}]. Return true or false,'
                      'along with a score in 0-1 range that quantifies the degree of '
                      'semantic inclusion (0: weak or none, 1: full or strong).')
+
+
+##################################################################
+CODE_SUMMARY_PROMPT = \
+"""You are an expert in the NXS programming language.
+
+Read the following NXS code block and generate its docstring.
+
+The docstring must be a simple plain-text description written in natural language.
+
+It must describe, at a high level, the purpose of the block, what it does, and the main logic it follows.
+
+Output format requirements:
+Return only one plain-text paragraph.
+Do not return JSON, YAML, XML, Markdown, a dictionary, an object, a list, or bullet points.
+Do not include field names, labels, titles, separators, quotes, braces, brackets, or code fences.
+Do not write anything before or after the docstring.
+Do not explain the format.
+Do not explain the code line by line.
+
+The entire response must be only the docstring text.
+
+NXS action block:
+{action}
+"""

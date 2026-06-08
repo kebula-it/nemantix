@@ -1,8 +1,14 @@
 import pytest
-from nemantix.llm.openai_proxy import OpenAILLMProxy
-from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException, LLMResponse, LLMUsage
-from nemantix.llm.credentials import Credentials
+
 from nemantix.core import Toolset, tool
+from nemantix.llm.abstract_proxy import (
+    AbstractLLMProxy,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+)
+from nemantix.llm.credentials import Credentials
+from nemantix.llm.openai_proxy import OpenAILLMProxy
 
 
 def test_openai_init_and_invoke_stream_bind_unbind(openai_llm_proxy):
@@ -56,7 +62,6 @@ def test_openai_errors_surface(monkeypatch):
         raise RuntimeError("boom")
 
     # Patch the resolved symbol *within the module where it's used*
-    # The original was patching 'ChatOpenAI', but the code uses 'OpenAI'
     monkeypatch.setattr("nemantix.llm.openai_proxy.OpenAI", bad_ctor)
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
@@ -64,6 +69,6 @@ def test_openai_errors_surface(monkeypatch):
         Credentials.load_from_file(file_path="nonexistent.json")
     )
     with pytest.raises(
-        LLMProxyException, match="Failed to initialize OpenAI client: boom"
+        LLMProxyException, match="Failed to initialize compatible client: boom"
     ):
         OpenAILLMProxy("gpt-4o")

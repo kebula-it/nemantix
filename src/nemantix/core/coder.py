@@ -1,29 +1,59 @@
 import json
 import textwrap
 import traceback
-
 from enum import Enum
 
 from lark import LarkError
 
+from nemantix.common import context
+from nemantix.common.logger import get_package_logger
+from nemantix.core.exceptions import (
+    NemantixException,
+    NemantixParserException,
+    NemantixRuntimeException,
+)
+from nemantix.core.node import (
+    ActionBlock,
+    BlockStatement,
+    CallableTypeEnum,
+    Deliberate,
+    DoStatement,
+    FileMeta,
+    Frame,
+    ImportToolsetStatement,
+    MicroPrompt,
+    Statement,
+)
+from nemantix.core.parser import _get_frame_parser
+from nemantix.core.prompt import (
+    CODE_SUMMARY_PROMPT,
+    CODING_ADDITIONAL_INFO,
+    CODING_DELIBERATE_ADDITIONAL_INFO,
+    CODING_SYSTEM_PROMPT,
+    COMPILATION_ACTION,
+    COMPILATION_DELIBERATE,
+    COMPILATION_DELIBERATE_BREAKDOWN,
+    COMPLETE_ACTION_RULES,
+    COMPLETE_DELIBERATE_BREAKDOWN_RULES,
+    COMPLETE_DELIBERATE_RULES,
+    DO_AS_FRAMES_PROMPT,
+    DRAFT_ACTION_RULES,
+    DRAFT_DELIBERATE_BREAKDOWN_RULES,
+    DRAFT_DELIBERATE_RULES,
+    EVALUATE_ACTION_RULES,
+    EVALUATE_DELIBERATE_BREAKDOWN_RULES,
+    EVALUATE_DELIBERATE_RULES,
+    FIX_GENERATION,
+    GEN_FRAME_PROMPT,
+    GEN_TOOLSET_PROMPT,
+    USER_REQUEST,
+)
 from nemantix.core.runtime import get_globals
 from nemantix.core.script import Script
 from nemantix.core.tools import Toolset
-from nemantix.core.parser import _get_frame_parser
-from nemantix.core.exceptions import NemantixException, NemantixRuntimeException, NemantixParserException
-from nemantix.core.node import (Deliberate, Statement, ImportToolsetStatement, Frame, MicroPrompt,
-                                FileMeta, ActionBlock, DoStatement, BlockStatement)
-from nemantix.core.prompt import CODING_ADDITIONAL_INFO, CODING_SYSTEM_PROMPT, COMPILATION_DELIBERATE_BREAKDOWN, \
-    FIX_GENERATION, COMPILATION_ACTION, DRAFT_ACTION_RULES, \
-    COMPLETE_ACTION_RULES, USER_REQUEST, DRAFT_DELIBERATE_RULES, COMPLETE_DELIBERATE_RULES, COMPILATION_DELIBERATE, \
-    CODING_DELIBERATE_ADDITIONAL_INFO, EVALUATE_ACTION_RULES, EVALUATE_DELIBERATE_RULES, \
-    DRAFT_DELIBERATE_BREAKDOWN_RULES, EVALUATE_DELIBERATE_BREAKDOWN_RULES, COMPLETE_DELIBERATE_BREAKDOWN_RULES, \
-    GEN_TOOLSET_PROMPT, GEN_FRAME_PROMPT
+from nemantix.hub.events import Event, EventType
 from nemantix.llm import AbstractLLMProxy
 from nemantix.llm.abstract_proxy import LLMUsage
-from nemantix.common.logger import get_package_logger
-from nemantix.common import context
-from nemantix.hub.events import Event, EventType
 
 logger = get_package_logger(__name__)
 
@@ -62,13 +92,28 @@ qualifier_coding_map = {
 
 
 class Coder:
-    def __init__(self, llm_proxy: AbstractLLMProxy):
+    def __init__(self, llm_proxy: AbstractLLMProxy, create_summary: bool = False,
+                 summarizer_proxy: AbstractLLMProxy | None = None, summarizer_model='phi4-mini'):
         self.llm_proxy = llm_proxy
         self.action_semantics_map: dict[str, dict[str, str]] = {}  # dict[deliberate_name, dict[action_name, semantics]]
         self.runtime_globals = get_globals()
         self.external_vars_names = None
         self.knowledge_base = None
         self.enable_fixer = False
+        self.create_summary = bool(create_summary)
+        self.include_action_body_in_semantics = False
+        
+        if self.create_summary:
+            if summarizer_proxy is None:
+                from nemantix.llm.llama_proxy import LlamaProxy
+
+                self.summarizer = LlamaProxy(model_name=summarizer_model)
+                logger.info(f'Using the local "{summarizer_model}" as summarizer.')
+            else:
+                self.summarizer = summarizer_proxy
+                logger.info(f'Using the summarizer_proxy "{summarizer_proxy.get_name()}" as summarizer.')
+        else:
+            self.summarizer = None
 
     def coding(self, script: Script, required_scripts: list[Script], external_vars_names: list[str] = None):
         """
@@ -251,6 +296,147 @@ class Coder:
             new_content += nxs_content + "\n\n"
 
         return new_content
+    
+    def code_do_as_frames(self, script: Script, node: Statement, required_scripts: list[Script], max_retries: int = 6):
+        # TODO should handle this coding only at runtime?
+        if not isinstance(node, ActionBlock) and not isinstance(node, Deliberate):
+            return None, None
+
+        content_list = script.read_as_list()
+        frame_parser = _get_frame_parser()
+        do_stmts = []
+
+        def _collect_do_statements(nodes, collected):
+            if not nodes:
+                return
+            for node_ in nodes:
+                if not node_:
+                    continue
+                if isinstance(node_, DoStatement) and isinstance(node_.producing_schema, MicroPrompt):
+                    collected.append(node_)
+                if isinstance(node_, BlockStatement):
+                    _collect_do_statements(node_.children or [], collected)
+
+        if isinstance(node, ActionBlock):
+            _collect_do_statements(node.children, do_stmts)
+        elif isinstance(node, Deliberate):
+            plan = node.get_plan()
+            if plan:
+                _collect_do_statements(plan.children, do_stmts)
+            generated_actions = getattr(node, "generated_actions", [])
+            if generated_actions:
+                for action in generated_actions:
+                    _collect_do_statements(action.children, do_stmts)
+
+        if not do_stmts:
+            return None, None
+
+        all_action_semantics = self._extract_actions_semantics(script, required_scripts)
+        all_toolset_map = self._extract_toolset_docs_map(list(script.toolset_imports.values()))
+
+        # Process in reverse line order so earlier line numbers remain valid after each replacement
+        frame_results = {}  # id(statement) -> coded frame string
+
+        for statement in sorted(do_stmts, key=lambda s: s.meta['file_meta'].line[0], reverse=True):
+            fn_name = statement.name
+            logger.info(f"Coding 'as' clause for do {fn_name} call in {node.name} action/deliberate.")
+            callable_type = statement.callable_type
+            do_stmt_text = self._read_node_nxs(content_list, statement, read_as_list=False)
+
+            if callable_type == CallableTypeEnum.ACTION:
+                callable_info = {fn_name: all_action_semantics.get(fn_name, "action")}
+            elif callable_type == CallableTypeEnum.TOOL:
+                toolset_ref = fn_name.split(".")[0] if fn_name and "." in fn_name else fn_name
+                tool_method = fn_name.split(".")[-1] if fn_name and "." in fn_name else fn_name
+                toolset_info = all_toolset_map.get(toolset_ref, {})
+                callable_info = {fn_name: toolset_info.get(tool_method, toolset_info)}
+            else:
+                if fn_name in all_action_semantics:
+                    callable_info = {fn_name: all_action_semantics[fn_name]}
+                else:
+                    toolset_ref = fn_name.split(".")[0] if fn_name and "." in fn_name else fn_name
+                    tool_method = fn_name.split(".")[-1] if fn_name and "." in fn_name else fn_name
+                    toolset_info = all_toolset_map.get(toolset_ref, {})
+                    callable_info = {fn_name: toolset_info.get(tool_method, toolset_info) if toolset_info else "built-in function"}
+
+            callable_info_str = json.dumps(callable_info, indent=2, ensure_ascii=False)
+            base_user_content = DO_AS_FRAMES_PROMPT.format(
+                do_statement=do_stmt_text,
+                callable_info=callable_info_str
+            )
+
+            prev_frame = None
+            prev_error = None
+            frame = None
+            attempt = 0
+
+            self._emit_coding_start(script, scope=fn_name, kind='frame')
+
+            for attempt in range(max_retries):
+                user_content = base_user_content
+
+                if prev_frame:
+                    user_content += f"\n--- PREVIOUS FRAME ---\n{prev_frame}\n---------------------\n"
+
+                if prev_error:
+                    user_content += (
+                        f"\nATTENTION: The previously generated frame failed during parsing with "
+                        f"the following error:\n{prev_error}\n"
+                        f"Analyze this error in the context of the previous frame. "
+                        f"Ensure you fix the specific line or logic causing the issue in this new attempt."
+                    )
+
+                response = self.llm_proxy.invoke(prompt=[dict(role="user", content=user_content)])
+                self._emit_llm(scope=fn_name, usage=response.usage)
+                frame = response.text
+
+                try:
+                    frame_parser.parse(frame)
+                    break
+                except Exception as e:
+                    prev_error = str(e)
+                    prev_frame = frame
+                    logger.warning(f'Error during do-as frame coding: {e}')
+
+            if frame is None:
+                self._emit_coding_error(error=f'Cannot code frame for do statement "{fn_name}"',
+                                        code='', lines=(0, 0), scope='frame')
+                raise NemantixRuntimeException(f'Cannot code frame for do statement "{fn_name}"')
+
+            self._emit_coding_end(script, scope=fn_name, kind='frame', attempts=attempt + 1)
+            frame_results[id(statement)] = frame
+
+            # Derive the frame name and update the do statement's as clause
+            temp_script = Script("_temp.nxs", None, content=frame)
+            temp_script.parse(enable_fixer=self.enable_fixer)
+            frame_name = temp_script.frames[0].name
+
+            statement.producing_schema = frame_name
+            new_do_nxs = statement.to_nxs()
+
+            # Preserve original indentation
+            file_meta = statement.meta['file_meta']
+            block_start_line = file_meta.line[0] - 1
+            block_end_line = file_meta.line[1] - 1
+            original_first_line = content_list[block_start_line]
+            leading_space = len(original_first_line) - len(original_first_line.lstrip())
+            indented_do_nxs = textwrap.indent(new_do_nxs, ' ' * leading_space)
+
+            updated_content = self.replace_nxs_code_block(content_list, block_start_line, block_end_line,
+                                                           indented_do_nxs, indent=False)
+            content_list = updated_content.split('\n')
+
+        # Collect coded frames in original forward order
+        coded = [frame_results[id(s)] for s in do_stmts]
+
+        # Extract the updated node code from the modified content_list
+        node_file_meta = node.meta['file_meta']
+        node_start = node_file_meta.line[0] - 1
+        node_end = node_file_meta.line[1]
+        node_code = '\n'.join(content_list[node_start:node_end])
+
+        return node_code, '\n\n'.join(coded)
+
 
     def code_script_toolsets(self, script: Script, max_retries: int = 6):
         """
@@ -420,7 +606,7 @@ class Coder:
 
         file_meta = action.meta["file_meta"]
         assert isinstance(file_meta, FileMeta)
-        start_line, end_line = file_meta.line[0] - 1, file_meta.line[1] - 1
+        end_line = file_meta.line[1] - 1
 
         orig_code = self._read_node_nxs(script_content_list=script_content_list, node=action, read_as_list=True)
         assert isinstance(orig_code, list)
@@ -430,10 +616,41 @@ class Coder:
         res, attempts = self._check_and_fix_generated_code(messages, resp, relative_start, relative_end, orig_code,
                                                            scope=action_name)
 
+        # summary
+        if coding_level == CodeOperationEnum.COMPLETE and self.create_summary:
+            doc = self.summarize(res)
+            doc_str = "@intent.summary: " + str(doc)
+            # indent
+            first_line = res.splitlines()[0]
+            indent = first_line[:len(first_line) - len(first_line.lstrip(" \t"))]
+            doc_str = indent + doc_str
+            # append
+            res = doc_str + res
+
+        temp_script = Script("_temp.nxs", None, content=res)
+        temp_script.parse(enable_fixer=self.enable_fixer)
+        temp_script.toolset_imports = script.toolset_imports
+        temp_action = next(iter(temp_script.actions.values()), None)
+        if temp_action is None:
+            temp_action = next(iter(getattr(temp_script, 'private_actions', {}).values()), None)
+        if temp_action is not None:
+            node_code, coded_frames = self.code_do_as_frames(temp_script, temp_action, required_scripts)
+            if node_code is not None:
+                res = coded_frames + "\n\n" + node_code
+
         # TODO: should handle missing or removed @completion qualifier?
 
         self._emit_coding_end(script, scope=action_name, attempts=attempts, kind='action', request=user_request)
         return res
+
+    def summarize(self, code):
+        assert self.summarizer is not None
+        
+        doc = self.summarizer.invoke(CODE_SUMMARY_PROMPT.format(action=code)).text
+        doc = doc.replace("`", "").replace("'","").replace('"','').replace("\n"," ")
+        doc = doc.replace("action", "code").replace("plaintext","").replace("plan block", "code block")
+        doc = '"' + doc + '"'
+        return doc
 
     def code_deliberate(self, coding_level: CodeOperationEnum, deliberate_name: str, script: Script,
                         required_scripts: list[Script], user_request=None):
@@ -453,8 +670,7 @@ class Coder:
 
         deliberate_file_meta = deliberate.meta["file_meta"]
         assert isinstance(deliberate_file_meta, FileMeta)
-        deliberate_start_line, deliberate_end_line = (deliberate_file_meta.line[0] - 1,
-                                                      deliberate_file_meta.line[1] - 1)
+        deliberate_start_line = deliberate_file_meta.line[0] - 1
 
         deliberate_original_code = self._read_node_nxs(script_content_list=script_content_list,
                                                        node=deliberate, read_as_list=True)
@@ -484,13 +700,39 @@ class Coder:
         temp_scr.parse(enable_fixer=self.enable_fixer)
 
         # copy old qualifier if the coding removed it
-        coded_qual = [v for v in temp_scr.deliberates.values()][0].qualifier
+        new_deliberate = [v for v in temp_scr.deliberates.values()][0]
+        coded_qual = new_deliberate.qualifier
+
         if coded_qual is None and qual is not None:
             res = "@completion: " + f'{qual[0].value}->{qual[1].value}' + "\n" + res
 
         # add none->none qualifier if there was no @completion
         elif coded_qual is None and qual is None:
             res = "@completion: _->_ \n" + res
+
+        temp_script_df = Script("_temp.nxs", None, content=res)
+        temp_script_df.parse(enable_fixer=self.enable_fixer)
+        temp_script_df.toolset_imports = script.toolset_imports
+        temp_deliberate = next(iter(temp_script_df.deliberates.values()), None)
+        if temp_deliberate is not None:
+            node_code, coded_frames = self.code_do_as_frames(temp_script_df, temp_deliberate, required_scripts)
+            if node_code is not None:
+                res = coded_frames + "\n\n" + node_code
+
+        # add summary for frozen deliberates
+        if coding_level == CodeOperationEnum.COMPLETE and self.create_summary:
+            new_plan = new_deliberate.get_plan()
+            new_plan_meta = new_plan.meta["file_meta"]
+            new_plan_start_line, new_plan_end_line = new_plan_meta.line[0] - 1, new_plan_meta.line[1] - 1
+            plan_code = "\n".join(res.split("\n")[new_plan_start_line:new_plan_end_line])
+            doc = self.summarize(plan_code)
+            doc_str = "@intent.summary: " + str(doc) + ("\n" if not str(doc).endswith("\n") else "")
+            # indent
+            first_line = res.splitlines()[0]
+            indent = first_line[:len(first_line) - len(first_line.lstrip(" \t"))]
+            doc_str = indent + doc_str
+            # append
+            res = doc_str + res
 
         self._emit_coding_end(script, scope=deliberate_name, attempts=attempts, kind='deliberate', request=user_request)
         return res
@@ -823,6 +1065,7 @@ class Coder:
         imported_tools = list(script.toolset_imports.values())
         toolset_info_map = self._extract_toolset_docs_map(imported_tools)
         available_tools = json.dumps(toolset_info_map, indent=2, ensure_ascii=False)
+
         # Actions
         action_semantics_map = self._extract_actions_semantics(script, required_scripts)
         available_actions = json.dumps(action_semantics_map, indent=2, ensure_ascii=False)
@@ -851,8 +1094,10 @@ class Coder:
         return messages
 
     def query_knowledge_base(self, deliberate: Deliberate) -> str:
-        from nemantix.knowledge_base.core.nemantix_knowledge_base import NemantixKnowledgeBase
         from nemantix.core.runtime import Builtin
+        from nemantix.knowledge_base.core.nemantix_knowledge_base import (
+            NemantixKnowledgeBase,
+        )
 
         if not isinstance(self.knowledge_base, NemantixKnowledgeBase):
             return ''
@@ -972,17 +1217,31 @@ class Coder:
 
         return toolset_map
 
-    @staticmethod
-    def _extract_actions_semantics(script: Script, required_scripts: list[Script]):
+    def _extract_actions_semantics(self, script: Script, required_scripts: list[Script]):
         action_semantics_map = script.action_semantics_map
 
         # build map of all deliberates # TODO handle same name deliberates (?)
         for req_scr in required_scripts:
             action_semantics_map.update(req_scr.action_semantics_map)
 
-        action_semantics_map = {k: v.to_dict() for k, v in action_semantics_map.items()}
+        action_semantics_map_ = {}
+        for k, v in action_semantics_map.items():
+            v_dict = v.to_dict()
 
-        return action_semantics_map
+            if self.include_action_body_in_semantics and v.body is not None:
+                content_lines = script.read_as_list()
+                body_lines = []
+
+                for stmt in v.body:
+                    code = self._read_node_nxs(content_lines, stmt, read_as_list=False)
+                    body_lines.append(code)
+
+                body = '\n'.join(body_lines)
+                v_dict['body'] = body
+
+            action_semantics_map_[k] = v_dict
+
+        return action_semantics_map_
 
     @staticmethod
     def _emit_coding_start(script: Script | None, scope: str, kind: str):

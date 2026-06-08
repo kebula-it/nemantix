@@ -1,3 +1,5 @@
 from nemantix.knowledge_base.document_structure.coordinates import Coordinates
 from nemantix.knowledge_base.document_structure.document import Document
 from nemantix.knowledge_base.document_structure.hierarchy import DocumentHierarchy
+
+__all__ = ["Coordinates", "Document", "DocumentHierarchy"]

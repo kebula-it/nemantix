@@ -33,7 +33,7 @@ dependencies = [
     "google-genai~=1.36.0",
     "anthropic~=0.71.0",
     "lark~=1.2.2",
-    "python-dotenv~=1.1.1",
+    "python-dotenv~=1.2.2",
     "cryptography~=46.0.3"
 ]
 
@@ -75,7 +75,6 @@ observer = [
 llm_extra = [
     "outlines~=1.2.13",
     "llama-cpp-python~=0.3.23",
-    "vllm~=0.20.2"
 ]
 all = [
     "nemantix[embeddings,stl,debug,dev,knowledge,observer]"

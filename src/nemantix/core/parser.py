@@ -1,36 +1,81 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from lark import (
     Lark,
+    ParseTree,
+    Token,
     Transformer,
     Tree,
-    Token,
     UnexpectedCharacters,
     UnexpectedToken,
-    v_args, ParseTree,
+    v_args,
 )
 from lark.visitors import Visitor_Recursive
 
-from nemantix.core.exceptions import NemantixParserException
-from nemantix.core.node import (ActionBlock, ActionInput, ActionOutput, Annotation, Assignment,
-                                BinaryOperation, BinaryOperationEnum, BlockStatement, Collection, ConditionBlock,
-                                Deliberate, DoStatement, ElifBlock, ElseBlock, Expression, FileMeta, Frame,
-                                FrameApplyEnum, IfBlock, LeafStatement, BuiltinFunction, MicroPrompt, NodeMeta,
-                                PlanBlock, PythonToolDeclaration, RepeatBlock, RepeatEachBlock, RepeatTimesBlock,
-                                RepeatUntilBlock,
-                                RepeatWhileBlock, SchemedCollection, SimilarityEnum, SimilarityOperation, SingleValue,
-                                Slot, SlotTypesEnum, BuiltinFunctionEnum,
-                                Statement, UnaryOperation, UnaryOperationEnum, Variable, VariableTypeEnum,
-                                map_sim_qual_kw, builtin_func_map, slot_types_map, Require, MetaExpression,
-                                Return, Break, Continue, ImportDeliberateStatement, ImportToolsetStatement, Value,
-                                CallableTypeEnum)
 from nemantix.common.logger import get_package_logger
 from nemantix.core.custom_types import PathLike
+from nemantix.core.exceptions import NemantixParserException
+from nemantix.core.node import (
+    ActionBlock,
+    ActionInput,
+    ActionOutput,
+    Annotation,
+    Assignment,
+    BinaryOperation,
+    BinaryOperationEnum,
+    BlockStatement,
+    Break,
+    BuiltinFunction,
+    BuiltinFunctionEnum,
+    CallableTypeEnum,
+    Collection,
+    ConditionBlock,
+    Continue,
+    Deliberate,
+    DoStatement,
+    ElifBlock,
+    ElseBlock,
+    Expression,
+    FileMeta,
+    Frame,
+    FrameApplyEnum,
+    IfBlock,
+    ImportToolsetStatement,
+    LeafStatement,
+    MetaExpression,
+    MicroPrompt,
+    NodeMeta,
+    PlanBlock,
+    PythonToolDeclaration,
+    RepeatBlock,
+    RepeatEachBlock,
+    RepeatTimesBlock,
+    RepeatUntilBlock,
+    RepeatWhileBlock,
+    Require,
+    Return,
+    SchemedCollection,
+    SimilarityEnum,
+    SimilarityOperation,
+    SingleValue,
+    Slot,
+    SlotTypesEnum,
+    Statement,
+    UnaryOperation,
+    UnaryOperationEnum,
+    Value,
+    Variable,
+    VariableTypeEnum,
+    builtin_func_map,
+    map_sim_qual_kw,
+    slot_types_map,
+)
 
 logger = get_package_logger(__name__)
 
@@ -46,6 +91,12 @@ RESERVED_VAR_NAMES = ['_', '__', 'when', 'from', 'use', 'as', 'with',
                       '__action', '__body', '__do', '__in', '__out', '__repeat',
                       '__if', '__toolset', '__use', '__frame']
 IMPORTED_TOOLSETS = {}
+
+@dataclass
+class AsFrame:
+    """Simulate node to temporarily store file meta of AS clause in producing clause (do)"""
+    value: str
+    meta: dict
 
 
 # =============================================================================
@@ -339,7 +390,6 @@ class AstTransformer(Transformer):
                     args = it[1]
 
         # keep track of imported toolsets
-        # TODO: handle "*" toolset imports
         # TODO: check tool name as key
         for tool in tools:
             IMPORTED_TOOLSETS[tool] = toolset_name
@@ -349,24 +399,6 @@ class AstTransformer(Transformer):
             elements=tools,
             alias=alias,
             args=args,
-            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
-        )
-
-    @v_args(meta=True)
-    def import_deliberate(self, meta, items):
-        node_meta = items.pop(0) if items and isinstance(items[0], NodeMeta) else None
-
-        new_items = []
-        for it in items:
-            if not isinstance(it, Token):
-                new_items.append(it)
-
-        deliberate_name = new_items[0]
-        action_list = new_items[1]
-
-        return ImportDeliberateStatement(
-            name=deliberate_name,
-            elements=action_list,
             meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
         )
 
@@ -410,11 +442,11 @@ class AstTransformer(Transformer):
         ins: List[ActionInput] = []
         outs: List[ActionOutput] = []
         body: List[Statement] = []
-        qual: Optional[str] = None
 
         for obj in non_tokens:
             if isinstance(obj, str):
-                name_str = obj
+                continue
+
             elif isinstance(obj, list) and obj:
                 first_elem = obj[0]
 
@@ -429,15 +461,14 @@ class AstTransformer(Transformer):
             ins = []
 
         if all([o is None for o in outs]):
-            out = []
+            outs = []
 
         file_meta = FileMeta((meta.line, meta.end_line), (meta.column, meta.end_column), file=self._current_file)
         return PlanBlock(
             action_inputs=ins,
             action_outputs=outs,
             body=body,
-            meta={"file_meta": file_meta, "node_meta": node_meta},
-        )
+            meta={"file_meta": file_meta, "node_meta": node_meta})
 
     @v_args(meta=True)
     def deliberate(self, meta, items):
@@ -889,8 +920,10 @@ class AstTransformer(Transformer):
     def list_literal_single_kv(self, items):
         return items[0]
 
-    def frame_apply(self, items):
-        return items[0][0].value  # qualified_name
+    @v_args(meta=True)
+    def frame_apply(self, meta, items) -> AsFrame:
+        apply = AsFrame(value=items[0][0].value, meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return apply
 
     @v_args(meta=True)
     def structure_prefix(self, meta, items):
@@ -1150,7 +1183,6 @@ class AstTransformer(Transformer):
         ins: List[ActionInput] = []
         outs: List[ActionOutput] = []
         body: List[Statement] = []
-        qual: Optional[str] = None
 
         for obj in non_tokens:
             if isinstance(obj, str):
@@ -1171,7 +1203,7 @@ class AstTransformer(Transformer):
             ins = []
 
         if all([o is None for o in outs]):
-            out = []
+            outs = []
 
         file_meta = FileMeta((meta.line, meta.end_line), (meta.column, meta.end_column), file=self._current_file)
         return ActionBlock(
@@ -1402,10 +1434,9 @@ class AstTransformer(Transformer):
         callable_type = items.pop(0)[1] if items and isinstance(items[0], tuple) and items[0][
             0] == "callable_type" else None
         name: Optional[str] = None
-        deliberate: Optional[str] = None
         using_expr: Optional[Expression] = None
         producing_expr: Optional[Expression] = None
-        producing_schema: Optional[str] = None
+        producing_schema: Optional[str | MicroPrompt] = None
         prompt: Optional[MicroPrompt] = None
 
         start_item = items[0][0] if isinstance(items[0], list) else items[0]
@@ -1426,9 +1457,20 @@ class AstTransformer(Transformer):
             end_line = end_item.line
             end_column = end_item.column
         else:
-            it = end_item[1] if isinstance(end_item, tuple) else end_item
-            end_line = it.meta["file_meta"].line[-1]
-            end_column = it.meta["file_meta"].column[-1]
+            if isinstance(end_item, tuple):
+                end_line = 0
+                end_column = 0
+                
+                for it in end_item:
+                    if it is None or not hasattr(it, 'meta'):
+                        continue
+
+                    end_line = max(end_line, it.meta["file_meta"].line[-1])
+                    end_column = max(end_column, it.meta["file_meta"].column[-1])
+            else:
+                it = end_item
+                end_line = it.meta["file_meta"].line[-1]
+                end_column = it.meta["file_meta"].column[-1]
 
         line = (start_line, end_line)
         column = (start_column, end_column)
@@ -1439,14 +1481,22 @@ class AstTransformer(Transformer):
                     name = it[0].value
                 else:
                     name = ".".join([i.value for i in it])
+
             elif isinstance(it, tuple):
                 kind = it[0]
                 if kind == "using":
                     using_expr = it[1]
+
                 elif kind == "producing":
                     producing_expr = it[1]
-                    if len(it) > 2:
-                        producing_schema = it[2]
+
+                    if len(it) > 2 and it[2] is not None:
+                        if isinstance(it[2], AsFrame):
+                            producing_schema = it[2].value
+                        else:
+                            assert isinstance(it[2], MicroPrompt)
+                            producing_schema = it[2]
+
             elif isinstance(it, MicroPrompt):
                 prompt = it
 
@@ -1720,6 +1770,49 @@ TOKEN_MAP = {
     "PROMPT_LINE_VAR_TEXT": ">> text]",
     "LSQB": "'['",
     "RSQB": "']'",
+    "LBRACE": "'{'",
+    "RBRACE": "'}'",
+    "AT": "'@'",
+    "PIPE": "'|'",
+    "NEWLINE": "newline",
+    "$END": "end of file",
+    "ACTION": "'action'",
+    "DELIBERATE": "'deliberate'",
+    "TOOL": "'tool'",
+    "_BODY": "'body'",
+    "_EACH": "'each'",
+    "_END_DO": "'__do'",
+    "_GUIDELINES": "'guidelines'",
+    "_IN": "'in'",
+    "_MAX": "'max'",
+    "_NONE": "'none'",
+    "_OPTIONAL": "'optional'",
+    "_OUT": "'out'",
+    "_PRODUCING": "'producing'",
+    "_REPEAT": "'repeat'",
+    "_REQUIRE": "'require'",
+    "_REQUIRED": "'required'",
+    "_TIMES": "'times'",
+    "_USING": "'using'",
+    "_WHERE": "'where'",
+    "_WITH": "'with'",
+    "_DEFAULT": "'default'",
+    "_SHORT_NONE": "'_'",
+    "BOOL_TYPE": "'BOOL'",
+    "FLOAT": "a decimal number",
+    "TRUE": "'true'",
+    "FALSE": "'false'",
+    "FROZEN": "'frozen'",
+    "DRAFTED": "'drafted'",
+    "UNDEFINED": "'undefined'",
+    "UNTIL": "'until'",
+    "WHILE": "'while'",
+    "NXC_PATH": "a .nxc file path",
+    "SIM_ABOUT": "'~'",
+    "SIM_CLOSE": "'~~'",
+    "SIM_FAR": "'~~~'",
+    "SIM_LOOSE": "'~~?'",
+    "SIM_STRICT": "'=~'",
 }
 
 

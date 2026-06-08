@@ -12,6 +12,7 @@
         <liveTemplateContext contextId="NEMANTIX" implementation="it.kebula.plugin.NemantixTemplateContextType"/>
         <multiHostInjector implementation="it.kebula.plugin.NemantixPythonInjector"/>
         <annotator language="Nemantix" implementationClass="it.kebula.plugin.NemantixAnnotator"/>
+        <copyPastePostProcessor implementation="it.kebula.plugin.NemantixPasteProcessor"/>
         <fileType
                 name="Nemantix"
                 implementationClass="it.kebula.plugin.NemantixFileType"

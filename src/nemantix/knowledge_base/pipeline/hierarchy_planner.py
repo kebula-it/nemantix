@@ -1,15 +1,18 @@
-import re
-import hashlib
-
-from typing import Any, Dict, List, Optional
 import concurrent.futures
+import hashlib
+import re
+from typing import Any, Dict, List, Optional
 
 from nemantix.common.logger import get_package_logger
-from nemantix.knowledge_base.document_plugins.base import BaseDocumentPlugin
-from nemantix.knowledge_base.document_plugins.plugin_registry import DocumentPluginRegistry
-from nemantix.knowledge_base.document_structure.document import Document
-from nemantix.knowledge_base.document_structure.schemas import NodeModel, DocumentHierarchyModel
 from nemantix.core.exceptions import NemantixException
+from nemantix.knowledge_base.document_plugins.base import BaseDocumentPlugin
+from nemantix.knowledge_base.document_plugins.plugin_registry import (
+    DocumentPluginRegistry,
+)
+from nemantix.knowledge_base.document_structure.schemas import (
+    DocumentHierarchyModel,
+    NodeModel,
+)
 
 logger = get_package_logger(__name__)
 

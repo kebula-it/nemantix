@@ -7,7 +7,6 @@ from nemantix.hub.events import Event, EventType
 from nemantix.hub.profiler import CallNode, CodingNode, Profiler
 from nemantix.llm.abstract_proxy import LLMUsage
 
-
 # =============================================================================
 # Event helpers
 # =============================================================================
@@ -103,7 +102,7 @@ def test_call_node_total_time():
 
 
 def test_call_node_total_time_not_ended():
-    """With end_time=0.0 (default), total_time is negative — documents current behaviour."""
+    """With end_time=0.0 (default), total_time is negative — documents current behavior."""
     node = CallNode(name="a", type="action", start_time=5.0)
     assert node.total_time < 0
 

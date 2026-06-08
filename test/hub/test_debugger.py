@@ -8,16 +8,16 @@ import numpy as np
 import pytest
 from pydantic import BaseModel
 
+from nemantix.common import context
 from nemantix.core import node as nmx_nodes
 from nemantix.core.expertise import Expertise
 from nemantix.core.interpreter import Interpreter
 from nemantix.core.node import (
-    VariableTypeEnum,
+    Annotation,
     FileMeta,
     NodeMeta,
-    Annotation,
+    VariableTypeEnum,
 )
-from nemantix.common import context
 from nemantix.hub.debugger import Debugger
 from nemantix.hub.event_hub import EventHub
 from nemantix.hub.events import Event, EventType
@@ -31,6 +31,7 @@ _SCRIPTS_DIR = HERE.parent / "core" / "test_scripts"
 # =============================================================================
 # Stubs
 # =============================================================================
+
 
 class DummyScript:
     """Minimal Script stand-in: provides a readable line list and a location string."""
@@ -96,7 +97,10 @@ class DummyLLM:
 # Node builders
 # =============================================================================
 
-def _pick_enum(enum_cls, preferred_names: list[str], exclude_names: set[str] | None = None):
+
+def _pick_enum(
+    enum_cls, preferred_names: list[str], exclude_names: set[str] | None = None
+):
     exclude_names = exclude_names or set()
     for n in preferred_names:
         if hasattr(enum_cls, n):
@@ -159,16 +163,21 @@ def make_value(val, type_enum: VariableTypeEnum | None = None):
             type_enum = _STRING_TYPE
         else:
             raise RuntimeError(f"Unsupported literal type: {type(val)}")
-    return make_node(nmx_nodes.SingleValue, value=val, inferred_type=type_enum, meta=make_meta())
+    return make_node(
+        nmx_nodes.SingleValue, value=val, inferred_type=type_enum, meta=make_meta()
+    )
 
 
 def make_var(name: str):
-    return make_node(nmx_nodes.Variable, name=name, path=[], prompt=None, meta=make_meta())
+    return make_node(
+        nmx_nodes.Variable, name=name, path=[], prompt=None, meta=make_meta()
+    )
 
 
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def hub(isolated_event_hub):
@@ -182,6 +191,7 @@ def debugger():
 
 class _FakeDeliberate:
     """Minimal stand-in for a Deliberate node, used to satisfy _event_from_statement."""
+
     name = "__test__"
 
 
@@ -192,7 +202,7 @@ def interpreter_with_hub(hub):
     llm = DummyLLM()
     interp = Interpreter(expertise=exp, llm=llm, embedder=emb)
     # _event_from_statement requires a deliberate in globals to resolve the script
-    interp.globals['__deliberate'] = _FakeDeliberate()
+    interp.globals["__deliberate"] = _FakeDeliberate()
     return interp
 
 
@@ -200,13 +210,16 @@ def interpreter_with_hub(hub):
 # Group 1: EventHub and breakpoint event emission (interpreter side)
 # =============================================================================
 
+
 def test_breakpoint_intentable_emits_event(interpreter_with_hub, hub):
     """@breakpoint on a statement causes exactly one BREAKPOINT event to be emitted."""
     events_received = []
     hub.subscribe(EventType.BREAKPOINT, events_received.append)
 
     meta = make_meta_with_breakpoint()
-    stmt = make_node(nmx_nodes.Assignment, var=make_var("x"), value=make_value(42), meta=meta)
+    stmt = make_node(
+        nmx_nodes.Assignment, var=make_var("x"), value=make_value(42), meta=meta
+    )
 
     interpreter_with_hub.interpret_intentable(meta, stmt=stmt)
 
@@ -220,7 +233,9 @@ def test_non_breakpoint_intentable_does_not_emit_event(interpreter_with_hub, hub
     hub.subscribe(EventType.BREAKPOINT, events_received.append)
 
     meta = make_meta()
-    stmt = make_node(nmx_nodes.Assignment, var=make_var("y"), value=make_value(0), meta=meta)
+    stmt = make_node(
+        nmx_nodes.Assignment, var=make_var("y"), value=make_value(0), meta=meta
+    )
 
     interpreter_with_hub.interpret_intentable(meta, stmt=stmt)
 
@@ -233,7 +248,9 @@ def test_breakpoint_not_emitted_without_event_hub():
     interp = Interpreter(expertise=exp, llm=DummyLLM(), embedder=DummyEmbedder())
 
     meta = make_meta_with_breakpoint()
-    stmt = make_node(nmx_nodes.Assignment, var=make_var("z"), value=make_value(1), meta=meta)
+    stmt = make_node(
+        nmx_nodes.Assignment, var=make_var("z"), value=make_value(1), meta=meta
+    )
 
     # Should complete without raising
     interp.interpret_intentable(meta, stmt=stmt)
@@ -245,7 +262,9 @@ def test_breakpoint_event_payload_contains_interpreter(interpreter_with_hub, hub
     hub.subscribe(EventType.BREAKPOINT, events_received.append)
 
     meta = make_meta_with_breakpoint()
-    stmt = make_node(nmx_nodes.Assignment, var=make_var("a"), value=make_value(7), meta=meta)
+    stmt = make_node(
+        nmx_nodes.Assignment, var=make_var("a"), value=make_value(7), meta=meta
+    )
 
     interpreter_with_hub.interpret_intentable(meta, stmt=stmt)
 
@@ -262,26 +281,34 @@ def test_multiple_breakpoints_emit_multiple_events(interpreter_with_hub, hub):
 
     for i in range(3):
         meta = make_meta_with_breakpoint()
-        stmt = make_node(nmx_nodes.Assignment, var=make_var(f"v{i}"), value=make_value(i), meta=meta)
+        stmt = make_node(
+            nmx_nodes.Assignment, var=make_var(f"v{i}"), value=make_value(i), meta=meta
+        )
         interpreter_with_hub.interpret_intentable(meta, stmt=stmt)
 
     assert len(events_received) == 3
     assert all(e.type == EventType.BREAKPOINT for e in events_received)
 
 
-def test_conditional_breakpoint_only_fires_when_condition_true(interpreter_with_hub, hub):
+def test_conditional_breakpoint_only_fires_when_condition_true(
+    interpreter_with_hub, hub
+):
     """@breakpoint: <condition> only emits when the condition evaluates to truthy."""
     events_received = []
     hub.subscribe(EventType.BREAKPOINT, events_received.append)
 
     # Truthy condition → event fired
     meta_true = make_meta_with_conditional_breakpoint(True)
-    stmt_true = make_node(nmx_nodes.Assignment, var=make_var("t"), value=make_value(1), meta=meta_true)
+    stmt_true = make_node(
+        nmx_nodes.Assignment, var=make_var("t"), value=make_value(1), meta=meta_true
+    )
     interpreter_with_hub.interpret_intentable(meta_true, stmt=stmt_true)
 
     # Falsy condition → event suppressed
     meta_false = make_meta_with_conditional_breakpoint(False)
-    stmt_false = make_node(nmx_nodes.Assignment, var=make_var("f"), value=make_value(0), meta=meta_false)
+    stmt_false = make_node(
+        nmx_nodes.Assignment, var=make_var("f"), value=make_value(0), meta=meta_false
+    )
     interpreter_with_hub.interpret_intentable(meta_false, stmt=stmt_false)
 
     assert len(events_received) == 1
@@ -291,6 +318,7 @@ def test_conditional_breakpoint_only_fires_when_condition_true(interpreter_with_
 # =============================================================================
 # Group 2: Debugger subscription
 # =============================================================================
+
 
 def test_debugger_subscribes_to_breakpoint_event(hub, debugger):
     """After debugger.subscribe(hub), BREAKPOINT events have a subscriber."""
@@ -321,7 +349,10 @@ def test_debugger_subscribes_to_exactly_five_events(hub, debugger):
 # Group 3: Debugger callback invocation
 # =============================================================================
 
-def test_debugger_on_breakpoint_invoked_on_event(interpreter_with_hub, hub, monkeypatch):
+
+def test_debugger_on_breakpoint_invoked_on_event(
+    interpreter_with_hub, hub, monkeypatch
+):
     """When a BREAKPOINT event fires, the Debugger's on_breakpoint is called."""
     dbg = Debugger()
     invocations = []
@@ -329,7 +360,9 @@ def test_debugger_on_breakpoint_invoked_on_event(interpreter_with_hub, hub, monk
     dbg.subscribe(hub)
 
     meta = make_meta_with_breakpoint()
-    stmt = make_node(nmx_nodes.Assignment, var=make_var("b"), value=make_value(99), meta=meta)
+    stmt = make_node(
+        nmx_nodes.Assignment, var=make_var("b"), value=make_value(99), meta=meta
+    )
     interpreter_with_hub.interpret_intentable(meta, stmt=stmt)
 
     assert len(invocations) == 1
@@ -405,6 +438,7 @@ def test_debugger_call_stack_safe_exit_without_enter(hub, debugger):
 # Group 4: on_line stepping logic (internal state machine, no REPL)
 # =============================================================================
 
+
 def _make_line_event(lines=(3, 4)):
     """Returns a minimal LINE event; script/payload unused because on_breakpoint is patched."""
     return Event(
@@ -418,10 +452,10 @@ def _make_line_event(lines=(3, 4)):
 
 
 def test_on_line_does_nothing_when_skip_all(monkeypatch):
-    """_skip_all=True means on_line always returns early — on_breakpoint never called."""
+    """_skip_all=True means on_line always returns early — _stop never called."""
     dbg = Debugger()
     invocations = []
-    monkeypatch.setattr(dbg, "on_breakpoint", lambda e: invocations.append(e))
+    monkeypatch.setattr(dbg, "_stop", lambda e, r: invocations.append(e))
 
     dbg._skip_all = True
     dbg.on_line(_make_line_event())
@@ -430,27 +464,27 @@ def test_on_line_does_nothing_when_skip_all(monkeypatch):
 
 
 def test_step_next_triggers_on_next_different_line(monkeypatch):
-    """With _step_next=True and call stack at depth, a new line triggers on_breakpoint."""
+    """With _step_next=True and call stack at depth, a new line triggers _stop(STEP)."""
     dbg = Debugger()
     invocations = []
-    monkeypatch.setattr(dbg, "on_breakpoint", lambda e: invocations.append(e))
+    monkeypatch.setattr(dbg, "_stop", lambda e, r: invocations.append(e))
 
     dbg._step_next = True
-    dbg._step_depth = 0       # stack must be <= 0 (empty)
-    dbg._step_line = (1, 2)   # the line we stepped FROM
+    dbg._step_depth = 0  # stack must be <= 0 (empty)
+    dbg._step_line = (1, 2)  # the line we stepped FROM
 
     dbg.on_line(_make_line_event(lines=(3, 4)))  # different line
 
     assert len(invocations) == 1
-    assert dbg._step_next is False   # flag cleared after trigger
+    assert dbg._step_next is False  # flag cleared after trigger
     assert dbg._step_line is None
 
 
 def test_step_next_skips_repeated_line(monkeypatch):
-    """_step_next=True but the event line matches _step_line — on_breakpoint NOT called."""
+    """_step_next=True but the event line matches _step_line — _stop NOT called."""
     dbg = Debugger()
     invocations = []
-    monkeypatch.setattr(dbg, "on_breakpoint", lambda e: invocations.append(e))
+    monkeypatch.setattr(dbg, "_stop", lambda e, r: invocations.append(e))
 
     dbg._step_next = True
     dbg._step_depth = 0
@@ -465,24 +499,24 @@ def test_step_next_suppressed_in_deeper_frame(monkeypatch):
     """_step_next is only active when call stack depth <= _step_depth (step-over semantics)."""
     dbg = Debugger()
     invocations = []
-    monkeypatch.setattr(dbg, "on_breakpoint", lambda e: invocations.append(e))
+    monkeypatch.setattr(dbg, "_stop", lambda e, r: invocations.append(e))
 
     # Simulate being one frame deeper than where 'n' was issued
     dbg.call_stack.append(CallNode(name="inner", type="action", start_time=0.0))
     dbg._step_next = True
-    dbg._step_depth = 0       # stepped from depth 0, now we're at depth 1
+    dbg._step_depth = 0  # stepped from depth 0, now we're at depth 1
     dbg._step_line = (1, 2)
 
     dbg.on_line(_make_line_event(lines=(5, 6)))  # different line, but deeper frame
 
-    assert len(invocations) == 0   # suppressed — we're inside a called action
+    assert len(invocations) == 0  # suppressed — we're inside a called action
 
 
 def test_step_into_triggers_on_next_different_line(monkeypatch):
-    """_step_into=True fires on_breakpoint as soon as any new line is reached."""
+    """_step_into=True fires _stop(STEP) as soon as any new line is reached."""
     dbg = Debugger()
     invocations = []
-    monkeypatch.setattr(dbg, "on_breakpoint", lambda e: invocations.append(e))
+    monkeypatch.setattr(dbg, "_stop", lambda e, r: invocations.append(e))
 
     dbg._step_into = True
     dbg._step_line = (1, 2)
@@ -498,12 +532,12 @@ def test_step_out_triggers_when_stack_shallower(monkeypatch):
     """_step_out=True fires when the call stack is shallower than _step_depth (we returned)."""
     dbg = Debugger()
     invocations = []
-    monkeypatch.setattr(dbg, "on_breakpoint", lambda e: invocations.append(e))
+    monkeypatch.setattr(dbg, "_stop", lambda e, r: invocations.append(e))
 
     # Pretend 'r' was issued with two frames on the stack
     dbg.call_stack.append(CallNode(name="outer", type="action", start_time=0.0))
     dbg._step_out = True
-    dbg._step_depth = 2   # stepped from depth=2; now stack has 1 → returned
+    dbg._step_depth = 2  # stepped from depth=2; now stack has 1 → returned
 
     dbg.on_line(_make_line_event())
 
@@ -514,6 +548,7 @@ def test_step_out_triggers_when_stack_shallower(monkeypatch):
 # =============================================================================
 # Group 5: _list_lines utility
 # =============================================================================
+
 
 def _make_list_event(current_line: int):
     """LINE event pointing at `current_line` with a DummyMultiLineScript as the script."""
@@ -532,7 +567,7 @@ def test_list_lines_default_context_around_current():
     event = _make_list_event(current_line=11)
     output = Debugger._list_lines(event)
     displayed = [int(line.split()[0]) for line in output.splitlines()]
-    assert displayed == list(range(6, 17))   # 6..16 inclusive
+    assert displayed == list(range(6, 17))  # 6..16 inclusive
 
 
 def test_list_lines_clamped_at_start():
@@ -540,8 +575,8 @@ def test_list_lines_clamped_at_start():
     event = _make_list_event(current_line=2)
     output = Debugger._list_lines(event)
     displayed = [int(line.split()[0]) for line in output.splitlines()]
-    assert displayed[0] == 1           # clamped at 1, not negative
-    assert 2 in displayed              # current line still visible
+    assert displayed[0] == 1  # clamped at 1, not negative
+    assert 2 in displayed  # current line still visible
 
 
 def test_list_lines_clamped_at_end():
@@ -549,7 +584,7 @@ def test_list_lines_clamped_at_end():
     event = _make_list_event(current_line=19)
     output = Debugger._list_lines(event)
     displayed = [int(line.split()[0]) for line in output.splitlines()]
-    assert displayed[-1] == 20         # clamped at 20, not beyond
+    assert displayed[-1] == 20  # clamped at 20, not beyond
 
 
 def test_list_lines_explicit_center():
@@ -576,21 +611,22 @@ def test_list_lines_marks_current_line():
     # Marker occupies columns 5-6 (0-indexed) after the 4-digit line number and one space.
     for raw_line in output.splitlines():
         lineno = int(raw_line.split()[0])
-        marker = raw_line[5:7]   # columns 5..6 hold the 2-char marker
+        marker = raw_line[5:7]  # columns 5..6 hold the 2-char marker
         if lineno == 5:
-            assert marker == '->', f"Expected '->' on line 5, got {marker!r}"
+            assert marker == "->", f"Expected '->' on line 5, got {marker!r}"
         else:
-            assert marker == '  ', f"Expected '  ' on line {lineno}, got {marker!r}"
+            assert marker == "  ", f"Expected '  ' on line {lineno}, got {marker!r}"
 
 
 # =============================================================================
 # Group 6: observers= API
 # =============================================================================
 
+
 def test_observers_api_creates_hub_automatically():
     """`observers=[Debugger()]` causes Expertise to use the context EventHub."""
     coder = MagicMock()
-    exp = Expertise(script_list=[], coder=coder, verifier=DebugVerifier(), observers=[Debugger()])
+    _ = Expertise(script_list=[], coder=coder, verifier=DebugVerifier(), observers=[Debugger()])
     assert isinstance(context.event_hub.get(), EventHub)
 
 
@@ -601,7 +637,7 @@ def test_observers_api_subscribes_each_observer(monkeypatch, hub):
     invocations = []
     monkeypatch.setattr(dbg, "on_breakpoint", lambda e: invocations.append(e))
 
-    exp = Expertise(script_list=[], coder=coder, verifier=DebugVerifier(), observers=[dbg])
+    _ = Expertise(script_list=[], coder=coder, verifier=DebugVerifier(), observers=[dbg])
 
     event = Event(
         type=EventType.BREAKPOINT,
@@ -614,5 +650,3 @@ def test_observers_api_subscribes_each_observer(monkeypatch, hub):
     hub.emit(event)
 
     assert len(invocations) == 1
-
-

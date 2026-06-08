@@ -1,28 +1,22 @@
 import logging
-import pytest
-
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from nemantix.common.connectors import DBConnector
 from nemantix.hub import EventType
-from nemantix.hub.observer import Observer, ObserverLogHandler, AgentMetrics, SystemMetrics
-
-
-# Mock the Event and EventType since we don't have the real nemantix library here
-class MockEventType:
-    LLM = "LLM"
-    CALL_ENTER = "CALL_ENTER"
-    USER_REQUEST = "USER_REQUEST"
-    EXECUTOR_PHASE_START = "EXECUTOR_PHASE_START"
-    ERROR = "ERROR"
-    LOG_EVENT = "LOG_EVENT"
-    MONITOR_START = "MONITOR_START"
-    MONITOR_STOP = "MONITOR_STOP"
+from nemantix.hub.observer import (
+    AgentMetrics,
+    Observer,
+    ObserverLogHandler,
+    SystemMetrics,
+)
 
 
 class MockEvent:
-    def __init__(self, type, payload=None, lines=None, timestamp=1600000000.0):
-        self.type = type
+    def __init__(self, type_: EventType, payload=None, lines=None, timestamp=1600000000.0):
+        self.type = type_
+        self.script = None
         self.payload = payload or {}
         self.lines = lines or (1, 1)
         self.timestamp = timestamp
@@ -72,7 +66,7 @@ def test_observer_initialization(observer, mock_connector):
 def test_hardware_tracking_calculates_deltas(observer):
     """Tests if the start/stop cycle accurately calculates hardware deltas."""
     # 1. Start Tracking
-    observer.start_hardware_tracking(MockEvent(MockEventType.MONITOR_START))
+    observer.start_hardware_tracking(MockEvent(EventType.MONITOR_START))
     assert observer._is_tracking is True
 
     # 2. Simulate hardware changes over time
@@ -91,7 +85,7 @@ def test_hardware_tracking_calculates_deltas(observer):
         mock_net.return_value.bytes_sent = 4096  # Delta: 2048 bytes (2 KB)
 
         # 3. Stop Tracking
-        observer.stop_hardware_tracking(MockEvent(MockEventType.MONITOR_STOP))
+        observer.stop_hardware_tracking(MockEvent(EventType.MONITOR_STOP))
 
     # Assertions
     assert observer._is_tracking is False
@@ -106,22 +100,22 @@ def test_hardware_tracking_calculates_deltas(observer):
 def test_agent_metrics_accumulation(observer):
     """Tests if the observer correctly accumulates cognitive metrics."""
     # Simulate LLM calls (1 internal, 2 external)
-    observer.on_llm(MockEvent(MockEventType.LLM, {'name': 'gpt-4', 'internal_usage': True}))
-    observer.on_llm(MockEvent(MockEventType.LLM, {'name': 'gpt-4', 'internal_usage': False}))
-    observer.on_llm(MockEvent(MockEventType.LLM, {'name': 'gpt-4', 'internal_usage': False}))
+    observer.on_llm(MockEvent(EventType.LLM, {'name': 'gpt-4', 'internal_usage': True}))
+    observer.on_llm(MockEvent(EventType.LLM, {'name': 'gpt-4', 'internal_usage': False}))
+    observer.on_llm(MockEvent(EventType.LLM, {'name': 'gpt-4', 'internal_usage': False}))
 
     # Simulate Tool Calls
-    observer.on_tool_call(MockEvent(MockEventType.CALL_ENTER, {'type': 'tool', 'name': 'search'}))
-    observer.on_tool_call(MockEvent(MockEventType.CALL_ENTER, {'type': 'tool', 'name': 'search'}))
+    observer.on_tool_call(MockEvent(EventType.CALL_ENTER, {'type': 'tool', 'name': 'search'}))
+    observer.on_tool_call(MockEvent(EventType.CALL_ENTER, {'type': 'tool', 'name': 'search'}))
     observer.on_tool_call(
-        MockEvent(MockEventType.CALL_ENTER, {'type': 'action', 'name': 'ignore_me'}))  # Should be ignored
+        MockEvent(EventType.CALL_ENTER, {'type': 'action', 'name': 'ignore_me'}))  # Should be ignored
 
     # Simulate User Request & Runtime Coding
-    observer.on_user_request(MockEvent(MockEventType.USER_REQUEST))
-    observer.on_runtime_coding(MockEvent(MockEventType.EXECUTOR_PHASE_START, {'phase': 'code_deliberate'}))
+    observer.on_user_request(MockEvent(EventType.USER_REQUEST))
+    observer.on_runtime_coding(MockEvent(EventType.EXECUTOR_PHASE_START, {'phase': 'code_deliberate'}))
 
     # Simulate Errors
-    observer.on_error(MockEvent(MockEventType.ERROR, "Syntax Error", lines=(5, 5)))
+    observer.on_error(MockEvent(EventType.ERROR, "Syntax Error", lines=(5, 5)))
 
     # Assertions
     assert observer.agent.llm_calls['gpt-4']['internal'] == 1
@@ -142,7 +136,7 @@ def test_on_log_saves_to_db(observer, mock_connector):
     modules_patch = {'nemantix.hub.storage': MagicMock(ObserverLogModel=mock_log_model)}
 
     with patch.dict('sys.modules', modules_patch):
-        event = MockEvent(MockEventType.LOG_EVENT, payload="System starting up", timestamp=1600000000.0)
+        event = MockEvent(EventType.LOG_EVENT, payload="System starting up", timestamp=1600000000.0)
         observer.on_log(event)
 
     # Check in-memory list
@@ -185,8 +179,8 @@ def test_observer_log_handler_emits_event(mock_context):
     emitted_event = mock_hub.emit.call_args[0][0]
 
     assert emitted_event.type == EventType.LOG_EVENT
-    assert emitted_event.payload['msg'] == "Hello from logger"
-    assert emitted_event.payload['lineno'] == 42
+    assert emitted_event.payload['message'] == "Hello from logger"
+    assert emitted_event.payload['line'] == 42
 
 
 @patch('nemantix.hub.observer.context')

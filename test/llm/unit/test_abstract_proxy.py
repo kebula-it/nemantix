@@ -1,9 +1,15 @@
-import pytest
-from typing import Any, Dict, Iterator, List, Type
+from typing import Any, Iterator, List, Type
 
+import pytest
 from pydantic import BaseModel
 
-from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException, LLMResponse, LLMUsage, StructuredLLMResponse
+from nemantix.llm.abstract_proxy import (
+    AbstractLLMProxy,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+    StructuredLLMResponse,
+)
 from nemantix.llm.credentials import Credentials
 
 

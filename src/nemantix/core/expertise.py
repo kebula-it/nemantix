@@ -1,20 +1,19 @@
 from collections import defaultdict, deque
 from pathlib import Path
 
+from nemantix.common import context
+from nemantix.common.logger import get_package_logger
 from nemantix.core.coder import Coder
+from nemantix.core.custom_types import PathLike
 from nemantix.core.exceptions import NemantixException
-from nemantix.core.node import BlockStatement, FileMeta, ActionBlock
+from nemantix.core.node import ActionBlock, BlockStatement, FileMeta
 from nemantix.core.script import Script, ScriptTypeEnum
 from nemantix.core.source_manager import LocalSourceManager
 from nemantix.core.tools import Toolset
-from nemantix.core.custom_types import PathLike
-from nemantix.common.logger import get_package_logger
-from nemantix.common import context
-from nemantix.hub import Event, EventType
+from nemantix.hub import Event, EventHub, EventType
+from nemantix.hub.event_hub import Observable
 from nemantix.llm import AbstractLLMProxy, Credentials, LLMProxyFactory
 from nemantix.security.verifier import BaseVerifier
-from nemantix.hub.event_hub import Observable
-from nemantix.hub import EventHub
 
 logger = get_package_logger(__name__)
 
@@ -106,7 +105,8 @@ class Expertise:
 
     def __init__(self, script_list: list[Script], coder: Coder, verifier: BaseVerifier, observers: list | None = None,
                  export_location: PathLike = None, export=True, allow_fallback_deliberate=False,
-                 experimental_enhance_coding=False, experimental_enable_fixer=False):
+                 experimental_enhance_coding=False, experimental_enable_fixer=False,
+                 experimental_include_action_body_in_semantics=False):
         assert isinstance(verifier, BaseVerifier)
 
         self.toolset_classes = Toolset.get_registered_classes()
@@ -115,6 +115,7 @@ class Expertise:
 
         self.coder = coder
         self.coder.enable_fixer = bool(experimental_enable_fixer)
+        self.coder.include_action_body_in_semantics = bool(experimental_include_action_body_in_semantics)
 
         self.verifier = verifier
         self.export_location = export_location
@@ -127,7 +128,7 @@ class Expertise:
         if observers:
             event_hub = context.event_hub.get()
             if event_hub is None:
-                logger.info(f'Setting event-hub context instance.')
+                logger.info('Setting event-hub context instance.')
                 context.event_hub.set(EventHub())
                 event_hub = context.event_hub.get()
 
@@ -166,7 +167,9 @@ class Expertise:
             raise NemantixException("external_vars_names must be the list of names of the variables")
 
     def set_knowledge_base(self, knowledge_base):
-        from nemantix.knowledge_base.core.nemantix_knowledge_base import NemantixKnowledgeBase
+        from nemantix.knowledge_base.core.nemantix_knowledge_base import (
+            NemantixKnowledgeBase,
+        )
 
         if self.enhance_conding and isinstance(knowledge_base, NemantixKnowledgeBase):
             logger.info('[EXPERIMENTAL] Using the Knowledge-base to enhance the coding.')
@@ -214,25 +217,18 @@ class Expertise:
                               script=script, statement='', payload={"model": name, "coded": coded})
                 event_hub.emit(event=event)
 
-            # map deliberate name to source location (for execution)
-            for deliberate in self.script_by_loc[source_loc].deliberates.values():
-                self.deliberate_to_script_loc[deliberate.name] = source_loc
-
-            # map action name to source location (for execution)
-            for action in self.script_by_loc[source_loc].actions.values():
-                self.action_to_script_loc[action.name] = source_loc
-
-            for key in self.script_by_loc[source_loc].private_actions.keys():
-                self.private_action_to_script_loc[key] = source_loc
+            self.update(source_ordered_list=self.source_ordered_list)
 
         self.export()
 
-    def update(self):
+    def update(self, source_ordered_list: list[str] | None = None):
         """Discovers actions and deliberates for each script"""
-        self.source_ordered_list = _topo_order(self.requires_map)
+        if source_ordered_list is None:
+            self.source_ordered_list = _topo_order(self.requires_map)
+        else:
+            self.source_ordered_list = source_ordered_list
 
         for source_loc in self.source_ordered_list:
-            # TODO: refactor
             for deliberate in self.script_by_loc[source_loc].deliberates.values():
                 self.deliberate_to_script_loc[deliberate.name] = source_loc
 
@@ -375,7 +371,8 @@ class Expertise:
     @classmethod
     def from_local_scripts(cls, paths: list[PathLike] | list[Script], verifier: BaseVerifier,
                            llm: AbstractLLMProxy | None = None,
-                           export_location: PathLike = None, export=True, **kwargs) -> "Expertise":
+                           export_location: PathLike = None, export=True, create_summary= False,
+                           **kwargs) -> "Expertise":
         """Instantiates an Expertise assuming local source files or Script list."""
         if not all(isinstance(p, Script) for p in paths):
             scripts = [Script(location=path, source_manager=LocalSourceManager())
@@ -387,23 +384,26 @@ class Expertise:
         enable_fixer = kwargs.pop('experimental_enable_fixer', False)
         allow_fallback = kwargs.pop('allow_fallback_deliberate', False)
         enhance_coding = kwargs.pop('experimental_enhance_coding', False)
+        include_body_semantics = kwargs.pop('experimental_include_action_body_in_semantics', False)
+        
         logger.debug(f"Allow fallback value = {allow_fallback} ")
 
         if llm is None:
             logger.info(
                 f"Instantiating a default LLM proxy: "
-                f"vendor {kwargs.get('vendor', '')}; "
-                f"model {kwargs.get('model', '')}."
+                f"vendor {kwargs.get('vendor', 'openai')}; "
+                f"model {kwargs.get('model', 'gpt-5')}."
             )
             llm = cls.get_default_llm(**kwargs)
 
         assert isinstance(llm, AbstractLLMProxy)
-        coder = Coder(llm_proxy=llm)
+        coder = Coder(llm_proxy=llm, create_summary=create_summary)
         return Expertise(script_list=scripts, coder=coder, verifier=verifier, observers=observers,
                          export_location=export_location, export=export,
                          allow_fallback_deliberate=allow_fallback,
                          experimental_enhance_coding=enhance_coding,
-                         experimental_enable_fixer=enable_fixer)
+                         experimental_enable_fixer=enable_fixer,
+                         experimental_include_action_body_in_semantics=include_body_semantics)
 
     @staticmethod
     def get_default_llm(credentials_path: PathLike, vendor='openai',

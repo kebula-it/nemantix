@@ -1,15 +1,14 @@
-import os
 import logging
-import datetime
+import os
 import platform
 import urllib.request
-
-from typing import TYPE_CHECKING
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from nemantix.common import context
 from nemantix.common.logger import get_package_logger
+from nemantix.hub.base import Storable
 from nemantix.hub.event_hub import EventHub, Observable
 from nemantix.hub.events import Event, EventType
 
@@ -134,6 +133,7 @@ class AgentMetrics:
     runtime_codings: int = 0
     errors: int = 0
     tool_frequencies: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    kb_calls: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     logs: list[str] = field(default_factory=lambda: deque(maxlen=65_536))
 
 
@@ -146,20 +146,20 @@ class ObserverLogHandler(logging.Handler):
         if not event_hub.has_subscribers(EventType.LOG_EVENT):
             return
 
-        # TODO: make better use of the log record
-        try:
-            msg = self.format(record)
-        except Exception:
-            msg = record.getMessage()
+        payload = dict(level=record.levelname, name=record.name,
+                       line=record.lineno, message=record.getMessage(),
+                       thread=record.threadName, function=record.funcName)
 
         event = Event(type=EventType.LOG_EVENT, lines=(-1, -1), scope='', script=None,
-                      statement='', payload=dict(msg=msg, lineno=record.lineno))
+                      statement='', payload=payload)
         event_hub.emit(event)
 
 
-class Observer(Observable):
+class Observer(Observable, Storable):
 
-    def __init__(self, connector: 'DBConnector' = None):
+    def __init__(self, connector: 'DBConnector | None' = None):
+        super().__init__(connector)
+
         import psutil
         self.process = psutil.Process(os.getpid())
         self.hardware = SystemMetrics()
@@ -169,15 +169,6 @@ class Observer(Observable):
         self._is_tracking = False
         self._baseline_io = None
         self._baseline_net = None
-
-        # storage
-        self.connector = connector
-
-        if self.connector is not None:
-            from nemantix.common.connectors import DBConnector
-
-            if isinstance(self.connector, DBConnector):
-                self.connector.create_tables()
 
     def subscribe(self, event_hub: EventHub):
         event_hub.subscribe(EventType.LLM, self.on_llm)
@@ -189,8 +180,12 @@ class Observer(Observable):
         event_hub.subscribe(EventType.LOG_EVENT, self.on_log)
         event_hub.subscribe(EventType.MONITOR_START, self.start_hardware_tracking)
         event_hub.subscribe(EventType.MONITOR_STOP, self.stop_hardware_tracking)
+        event_hub.subscribe(EventType.RETRIEVE, self.on_knowledge_base)
+        event_hub.subscribe(EventType.EXPAND, self.on_knowledge_base)
+        event_hub.subscribe(EventType.EXTEND, self.on_knowledge_base)
+        event_hub.subscribe(EventType.GENERALIZE, self.on_knowledge_base)
 
-    def start_hardware_tracking(self, event: Event = None):
+    def start_hardware_tracking(self, _: Event | None = None):
         """Marks the baseline for all hardware counters."""
         if self._is_tracking:
             return
@@ -206,7 +201,7 @@ class Observer(Observable):
         # record Network
         self._baseline_net = psutil.net_io_counters()
 
-    def stop_hardware_tracking(self, event: Event = None):
+    def stop_hardware_tracking(self, _: Event | None = None):
         """Calculates the deltas since start_hardware_tracking was called."""
         if not self._is_tracking:
             return
@@ -232,6 +227,9 @@ class Observer(Observable):
             self.hardware.network_kb_sent = bytes_sent / 1024.0
             self.hardware.network_kb_recv = bytes_recv / 1024.0
 
+    def on_knowledge_base(self, event: Event):
+        self.agent.kb_calls[event.type.name] += 1
+
     def on_llm(self, event: Event):
         name = event.payload['name']
 
@@ -240,31 +238,42 @@ class Observer(Observable):
         else:
             self.agent.llm_calls[name]['external'] += 1
 
-    def on_tool_call(self, event: Event):
+    def on_tool_call(self, event: Event) -> bool:
         if event.payload.get('type', None) == 'tool':
             self.agent.tool_frequencies[event.payload['name']] += 1
+            return True
 
-    def on_user_request(self, event: Event):
+        return False
+
+    def on_user_request(self, _: Event):
         self.agent.user_requests += 1
 
-    def on_runtime_coding(self, event: Event):
+    def on_runtime_coding(self, event: Event) -> bool:
         if event.payload.get('phase', None) == 'code_deliberate':
             self.agent.runtime_codings += 1
+            return True
+
+        return False
 
     def on_error(self, event: Event):
         if event.type == EventType.CODING_ERROR:
             payload = event.payload
-            err_msg = f'[CODING-ERROR] {payload['error']}: {payload['code']} [{payload['scope']}]'
+            data = dict(type='CODING_ERROR', error=payload['error'],
+                        code=payload['code'], scope=payload['scope'])
+            err_msg = f"[CODING-ERROR] {payload['error']}: {payload['code']} [{payload['scope']}]"
         else:
+            data = dict(type='ERROR', lines=event.lines, payload=event.payload)
             err_msg = f"[ERROR] Line {event.lines}: {event.payload}"
 
         self.agent.errors += 1
         self.agent.logs.append(err_msg)
-        self._save_to_db(timestamp=event.timestamp, message=err_msg)
+        self.save(timestamp=event.timestamp, payload=data, event=event.type.name,
+                  script=self.get_script_location(event))
 
     def on_log(self, event: Event):
         self.agent.logs.append(f"[LOG] {event.payload}")
-        self._save_to_db(timestamp=event.timestamp, message=f'{event.payload}')
+        self.save(timestamp=event.timestamp, payload=event.payload,
+                  event=event.type.name, script=self.get_script_location(event))
 
     def print(self, line_size=50):
         """Prints a unified view of the system and agent states."""
@@ -293,7 +302,11 @@ class Observer(Observable):
         for llm, calls in sorted(self.agent.llm_calls.items(),
                                  key=lambda x: x[1], reverse=True):
             count = calls['internal'] + calls['external']
-            print(f"    ─ {llm}: {count} calls (internal: {calls['internal']})")
+            print(f"    └─ {llm}: {count} calls (internal: {calls['internal']})")
+
+        print(f"  ├─ Knowledge Base Usages: {sum(self.agent.kb_calls.values())}")
+        for operation, calls in self.agent.kb_calls.items():
+            print(f'    └─ {operation}: {calls} calls')
 
         print(f"  ├─ Runtime codings: {self.agent.runtime_codings}")
         print(f"  └─ Errors Encountered: {self.agent.errors}")
@@ -307,22 +320,3 @@ class Observer(Observable):
             print(f"  ├─ {tool}: {count} calls")
 
         print("=" * line_size + "\n")
-
-    def _save_to_db(self, timestamp: float, message: str):
-        """Helper to write a log entry to the database."""
-        if not self.connector:
-            return
-        else:
-            from nemantix.hub.storage import ObserverLogModel
-
-        # Convert float timestamp to datetime
-        dt_timestamp = datetime.datetime.fromtimestamp(timestamp)
-
-        try:
-            with self.connector.get_session() as session:
-                db_log = ObserverLogModel(timestamp=dt_timestamp, message=message)
-                session.add(db_log)
-                session.commit()
-
-        except Exception as e:
-            print(f"Failed to write log to DB: {e}")

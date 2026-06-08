@@ -1,26 +1,34 @@
 import json
 import textwrap
+from pathlib import Path
+from typing import Any, Iterable, Optional
 
-from nemantix.core.coder import CodeOperationEnum
+from lark import LarkError
+from pydantic import BaseModel
+
 from nemantix.common import context
 from nemantix.common.logger import get_package_logger
-from nemantix.hub.events import Event, EventType
+from nemantix.core import node as nmx_nodes
+from nemantix.core.coder import CodeOperationEnum
+from nemantix.core.exceptions import (
+    NemantixException,
+    NemantixParserException,
+    NemantixRuntimeException,
+)
+from nemantix.core.expertise import Expertise
 from nemantix.core.interpreter import Interpreter
 from nemantix.core.node import FileMeta, PlanQualifierEnum
-from nemantix.core.parser import _get_fstring_parser, AstTransformer
+from nemantix.core.parser import AstTransformer, _get_fstring_parser
+from nemantix.core.prompt import (
+    DELIBERATE_SELECTION_PROMPT,
+    FALLBACK_IDENTITY_PROMPT,
+    REQUEST_PARSING_PROMPT,
+)
 from nemantix.core.runtime import ExternalVariables, Struct
-from nemantix.core import node as nmx_nodes
 from nemantix.core.script import Script
 from nemantix.core.source_manager import LocalSourceManager
-from nemantix.core.exceptions import NemantixParserException, NemantixRuntimeException, NemantixException
-from nemantix.core.expertise import Expertise
-from nemantix.core.prompt import DELIBERATE_SELECTION_PROMPT, REQUEST_PARSING_PROMPT, FALLBACK_IDENTITY_PROMPT
-from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMUsage
-
-from pydantic import BaseModel
-from typing import Optional, Any, Iterable
-from pathlib import Path
-from lark import LarkError
+from nemantix.hub.events import Event, EventType
+from nemantix.llm import AbstractLLMProxy, LLMProxyConfig, LLMUsage
 
 logger = get_package_logger(__name__)
 
@@ -71,7 +79,8 @@ class Executor:
 
     def __init__(self, expertise: Expertise, llm: AbstractLLMProxy,
                  embedder: Optional[Any] = None, external_vars: Optional[dict] = None,
-                 knowledge_base: Optional[Any] = None, agent_state: Struct = None):
+                 knowledge_base: Optional[Any] = None, agent_state: Struct = None,
+                 proxy_config: LLMProxyConfig | None = None):
         assert isinstance(llm, AbstractLLMProxy)
 
         if embedder is not None:
@@ -206,9 +215,7 @@ class Executor:
                         action_loc = self.expertise.private_action_to_script_loc[action_name]
                         action_script = self.expertise.script_by_loc[action_loc]
                         action = action_script.private_actions[action_name]
-
                     else:
-                        # TODO: emit error?
                         raise NemantixRuntimeException(
                             f'Cannot find action "{stmt.name}" in either global or '
                             f'private actions of deliberate "{deliberate.name}"!')
@@ -445,6 +452,9 @@ class Executor:
                     stmt = f'[[{name}] = ({", ".join(buffer)})]'
                 else:
                     stmt = f'[[{name}] = ()]'
+
+            elif kind == 'opaque':
+                stmt = f"[[{name}] = [STATE:__opaque_{value}__]]"
             else:
                 assert kind in ['dict', 'dictionary']
                 assert isinstance(value, dict)

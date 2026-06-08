@@ -1,8 +1,15 @@
 import inspect
-from typing import Any, Iterator, Dict, Optional, List, Type, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type
+
 from pydantic import BaseModel
 
-from .abstract_proxy import AbstractLLMProxy, LLMProxyException, LLMResponse, LLMUsage, StructuredLLMResponse
+from .abstract_proxy import (
+    AbstractLLMProxy,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+    StructuredLLMResponse,
+)
 
 if TYPE_CHECKING:
     from ..core.tools import Toolset
@@ -246,4 +253,4 @@ class AnthropicLLMProxy(AbstractLLMProxy):
         return self
 
     def messages_from(self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]) -> list[dict]:
-        raise NotImplemented
+        raise NotImplementedError

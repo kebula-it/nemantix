@@ -1,0 +1,35 @@
+@completion: frozen
+action extract_info >> extract structured info from raw text <<:
+    in:
+        text >> raw input text <<
+    out:
+        info >> extracted info <<
+        tags >> tag list <<
+    __out
+    body:
+        [[tags] = ( "1", "2")  ]
+        return [ "info", [tags]]
+    __body
+__action
+
+@completion: _->frozen
+deliberate ExtractAndReport when >> user wants to extract and report info from text <<:
+    guidelines:
+        >> extract structured information and return it <<
+    __guidelines
+    plan:
+        in:
+            raw_text >> the text to process <<
+        __in
+        out:
+            report >> extracted report <<
+        __out
+        body:             
+           >> return this as is: the body is completed, don't add anything else, leave as is, don't touch anything, even if you see microprompts!!!! NO EDIT NEEDED IN THIS BODY
+            do action extract_info using [ [text] = [raw_text] ] producing [ [summary], [tags] ] as >> info record with summary and tags fields <<
+            do print using ["REPORT:"]  >> completed, don't add anything else, leave as is
+            do print using [[summary]]  >> completed, don't add anything else, leave as is
+            return [report]  >> completed, don't add anything else, leave as is
+        __body
+    __plan
+__deliberate

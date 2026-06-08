@@ -391,8 +391,8 @@ class Expertise:
         if llm is None:
             logger.info(
                 f"Instantiating a default LLM proxy: "
-                f"vendor {kwargs.get('vendor', '')}; "
-                f"model {kwargs.get('model', '')}."
+                f"vendor {kwargs.get('vendor', 'openai')}; "
+                f"model {kwargs.get('model', 'gpt-5')}."
             )
             llm = cls.get_default_llm(**kwargs)
 

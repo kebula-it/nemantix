@@ -78,7 +78,6 @@ coder_extra = [
 llm_extra = [
     "outlines~=1.2.13",
     "llama-cpp-python~=0.3.23",
-    "vllm~=0.20.2"
 ]
 all = [
     "nemantix[embeddings,stl,debug,dev,knowledge,observer]"

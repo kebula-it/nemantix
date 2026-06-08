@@ -92,7 +92,8 @@ qualifier_coding_map = {
 
 
 class Coder:
-    def __init__(self, llm_proxy: AbstractLLMProxy, create_summary: bool = False, summarizer_model='phi4-mini'):
+    def __init__(self, llm_proxy: AbstractLLMProxy, create_summary: bool = False,
+                 summarizer_proxy: AbstractLLMProxy | None = None, summarizer_model='phi4-mini'):
         self.llm_proxy = llm_proxy
         self.action_semantics_map: dict[str, dict[str, str]] = {}  # dict[deliberate_name, dict[action_name, semantics]]
         self.runtime_globals = get_globals()
@@ -103,9 +104,14 @@ class Coder:
         self.include_action_body_in_semantics = False
         
         if self.create_summary:
-            from nemantix.llm.llama_proxy import LlamaProxy
+            if summarizer_proxy is None:
+                from nemantix.llm.llama_proxy import LlamaProxy
 
-            self.summarizer = LlamaProxy(model_name=summarizer_model)
+                self.summarizer = LlamaProxy(model_name=summarizer_model)
+                logger.info(f'Using the local "{summarizer_model}" as summarizer.')
+            else:
+                self.summarizer = summarizer_proxy
+                logger.info(f'Using the summarizer_proxy "{summarizer_proxy.get_name()}" as summarizer.')
         else:
             self.summarizer = None
 

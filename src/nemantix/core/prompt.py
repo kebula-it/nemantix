@@ -239,7 +239,7 @@ BUILT-IN FUNCTIONS LIST:
 - size: Returns a “size” depending on type (e.g., len for strings/Struct; 0/1 for Opaque; 1/0 for DocRef leaf/non-leaf; otherwise 0).
 - type: Returns a string describing the type of the input variable. Possible types are: none; num (for integers and floats); 
 str (strings); bool (booleans); struct (for Nemantix structures, i.e., the ones within "(...)"); doc (for Nemantix Docref objects);
-and opaue (for Nemantix Opaque objects).
+and opaque (for Nemantix Opaque objects).
 - substring: Converts x to string and returns the slice [start:end] (safe defaults if inputs are invalid).
 - to_num: Explicit numeric conversion (handles numbers, booleans, numeric strings); returns 0 on failure.
 - to_bool: Explicit boolean conversion (handles booleans, numbers, strings like "true"/"false"/"none"); defaults to False.

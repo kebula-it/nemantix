@@ -118,14 +118,36 @@ class BlockStatement(Statement):
         try:
             qualifier = self.get_annotation_value("completion")
 
+            # Unwrap SingleValue if present
+            if hasattr(qualifier, "value"):
+                qualifier = qualifier.value
+
+            # Convert to list if it was parsed as a raw string
+            if isinstance(qualifier, str):
+                if "->" in qualifier:
+                    qualifier = qualifier.split("->")
+                else:
+                    qualifier = [qualifier]
+            
             if isinstance(qualifier, list | tuple):
+                # unwrap SingleValues inside lists
+                def _get_str(item):
+                    return (
+                        str(item.value).strip()
+                        if hasattr(item, "value")
+                        else str(item).strip()
+                    )
+
                 if len(qualifier) == 1:
-                    qualifier = [plan_qualifier_map[str(qualifier[0])],
-                                 plan_qualifier_map[str(qualifier[0])]]
+                    val = _get_str(qualifier[0])
+                    qualifier = [plan_qualifier_map[val], plan_qualifier_map[val]]
 
                 elif len(qualifier) == 2:
-                    qualifier = [plan_qualifier_map[str(qualifier[0])],
-                                 plan_qualifier_map[str(qualifier[1])]]
+                    qualifier = [plan_qualifier_map[_get_str(qualifier[0])],
+                                 plan_qualifier_map[_get_str(qualifier[1])]]
+            else:
+                raise NemantixException(f'Received {type(qualifier)} as completion qualifier!')
+
             return qualifier
 
         except NemantixException:

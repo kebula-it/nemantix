@@ -27,7 +27,7 @@ from nemantix.core.node import (
     NodeMeta,
 )
 from nemantix.hub import Event, EventHub, EventType
-from nemantix.llm import AbstractLLMProxy, LLMUsage
+from nemantix.llm import AbstractLLMProxy, LLMProxyConfig, LLMUsage
 
 logger = get_package_logger(__name__)
 
@@ -36,11 +36,12 @@ class Agent:
     def __init__(self, expertise: Expertise, llm_proxy: AbstractLLMProxy | None = None,
                  external_vars: dict[str, Any] | None = None, use_embedder=False,
                  use_knowledge_base=False, build_on_start=True,
-                 kb_config: KnowledgeBaseConfig | None = None, log_level=None, **__):
+                 kb_config: KnowledgeBaseConfig | None = None, log_level=None, 
+                 proxy_config: LLMProxyConfig | None = None, **__):
         if log_level is not None:
             logger.info(f"Updating logger level to {logging.getLevelName(log_level)}")
             update_logger_levels(level=log_level)
-
+        
         if not isinstance(external_vars, dict):
             logger.warning(f'Provided external_vars is not a dict but a "{type(external_vars)}",'
                            f'defaulting to an empty dict.')
@@ -49,9 +50,15 @@ class Agent:
         self.expertise = expertise
         self.expertise.set_external_vars_names(nmx_runtime.ExternalVariables.get_names(external_vars))
 
+        if proxy_config is None or not isinstance(proxy_config, LLMProxyConfig):
+            logger.info('Using default LLMProxyConfig.')
+            self.llm_config = LLMProxyConfig()
+        else:
+            self.llm_config = proxy_config
+    
         if llm_proxy is None:
-            self.llm = self.expertise.coder.llm_proxy
-            logger.info("Using Expertise's LLM proxy.")
+            self.llm = self.llm_config.get(proxy='default')
+            logger.info('Using default LLM proxy.')
         else:
             self.llm = llm_proxy
 
@@ -90,6 +97,7 @@ class Agent:
         self.executor = Executor(
             expertise=expertise,
             llm=self.llm,
+            proxy_config=self.llm_config,
             embedder=self.embedder,
             knowledge_base=self.knowledge_base,
             external_vars=external_vars,

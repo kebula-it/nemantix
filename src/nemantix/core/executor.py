@@ -28,7 +28,7 @@ from nemantix.core.runtime import ExternalVariables, Struct
 from nemantix.core.script import Script
 from nemantix.core.source_manager import LocalSourceManager
 from nemantix.hub.events import Event, EventType
-from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMUsage
+from nemantix.llm import AbstractLLMProxy, LLMProxyConfig, LLMUsage
 
 logger = get_package_logger(__name__)
 
@@ -79,7 +79,8 @@ class Executor:
 
     def __init__(self, expertise: Expertise, llm: AbstractLLMProxy,
                  embedder: Optional[Any] = None, external_vars: Optional[dict] = None,
-                 knowledge_base: Optional[Any] = None, agent_state: Struct = None):
+                 knowledge_base: Optional[Any] = None, agent_state: Struct = None,
+                 proxy_config: LLMProxyConfig | None = None):
         assert isinstance(llm, AbstractLLMProxy)
 
         if embedder is not None:

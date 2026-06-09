@@ -1008,6 +1008,8 @@ class Interpreter:
                     # TODO: should always to args and kwargs on single struct as input?
                     if isinstance(args, nmx_runtime.Struct) and args.can_be_seen_as_list():
                         args, _ = args.to_args_and_kwargs()
+                        # TODO: when calling builtins the number of arguments should match,
+                        #  because args may not always be unpacked
                         return __call_builtin(lambda: function(*args))
                     else:
                         return __call_builtin(lambda: function(args))

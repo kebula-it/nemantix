@@ -939,6 +939,9 @@ class Builtin:
         if isinstance(x, (int, float)):
             return str(x)
 
+        if x is not None and isinstance(_, (list, tuple)) and len(_) > 0:
+            return str([x] + list(_))
+
         if isinstance(x, Struct):
             return str(x)
 

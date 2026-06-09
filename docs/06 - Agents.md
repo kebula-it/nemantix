@@ -137,4 +137,33 @@ _ = agent.run(user_request='Send the ticket "Ticket-BUG <fix necessary for infra
 
 ```
 
+### LLM Proxies Configuration
+Agents use LLMs for a variety of tasks like explicit calls (e.g., `do llm [...]`), 
+deliberate selection, input and output parsing and extraction, action and deliberate coding, etc.
+
+To use a different LLM for each kind of task, you can do so by specifying an `LLMProxyConfig`:
+```python
+from nemantix.llm import LLMProxyConfig
+from nemantix.core import Agent
+
+# Example: use a large model for coding, a small one for internal tasks, 
+# and a medium one for explicit calls; 
+# use the "default_vendor" and "default_model" fields to specify a default LLM
+proxy_config = LLMProxyConfig(internal=dict(vendor='openai', model='gpt-5-nano'),
+                              external=dict(vendor='openai', model='gpt-5-mini'),
+                              coding=dict(vendor='openai', model='gpt-5'),
+                              default_vendor='openai', default_model='gpt-5-mini')
+
+agent = Agent(expertise=..., proxy_config=proxy_config, ...)
+_ = agent.run(request='...')
+```
+
+Task list:
+- `internal`: internal LLM usage, like request parsing, deliberate selection, input and output extraction,
+semantic inclusion, and similarity computation.
+- `external`: explicit LLM calls, either in builtin function `llm(...)` or do statements (e.g., `do llm using [prompt]`) 
+- `coding`: for action, deliberate, frame, and toolset coding.
+- `summary`: used internally by the `Coder`, if a summarizer is specified.
+- `knowledge_base`: LLM supporting KB retrieval operations and ingestion.
+
 Next: [EventHub](./07%20-%20EventHub.md)

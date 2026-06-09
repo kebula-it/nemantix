@@ -825,20 +825,20 @@ class Builtin:
         if x is None:
             return 'none'
 
+        if isinstance(x, bool):
+            return 'bool'
+
         if isinstance(x, (int, float)):
             return 'num'
 
         if isinstance(x, str):
             return 'str'
 
-        if isinstance(x, bool):
-            return 'bool'
+        if isinstance(x, DocRef):
+            return 'doc'
 
         if isinstance(x, Struct):
             return 'struct'
-
-        if isinstance(x, DocRef):
-            return 'doc'
 
         return 'opaque'
 

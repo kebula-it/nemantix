@@ -1,6 +1,7 @@
 import abc
 from dataclasses import dataclass
-from typing import Any, Iterator, Optional, Dict, List, Type, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type, Union
+
 from pydantic import BaseModel
 
 from nemantix.llm.credentials import Credentials
@@ -22,12 +23,14 @@ class LLMResponse:
     text: str
     tool_calls: List[Dict[str, Any]]
     usage: LLMUsage
+    proxy: 'AbstractLLMProxy'
 
 
 @dataclass
 class StructuredLLMResponse:
     result: BaseModel
     usage: LLMUsage
+    proxy: 'AbstractLLMProxy'
 
 
 class LLMProxyException(Exception):

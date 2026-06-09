@@ -78,13 +78,15 @@ class FakeLLMProxy:
         self.calls.append(messages)
         if not self._responses:
             raise RuntimeError("No more fake responses configured")
-        return LLMResponse(text=self._responses.pop(0), tool_calls=[], usage=self._usage)
+        return LLMResponse(text=self._responses.pop(0), tool_calls=[],
+                           usage=self._usage, proxy=self)
 
     def invoke(self, prompt):
         self.raw_calls.append(prompt)
         if not self._raw_responses:
             raise RuntimeError("No more fake raw responses configured")
-        return LLMResponse(text=self._raw_responses.pop(0), tool_calls=[], usage=self._usage)
+        return LLMResponse(text=self._raw_responses.pop(0), tool_calls=[],
+                           usage=self._usage, proxy=self)
 
 
 @dataclass

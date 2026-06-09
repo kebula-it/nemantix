@@ -1,14 +1,18 @@
 import inspect
 import json
+from typing import TYPE_CHECKING, Any, Iterator, List, Optional, Type
 
 from google import genai
 from google.genai import types
-
-from .abstract_proxy import AbstractLLMProxy, LLMProxyException, LLMResponse, LLMUsage, StructuredLLMResponse
-
-# Required imports for context and type hinting
-from typing import List, Optional, Any, Iterator, Type, TYPE_CHECKING
 from pydantic import BaseModel
+
+from .abstract_proxy import (
+    AbstractLLMProxy,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+    StructuredLLMResponse,
+)
 
 if TYPE_CHECKING:
     from nemantix.core.tools import Toolset
@@ -120,8 +124,9 @@ class GoogleLLMProxy(AbstractLLMProxy):
                     )
 
             # If no function call is found, return the consolidated text response.
-            return LLMResponse(text=response.text, tool_calls=tool_calls_list,
-                               usage=self._build_usage(response.usage_metadata))
+            return LLMResponse(text=response.text or '', tool_calls=tool_calls_list,
+                               usage=self._build_usage(response.usage_metadata),
+                               proxy=self)
         except Exception as e:
             # Catch any other unexpected errors during the process.
             raise LLMProxyException(
@@ -164,6 +169,7 @@ class GoogleLLMProxy(AbstractLLMProxy):
             return StructuredLLMResponse(
                 result=schema.model_validate(data),
                 usage=self._build_usage(response.usage_metadata),
+                proxy=self,
             )
         except Exception as e:
             raise LLMProxyException(

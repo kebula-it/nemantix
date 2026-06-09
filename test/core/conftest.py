@@ -1,10 +1,19 @@
 import os
-import pytest
-
 from pathlib import Path
+
+import pytest
 
 from nemantix.common import context
 from nemantix.hub import EventHub
+from nemantix.llm import LLMProxyConfig
+
+
+class DummyProxyConfig(LLMProxyConfig):
+    def __init__(self, dummy_llm, *_, **__):
+        self.llm = dummy_llm
+
+    def __getattr__(self, name):
+        return self.llm
 
 
 @pytest.fixture(scope="session")
@@ -56,3 +65,9 @@ def isolated_event_hub():
 
     # 4. Teardown: Reset the context after the test finishes
     context.event_hub.reset(token)
+
+
+@pytest.fixture(scope="session")
+def dummy_llm_proxy_config_class():
+    """Returns the DummyProxyConfig class so it can be instantiated in tests."""
+    return DummyProxyConfig

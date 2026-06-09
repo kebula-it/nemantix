@@ -44,7 +44,8 @@ def mock_llm_proxy():
     mock_llm = MagicMock(spec=AbstractLLMProxy)
 
     def _resp(text):
-        return LLMResponse(text=text, tool_calls=[], usage=LLMUsage(input_tokens=0, output_tokens=0))
+        return LLMResponse(text=text, tool_calls=[], usage=LLMUsage(input_tokens=0, output_tokens=0),
+                           proxy=mock_llm)
 
     def side_effect(prompt, **__):
         # 1. Deliberate Selection Phase
@@ -74,6 +75,7 @@ def mock_llm_proxy():
         return StructuredLLMResponse(
             result=_SelectionSchema(name="GenerateTicket", motivation="matches error ticket creation"),
             usage=LLMUsage(input_tokens=0, output_tokens=0),
+            proxy=mock_llm,
         )
 
     mock_llm.invoke.side_effect = side_effect
@@ -81,7 +83,8 @@ def mock_llm_proxy():
     return mock_llm
 
 
-def test_agent_run_nlp_request(nxc_file, mock_credentials):
+def test_agent_run_nlp_request(nxc_file, mock_credentials,
+                               dummy_llm_proxy_config_class):
     """
     Tests the agent using a natural language request.
     Relies on the LLM mock to route to GenerateTicket and extract inputs.
@@ -101,7 +104,8 @@ def test_agent_run_nlp_request(nxc_file, mock_credentials):
     # Instantiate the Agent with real Expertise and mocked LLM proxy
     agent = Agent(
         expertise=expertise,  # Use the real Expertise
-        llm_proxy=llm,
+        llm_proxy=None,
+        proxy_config=dummy_llm_proxy_config_class(llm),
         external_vars={},
         use_embedder=False,
         use_knowledge_base=False,

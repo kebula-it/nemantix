@@ -27,12 +27,18 @@ from nemantix.core.node import (
     NodeMeta,
 )
 from nemantix.hub import Event, EventHub, EventType
-from nemantix.llm import AbstractLLMProxy, LLMProxyConfig, LLMUsage
+from nemantix.llm import (
+    AbstractLLMProxy,
+    LLMProxyConfig,
+    LLMResponse,
+    StructuredLLMResponse,
+)
 
 logger = get_package_logger(__name__)
 
 
 class Agent:
+    # TODO: deprecate "llm_proxy" argument
     def __init__(self, expertise: Expertise, llm_proxy: AbstractLLMProxy | None = None,
                  external_vars: dict[str, Any] | None = None, use_embedder=False,
                  use_knowledge_base=False, build_on_start=True,
@@ -50,16 +56,17 @@ class Agent:
         self.expertise = expertise
         self.expertise.set_external_vars_names(nmx_runtime.ExternalVariables.get_names(external_vars))
 
-        # if proxy_config is None or not isinstance(proxy_config, LLMProxyConfig):
-        #     logger.info('Using default LLMProxyConfig.')
-        #     self.llm_config = LLMProxyConfig()
-        # else:
-        #     self.llm_config = proxy_config
-    
-        if llm_proxy is None:
-            self.llm = self.expertise.coder.llm_proxy
-            logger.info("Using Expertise's LLM proxy.")
+        if proxy_config is None or not isinstance(proxy_config, LLMProxyConfig):
+            logger.info('Using default LLMProxyConfig.')
+            self.proxies = LLMProxyConfig()
         else:
+            self.proxies = proxy_config
+
+        if llm_proxy is None:
+            self.llm = self.proxies.internal
+            logger.info("Using internal LLM proxy from config.")
+        else:
+            logger.warning("Argument 'llm_proxy' will be deprecated in favor of 'proxy_config'!")
             self.llm = llm_proxy
 
         self.embedder = None
@@ -96,8 +103,8 @@ class Agent:
 
         self.executor = Executor(
             expertise=expertise,
-            llm=self.llm,
-            proxy_config=None,
+            llm=self.proxies.internal,
+            proxy_config=self.proxies,
             embedder=self.embedder,
             knowledge_base=self.knowledge_base,
             external_vars=external_vars,
@@ -281,10 +288,11 @@ class Agent:
             f"RAW DATA:\n{outputs}")
 
         response = self.llm.invoke_structured(prompt=prompt, schema=schema)
-        self._emit_llm(usage=response.usage)
+        self._emit_llm(llm_response=response)
         return response.result
-    
-    def _emit_llm(self, usage: LLMUsage, scope='agent'):
+
+    @staticmethod
+    def _emit_llm(llm_response: LLMResponse | StructuredLLMResponse, scope='agent'):
         hub = EventHub.get_active_hub(event_type=EventType.LLM)
         if not hub:
             return
@@ -295,7 +303,8 @@ class Agent:
             scope=scope,
             script=None,
             statement="",
-            payload=dict(usage=usage, name=self.llm.get_name(), internal_usage=True),
+            payload=dict(usage=llm_response.usage, name=llm_response.proxy.get_name(),
+                         internal_usage=True),
         )
         hub.emit(event)
 
@@ -534,9 +543,11 @@ __deliberate
                  external_vars: dict | None = None, use_embedder=False,
                  run_mode=RunModeEnum.DELIBERATE, log_level=None,
                  kb_config: KnowledgeBaseConfig | None = None,
+                 proxy_config: LLMProxyConfig | None = None,
                  use_knowledge_base=False, build_on_start=True, **__):
         super().__init__(expertise, llm_proxy, external_vars, use_embedder,
-                         use_knowledge_base, build_on_start, kb_config, log_level)
+                         use_knowledge_base, build_on_start, kb_config, log_level,
+                         proxy_config)
 
         # bound actions and deliberates as tools for the LLM
         registered_names = []
@@ -650,7 +661,7 @@ __deliberate
 
             messages = self.llm.messages_from([('assistant', prompt)])
             result = self.llm.invoke_structured(messages, schema=self.ReActSchema)
-            self._emit_llm(usage=result.usage)
+            self._emit_llm(llm_response=result)
 
             response = result.result
             assert isinstance(response, self.ReActSchema)
@@ -669,7 +680,7 @@ __deliberate
                               f'Since the task is now complete, do not suggest next steps, and'
                               f'do not add any commentary or opinion."')
                     response = self.llm.invoke(prompt)
-                    self._emit_llm(usage=response.usage)
+                    self._emit_llm(llm_response=response)
 
                     return self.RunSchema(last_output, response.text)
                 else:

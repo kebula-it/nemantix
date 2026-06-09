@@ -123,7 +123,8 @@ class AnthropicLLMProxy(AbstractLLMProxy):
                         }
                     )
 
-            return LLMResponse(text=text.strip(), tool_calls=tool_calls, usage=self._build_usage(response.usage))
+            return LLMResponse(text=text.strip(), tool_calls=tool_calls,
+                               usage=self._build_usage(response.usage), proxy=self)
         except Exception as e:
             raise LLMProxyException(f"Error invoking Anthropic LLM: {e}") from e
 
@@ -161,6 +162,7 @@ class AnthropicLLMProxy(AbstractLLMProxy):
                     return StructuredLLMResponse(
                         result=schema.model_validate(block.input),
                         usage=self._build_usage(response.usage),
+                        proxy=self,
                     )
 
             # Fallback if the API somehow didn't return a tool block (highly unlikely with tool_choice forced)

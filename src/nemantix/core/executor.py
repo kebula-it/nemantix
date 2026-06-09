@@ -28,7 +28,12 @@ from nemantix.core.runtime import ExternalVariables, Struct
 from nemantix.core.script import Script
 from nemantix.core.source_manager import LocalSourceManager
 from nemantix.hub.events import Event, EventType
-from nemantix.llm import AbstractLLMProxy, LLMProxyConfig, LLMUsage
+from nemantix.llm import (
+    AbstractLLMProxy,
+    LLMProxyConfig,
+    LLMResponse,
+    StructuredLLMResponse,
+)
 
 logger = get_package_logger(__name__)
 
@@ -77,10 +82,11 @@ class Executor:
                                                phase=self.phase,
                                                deliberate=self.deliberate.name)
 
-    def __init__(self, expertise: Expertise, llm: AbstractLLMProxy,
-                 embedder: Optional[Any] = None, external_vars: Optional[dict] = None,
-                 knowledge_base: Optional[Any] = None, agent_state: Struct = None,
-                 proxy_config: LLMProxyConfig | None = None):
+    # TODO: deprecate "llm" argument
+    def __init__(self, expertise: Expertise, proxy_config: LLMProxyConfig,
+                 llm: AbstractLLMProxy | None = None, embedder: Optional[Any] = None,
+                 external_vars: Optional[dict] = None, knowledge_base: Optional[Any] = None,
+                 agent_state: Struct | None = None):
         assert isinstance(llm, AbstractLLMProxy)
 
         if embedder is not None:
@@ -91,6 +97,9 @@ class Executor:
             from nemantix.knowledge_base import NemantixKnowledgeBase
             assert isinstance(knowledge_base, NemantixKnowledgeBase)
 
+        if llm is not None:
+            logger.warning('Argument "llm" will be deprecated in favor of "proxy_config"!')
+
         if external_vars is None:
             external_vars = {}
         elif not isinstance(external_vars, dict):
@@ -100,14 +109,15 @@ class Executor:
         assert isinstance(external_vars, dict)
         self.expertise = expertise
 
-        self.llm = llm
+        self.proxies = proxy_config
+        self.llm = llm or self.proxies.internal
         self.embedder = embedder
         self.knowledge_base = knowledge_base
         self.external_vars = ExternalVariables(**external_vars)
 
         self.interpreter = Interpreter(expertise=self.expertise, embedder=self.embedder, llm=self.llm,
                                        knowledge_base=self.knowledge_base, agent_state=agent_state,
-                                       external_variables=self.external_vars)
+                                       external_variables=self.external_vars, proxy_config=self.proxies)
 
     def execute(self, user_request: str, **__):
         self._emit_request(user_request)
@@ -331,7 +341,7 @@ class Executor:
             prompt = REQUEST_PARSING_PROMPT.format(request, action_text, correction)
             logger.debug(f'Request parsing prompt: "{prompt}"')
             response = self.llm.invoke(prompt)
-            self._emit_llm(usage=response.usage)
+            self._emit_llm(llm_response=response)
             answer = response.text
 
             try:
@@ -549,7 +559,7 @@ class Executor:
         logger.debug(f'Fallback identity prompt:\n"{prompt}"')
 
         response = self.llm.invoke_structured(prompt, schema=self.IdentitySchema)
-        self._emit_llm(usage=response.usage)
+        self._emit_llm(llm_response=response)
         identity = response.result
 
         # minimal sanitization: ensure name is a valid identifier
@@ -588,7 +598,7 @@ class Executor:
         logger.debug(f'Prompt used for deliberate selection:\n"{prompt}"')
 
         response = self.llm.invoke_structured(prompt, schema=self.SelectionSchema)
-        self._emit_llm(usage=response.usage)
+        self._emit_llm(llm_response=response)
         return response.result
 
     @staticmethod
@@ -605,8 +615,9 @@ class Executor:
             payload=dict(phase=phase, **extra_payload),
         )
         hub.emit(event)
-
-    def _emit_llm(self, usage: LLMUsage) -> None:
+    
+    @staticmethod
+    def _emit_llm(llm_response: LLMResponse | StructuredLLMResponse) -> None:
         hub = context.event_hub.get()
         if hub is None or not hub.has_subscribers(EventType.LLM):
             return
@@ -616,7 +627,8 @@ class Executor:
             scope='executor',
             script=None,
             statement='',
-            payload=dict(usage=usage, name=self.llm.get_name(), internal_usage=True),
+            payload=dict(usage=llm_response.usage, name=llm_response.proxy.get_name(), 
+                         internal_usage=True),
         )
         hub.emit(event)
 

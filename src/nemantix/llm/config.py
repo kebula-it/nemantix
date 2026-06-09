@@ -11,6 +11,13 @@ logger = get_package_logger(__name__)
 
 class LLMProxyConfig:
     """Configure which LLM proxies to use"""
+    # for type hints
+    internal: AbstractLLMProxy  # request/deliberate resolution, in/out extraction, ...
+    external: AbstractLLMProxy  # builtin ask_llm and do llm
+    summary: AbstractLLMProxy  # coding summaries
+    knowledge_base: AbstractLLMProxy
+    coding: AbstractLLMProxy
+    default: AbstractLLMProxy
 
     def __init__(self, internal: dict | AbstractLLMProxy | None = None,
                  external: dict | AbstractLLMProxy | None = None,
@@ -18,7 +25,7 @@ class LLMProxyConfig:
                  knowledge_base: dict | AbstractLLMProxy | None = None,
                  coding: dict | AbstractLLMProxy | None = None,
                  default_vendor='openai', default_model='gpt-5-mini',
-                 credentials_path: str | Path | None = None, **default_kwargs):
+                 credentials_path: str | Path | None = "credentials.json", **default_kwargs):
         if credentials_path is None:
             credentials_path = '.'
 
@@ -36,7 +43,11 @@ class LLMProxyConfig:
                            default=self.default_spec)
         self._proxies: dict[str, AbstractLLMProxy] = dict()
 
+    def __getattr__(self, proxy: str) -> AbstractLLMProxy:
+        return self.get(proxy)
+
     def get(self, proxy: str) -> AbstractLLMProxy:
+        """Retrieves the configured proxy: instantiates it if required"""
         proxy = str(proxy).strip().lower()
 
         if proxy not in self._proxies:
@@ -49,16 +60,22 @@ class LLMProxyConfig:
             if isinstance(spec_or_proxy, AbstractLLMProxy):
                 self._proxies[proxy] = spec_or_proxy
 
-                if spec_or_proxy == self._proxies['default']:
+                if spec_or_proxy == self._proxies.get('default', None):
                     logger.info(f'Using default LLM proxy for key "{proxy}".')
             else:
                 assert isinstance(spec_or_proxy, dict)
                 spec = spec_or_proxy
-                llm_proxy = LLMProxyFactory.create_llm_proxy(vendor=spec['vendor'],
-                                                             model_name=spec['model'],
-                                                             **spec.get('kwargs', {}))
-                if spec == self.default_spec:
+
+                if spec == self.default_spec and proxy != 'default':
                     logger.info(f'Using default LLM proxy for key "{proxy}".')
+                    llm_proxy = self.get(proxy='default')
+                else:
+                    logger.info(f'Instantiating LLM proxy for key "{proxy}".')
+                    llm_proxy = LLMProxyFactory.create_llm_proxy(
+                        vendor=spec["vendor"],
+                        model_name=spec["model"],
+                        **spec.get("kwargs", {}),
+                    )
 
                 self._proxies[proxy] = llm_proxy
 

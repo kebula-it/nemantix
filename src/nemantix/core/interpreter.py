@@ -39,7 +39,12 @@ from nemantix.core.runtime import Builtin, Struct
 from nemantix.core.script import Script
 from nemantix.core.tools import Toolset
 from nemantix.hub import Event, EventType
-from nemantix.llm import AbstractLLMProxy
+from nemantix.llm import (
+    AbstractLLMProxy,
+    LLMProxyConfig,
+    LLMResponse,
+    StructuredLLMResponse,
+)
 
 if TYPE_CHECKING:
     from nemantix.knowledge_base.core.nemantix_knowledge_base import (
@@ -150,7 +155,9 @@ class Interpreter:
         def __exit__(self, *_):
             self.interpreter._emit_call_exit(stmt=self.stmt)
 
-    def __init__(self, expertise: Expertise, llm: AbstractLLMProxy, embedder=None, knowledge_base=None,
+    # TODO: deprecate "llm" argument
+    def __init__(self, expertise: Expertise, proxy_config: LLMProxyConfig,
+                 llm: AbstractLLMProxy | None = None, embedder=None, knowledge_base=None,
                  external_variables: nmx_runtime.ExternalVariables | None = None,
                  agent_state: Optional[nmx_runtime.Struct] = None):
         # operational memory
@@ -164,7 +171,8 @@ class Interpreter:
 
         # inner models
         self.embedder = embedder
-        self.llm = llm
+        self.proxies = proxy_config
+        self.llm = llm or self.proxies.internal
 
         self.knowledge_base = knowledge_base
         self.external_vars = external_variables or nmx_runtime.ExternalVariables()
@@ -651,8 +659,8 @@ class Interpreter:
 
                     if builtin_name == BuiltinFunctionEnum.LLM:
                         def __llm_call(prompt, *_, **kwargs_):
-                            response = Builtin.ask_llm(self.llm, prompt, **kwargs_)
-                            self._emit_llm(stmt=do, prompt=prompt, usage=response.usage)
+                            response = Builtin.ask_llm(self.proxies.external, prompt, **kwargs_)
+                            self._emit_llm(stmt=do, prompt=prompt, llm_response=response)
                             return response.text
 
                         callable_fn = __llm_call
@@ -764,8 +772,8 @@ class Interpreter:
                                f'but a "{Builtin.type(prompt_)}"!')
                     raise self._runtime_exception(err_msg, statement=do)
 
-                structured = self.llm.invoke_structured(prompt_, schema=pydantic_schema)
-                self._emit_llm(stmt=do, prompt=prompt_, schema=pydantic_schema, usage=structured.usage)
+                structured = self.proxies.external.invoke_structured(prompt_, schema=pydantic_schema)
+                self._emit_llm(stmt=do, prompt=prompt_, schema=pydantic_schema, llm_response=structured)
                 result = structured.result.model_dump()
             else:
                 callable_fn = self._wrap_callable_with_try_except(fn=callable_fn, statement=do)
@@ -943,8 +951,8 @@ class Interpreter:
 
             if expression.function == BuiltinFunctionEnum.LLM:
                 def __llm_call(prompt, *_, **kwargs_):
-                    response = Builtin.ask_llm(self.llm, prompt, **kwargs_)
-                    self._emit_llm(stmt=expression, prompt=prompt, usage=response.usage)
+                    response = Builtin.ask_llm(self.proxies.external, prompt, **kwargs_)
+                    self._emit_llm(stmt=expression, prompt=prompt, llm_response=response)
                     return response.text
                 function = __llm_call
 
@@ -1460,13 +1468,13 @@ class Interpreter:
         return nmx_runtime.Opaque(obj=value)
 
     def _semantic_inclusion_with_llm(self, system_prompt: str, user_prompt: str,
-                                     statement: nmx_nodes.Statement = None) -> SimilaritySchema:
+                                     statement: nmx_nodes.Statement | None = None) -> SimilaritySchema:
         messages = self.llm.messages_from(prompts_with_roles=[('system', system_prompt),
                                                               ('user', user_prompt)])
 
         result = self.llm.invoke_structured(messages, schema=self.SimilaritySchema)
         self._emit_llm(stmt=statement, prompt=system_prompt + user_prompt,
-                       internal=True, schema=self.SimilaritySchema, usage=result.usage)
+                       internal=True, schema=self.SimilaritySchema, llm_response=result)
         response = result.result
 
         assert isinstance(response, self.SimilaritySchema)
@@ -1683,8 +1691,8 @@ class Interpreter:
                                             producing_names = producing_names, 
                                             slot_names = slot_names)
 
-        response = Builtin.ask_llm(self.llm, prompt)
-        self._emit_llm(stmt=do, prompt=prompt, usage=response.usage, internal=True)
+        response = Builtin.ask_llm(self.proxies.external, prompt)
+        self._emit_llm(stmt=do, prompt=prompt, llm_response=response, internal=True)
 
         try:
             name_mapping = _ast.literal_eval(response.text.strip())
@@ -1922,12 +1930,13 @@ class Interpreter:
         self._emit_event(stmt, event_type=EventType.ERROR, scope=scope,
                          payload=dict(error=str(error), interpreter=self), **kwargs)
 
-    def _emit_llm(self, stmt: nmx_nodes.Statement | None, prompt: str, schema: type[BaseModel] | None = None,
-                  usage=None, scope=None, internal=False, **kwargs):
+    def _emit_llm(self, stmt: nmx_nodes.Statement | None, prompt: str, 
+                  llm_response: LLMResponse | StructuredLLMResponse, 
+                  schema: type[BaseModel] | None = None, scope=None, internal=False, **kwargs):
         self._emit_event(stmt, event_type=EventType.LLM, scope=scope,
-                         payload=dict(prompt=prompt, schema=schema, usage=usage,
+                         payload=dict(prompt=prompt, schema=schema, usage=llm_response.usage,
                                       internal_usage=bool(internal),
-                                      name=self.llm.get_name()), **kwargs)
+                                      name=llm_response.proxy.get_name()), **kwargs)
 
     def _emit_retrieve(self, stmt: nmx_nodes.Statement, knowledge_base: NemantixKnowledgeBase, scope = None, **kwargs):
         self._emit_event(stmt, event_type=EventType.RETRIEVE, scope=scope,
@@ -2000,7 +2009,7 @@ class Interpreter:
             result = response.result
 
             self._emit_llm(stmt=statement, prompt=system_prompt + user_prompt,
-                           internal=True, schema=self.SimilaritySchema, usage=response.usage)
+                           internal=True, schema=self.SimilaritySchema, llm_response=response)
 
             logger.debug(f'Similarity score of "{a} ~ {b}" is {result.score}')
             return result.score

@@ -4,16 +4,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nemantix.core.coder import Coder
 from nemantix.core.executor import Executor
-from nemantix.core.node import FileMeta, Deliberate
+from nemantix.core.expertise import Expertise
+from nemantix.core.node import Deliberate, FileMeta
+from nemantix.core.script import Script
+from nemantix.core.source_manager import LocalSourceManager
 from nemantix.llm import AbstractLLMProxy
 from nemantix.llm.abstract_proxy import LLMResponse, LLMUsage
-from nemantix.security.verifier import BaseVerifier
-from nemantix.core.source_manager import LocalSourceManager
-from nemantix.core.script import Script
-from nemantix.core.coder import Coder
-from nemantix.core.expertise import Expertise
-from nemantix.security.verifier import DebugVerifier
+from nemantix.security.verifier import BaseVerifier, DebugVerifier
 
 HERE = Path(__file__).parent
 
@@ -42,7 +41,9 @@ def mock_llm():
     llm = MagicMock(spec=AbstractLLMProxy)
     llm.llm_proxy = "fake"
     # Configure the mock to return a known deliberate name found in the NXS example
-    llm.invoke.return_value = LLMResponse(text='SummarizeSupportTicket', tool_calls=[], usage=LLMUsage(input_tokens=0, output_tokens=0))
+    llm.invoke.return_value = LLMResponse(text='SummarizeSupportTicket', tool_calls=[],
+                                          usage=LLMUsage(input_tokens=0, output_tokens=0),
+                                          proxy=llm)
     return llm
 
 
@@ -57,7 +58,8 @@ def mock_verifier():
 
 
 @pytest.fixture(scope='module')
-def shared_executor(example_nxc, mock_verifier, mock_llm):
+def shared_executor(example_nxc, mock_verifier, mock_llm,
+                    dummy_llm_proxy_config_class):
     """
     Initializes the Executor once per module with a mock LLM,
     mocked SourceManager, and mocked Coder.
@@ -73,8 +75,9 @@ def shared_executor(example_nxc, mock_verifier, mock_llm):
     # 4. Instantiate Expertise
     expertise = Expertise(script_list=[script], coder=mock_coder, verifier=DebugVerifier())
     expertise.build()
-
-    return Executor(expertise=expertise, llm=mock_llm)
+    
+    proxy_config = dummy_llm_proxy_config_class(mock_llm)
+    return Executor(expertise=expertise, llm=mock_llm, proxy_config=proxy_config)
 
 
 @pytest.fixture(scope='function')
@@ -107,8 +110,10 @@ def test_parse_user_inputs_retry_logic(executor, mock_llm):
 
     # side_effect allows us to return different values on consecutive calls
     mock_llm.invoke.side_effect = [
-        LLMResponse(text=invalid_json, tool_calls=[], usage=LLMUsage(input_tokens=0, output_tokens=0)),
-        LLMResponse(text=valid_json, tool_calls=[], usage=LLMUsage(input_tokens=0, output_tokens=0)),
+        LLMResponse(text=invalid_json, tool_calls=[], proxy=mock_llm,
+                    usage=LLMUsage(input_tokens=0, output_tokens=0)),
+        LLMResponse(text=valid_json, tool_calls=[], proxy=mock_llm,
+                    usage=LLMUsage(input_tokens=0, output_tokens=0)),
     ]
 
     # Create a mock action block

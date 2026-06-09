@@ -371,8 +371,8 @@ class Expertise:
     @classmethod
     def from_local_scripts(cls, paths: list[PathLike] | list[Script], verifier: BaseVerifier,
                            llm: AbstractLLMProxy | None = None,
-                           export_location: PathLike = None, export=True, create_summary= False,
-                           **kwargs) -> "Expertise":
+                           export_location: PathLike = None, export=True,
+                           create_summary= False, **kwargs) -> "Expertise":
         """Instantiates an Expertise assuming local source files or Script list."""
         if not all(isinstance(p, Script) for p in paths):
             scripts = [Script(location=path, source_manager=LocalSourceManager())
@@ -390,14 +390,15 @@ class Expertise:
 
         if llm is None:
             logger.info(
-                f"Instantiating a default LLM proxy: "
+                f"Instantiating a default LLM proxy for the Coder: "
                 f"vendor {kwargs.get('vendor', 'openai')}; "
-                f"model {kwargs.get('model', 'gpt-5')}."
+                f"model {kwargs.get('model', 'gpt-5-mini')}."
             )
             llm = cls.get_default_llm(**kwargs)
 
         assert isinstance(llm, AbstractLLMProxy)
         coder = Coder(llm_proxy=llm, create_summary=create_summary)
+
         return Expertise(script_list=scripts, coder=coder, verifier=verifier, observers=observers,
                          export_location=export_location, export=export,
                          allow_fallback_deliberate=allow_fallback,
@@ -407,7 +408,7 @@ class Expertise:
 
     @staticmethod
     def get_default_llm(credentials_path: PathLike, vendor='openai',
-                        model='gpt-5', temperature=1, **kwargs) -> AbstractLLMProxy:
+                        model='gpt-5-mini', temperature=1, **kwargs) -> AbstractLLMProxy:
         """Returns a default LLM proxy."""
         credentials = Path(credentials_path)
         cred_manager = Credentials.load_from_file(file_path=str(credentials))

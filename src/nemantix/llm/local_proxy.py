@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 logger = get_package_logger(__name__)
 
 
+# TODO: LLMRespose refactor
 class LocalLLMProxy(AbstractLLMProxy):
     """An LLM proxy for local language models (llama.cpp backend)"""
 

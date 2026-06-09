@@ -1,16 +1,21 @@
 # llm/azure_openai_proxy.py (Azure OpenAI via official SDK)
-import os
-import json
 import inspect
-import httpx
+import json
+import os
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type
 
-from typing import Any, Iterator, Dict, Optional, List, Type, TYPE_CHECKING
+import httpx
 from pydantic import BaseModel
 
 from nemantix.common import get_package_logger
+from nemantix.llm.abstract_proxy import (
+    AbstractLLMProxy,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+    StructuredLLMResponse,
+)
 
-from nemantix.llm.abstract_proxy import (AbstractLLMProxy, LLMProxyException,
-                                         LLMResponse, LLMUsage, StructuredLLMResponse)
 logger = get_package_logger(__name__)
 
 
@@ -182,7 +187,8 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
 
             text = msg.content or ""
 
-            return LLMResponse(text=text, tool_calls=tool_calls, usage=self._build_usage(resp.usage))
+            return LLMResponse(text=text, tool_calls=tool_calls, proxy=self, 
+                               usage=self._build_usage(resp.usage))
         except Exception as e:
             raise LLMProxyException(f"Error invoking Azure OpenAI LLM: {e} {e.__cause__}") from e
 
@@ -233,7 +239,8 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             content = msg.content or "{}"
             data = json.loads(content)
 
-            return StructuredLLMResponse(result=schema.model_validate(data), usage=self._build_usage(resp.usage))
+            return StructuredLLMResponse(result=schema.model_validate(data), proxy=self, 
+                                         usage=self._build_usage(resp.usage))
         except Exception as e:
             raise LLMProxyException(f"Error invoking Azure OpenAI LLM (structured): {e}") from e
 
@@ -316,7 +323,9 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
                 tool_calls=[],
                 usage=LLMUsage(
                     input_tokens=getattr(resp.usage, "input_tokens", 0) or 0,
-                    output_tokens=getattr(resp.usage, "output_tokens", 0) or 0))
+                    output_tokens=getattr(resp.usage, "output_tokens", 0) or 0),
+                proxy=self,
+            )
 
         except Exception as e:
             raise LLMProxyException(f"Error invoking Azure OpenAI LLM: {e}") from e

@@ -164,7 +164,8 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
                 msg = self._call_tools(msg, message, prompt, request=req)
 
             text = msg.content or ""
-            return LLMResponse(text=text, tool_calls=tool_calls, usage=self._build_usage(resp.usage))
+            return LLMResponse(text=text, tool_calls=tool_calls, proxy=self,
+                               usage=self._build_usage(resp.usage))
 
         except Exception as e:
             raise LLMProxyException(f"Error invoking OpenAI LLM: {e}") from e
@@ -218,7 +219,8 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             content = msg.content or "{}"
             data = json.loads(content)  # guaranteed valid JSON with structured outputs
 
-            return StructuredLLMResponse(result=schema.model_validate(data), usage=self._build_usage(resp.usage))
+            return StructuredLLMResponse(result=schema.model_validate(data), proxy=self,
+                                         usage=self._build_usage(resp.usage))
 
         except Exception as e:
             raise LLMProxyException(
@@ -310,7 +312,9 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
                 tool_calls=[],
                 usage=LLMUsage(
                     input_tokens=getattr(resp.usage, "input_tokens", 0) or 0,
-                    output_tokens=getattr(resp.usage, "output_tokens", 0) or 0))
+                    output_tokens=getattr(resp.usage, "output_tokens", 0) or 0),
+                proxy=self,
+            )
         except Exception as e:
             raise LLMProxyException(f"Error invoking OpenAI LLM: {e}") from e
 

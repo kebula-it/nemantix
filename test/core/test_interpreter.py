@@ -192,16 +192,19 @@ class DummyLLM:
             result = dummy_data
 
         return SimpleNamespace(
-            result=result, usage=SimpleNamespace(input_tokens=0, output_tokens=0)
+            result=result, usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            proxy=self,
         )
 
 
 @pytest.fixture
-def interpreter_instance():
+def interpreter_instance(dummy_llm_proxy_config_class):
     exp = DummyExpertise()
     emb = DummyEmbedder()
     llm = DummyLLM()
-    return Interpreter(expertise=exp, llm=llm, embedder=emb)
+    llm_proxies = dummy_llm_proxy_config_class(dummy_llm=llm)
+    return Interpreter(expertise=exp, llm=llm, embedder=emb,
+                       proxy_config=llm_proxies)
 
 
 # =============================================================================

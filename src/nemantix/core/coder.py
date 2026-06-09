@@ -1201,7 +1201,7 @@ class Coder:
                 cls: Toolset = [cls for cls in toolset_classes if cls.__name__ == toolset][0]
             except IndexError:
                 raise NemantixException(f"Trying to import a non-available toolset '{toolset}' in nxs. Please, "
-                                        f"provide the Toolset class to the Logic.")
+                                        f"provide the Toolset class to the Coder.")
             tools_info = cls.get_tool_descriptions()
 
             # filter only imported tools from toolset (*=import all)

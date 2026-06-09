@@ -519,11 +519,11 @@ class ReActAgent(Agent):
         answer: str  # human-friendly
 
     class RunModeEnum(Enum):
-        TOOL = auto()
+        # TOOL = auto()
         ACTION = auto()
         DELIBERATE = auto()
-        ACTION_TOOL = auto()
-        DELIBERATE_TOOL = auto()
+        # ACTION_TOOL = auto()
+        # DELIBERATE_TOOL = auto()
         DELIBERATE_ACTION = auto()
         ALL = auto()
 
@@ -552,13 +552,11 @@ __deliberate
         # bound actions and deliberates as tools for the LLM
         registered_names = []
         should_register_actions = run_mode in [self.RunModeEnum.ACTION, self.RunModeEnum.ALL,
-                                               self.RunModeEnum.ACTION_TOOL,
+                                               # self.RunModeEnum.ACTION_TOOL,
                                                self.RunModeEnum.DELIBERATE_ACTION]
         should_register_deliberates = run_mode in [self.RunModeEnum.ALL, self.RunModeEnum.DELIBERATE,
-                                                   self.RunModeEnum.DELIBERATE_ACTION,
-                                                   self.RunModeEnum.DELIBERATE_TOOL]
-        should_register_tools = run_mode in [self.RunModeEnum.TOOL, self.RunModeEnum.ACTION_TOOL,
-                                             self.RunModeEnum.DELIBERATE_TOOL, self.RunModeEnum.ALL]
+                                                   # self.RunModeEnum.DELIBERATE_TOOL,
+                                                   self.RunModeEnum.DELIBERATE_ACTION]
         update_expertise = []
 
         for script in self.expertise.script_by_loc.values():
@@ -575,13 +573,6 @@ __deliberate
                     self.NemantixToolset.register_deliberate(deliberate, self)
                     registered_names.append(deliberate.name)
 
-        if should_register_tools:
-            from nemantix.core import Toolset
-
-            logger.warning('Tool registering not yet implemented...')
-            for tool_name, tool in Toolset.REGISTRY.items():
-                pass
-
         for loc, script, name in update_expertise:
             self.expertise.script_by_loc[loc] = script
             self.expertise.deliberate_to_script_loc[name] = loc
@@ -594,7 +585,9 @@ __deliberate
     # TODO: detect loops
     # TODO: predict a plan, then execute and revise it at each step?
     def run(self, user_request: str, schema: Type[BaseModel] | None = None,
-            reformulate_answer=True, human_approval=False, **kwargs) -> RunSchema:
+            reformulate_answer=True, human_approval=False, 
+            max_consecutive_errors=6, **kwargs) -> RunSchema:
+        assert int(max_consecutive_errors) > 0
         system_prompt = ('You are an helpful agent assistant. You have access to tools '
                          '(lookup [[tools]]). '
                          'You must assess the goal (lookup [[user_request]]) and '
@@ -652,6 +645,7 @@ __deliberate
 
         last_output = ''
         last_error = ''
+        retries_left = int(max_consecutive_errors)
 
         # TODO: add internal prompt to initial request?
         # TODO: catch exception and eventually ask user?
@@ -693,7 +687,7 @@ __deliberate
                 tool = self.NemantixToolset.get_tool(tool_alias)
 
                 arguments = response.tool_arguments
-                logger.info(f'Calling tool "{tool_name}" with arguments: {arguments}')
+                logger.info(f'Calling "{tool_name}" with arguments: {arguments}')
 
                 try:
                     tool_out = tool(**arguments)
@@ -710,10 +704,18 @@ __deliberate
                         context.append(('user', feedback))
                         self.history['feedbacks'].append(feedback)
 
+                    retries_left = int(max_consecutive_errors)
+
                 except Exception as e:
                     # TODO: could also put the error in 'tool' message
                     last_error = f'Error occurred in tool "{tool_name}": "{e}"!'
                     logger.error(f'Error: {e}', exc_info=True)
+                    
+                    if retries_left <= 0:
+                        logger.warning("Max consecutive errors reached, stopped!")
+                        return self.RunSchema(last_output, last_output)
+
+                    retries_left -= 1
             else:
                 context.append(('tool', f'Tool "{tool_name}" is not a valid toolset name: either '
                                         'make a valid tool call or mark the task as completed if '

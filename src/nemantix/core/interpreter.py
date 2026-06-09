@@ -121,7 +121,7 @@ class Interpreter:
 
     class CallEvent:
         def __init__(self, interpreter: 'Interpreter', stmt, name: str = None, kind: str = None,
-                     args: list | None = None):
+                     args: list | None = None, kwargs: dict | None = None):
             self.interpreter = interpreter
             self.stmt = stmt
             self.callable_name = name
@@ -129,9 +129,14 @@ class Interpreter:
             self.callable_prompt = ''
 
             if isinstance(args, (list, tuple)):
+                if len(args) == 0:
+                    prompt = (kwargs or {}).get('prompt', "")
+                else:
+                    prompt = args[0] or ""
+
                 llm_prompt = (
-                    args[0]
-                    if name == "llm" and isinstance(args[0], str)
+                    prompt
+                    if name == "llm" and isinstance(prompt, str)
                     else ""
                 )
                 self.callable_prompt = llm_prompt
@@ -736,7 +741,7 @@ class Interpreter:
         outputs = do.producing
         args, kwargs = self._parse_do_using(do=do)
         
-        with self.CallEvent(self, stmt=do, name=fn_name, kind=kind, args=args):
+        with self.CallEvent(self, stmt=do, name=fn_name, kind=kind, args=args, kwargs=kwargs):
             # LLM with schema call
             if fn_name == "llm" and getattr(do, 'producing_schema', None):
                 frame_name = do.producing_schema

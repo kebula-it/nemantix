@@ -713,6 +713,7 @@ __deliberate
                 except Exception as e:
                     # TODO: could also put the error in 'tool' message
                     last_error = f'Error occurred in tool "{tool_name}": "{e}"!'
+                    logger.error(f'Error: {e}', exc_info=True)
             else:
                 context.append(('tool', f'Tool "{tool_name}" is not a valid toolset name: either '
                                         'make a valid tool call or mark the task as completed if '

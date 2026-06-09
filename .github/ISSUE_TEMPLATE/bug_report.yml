@@ -1,6 +1,7 @@
 name: Bug Report
 description: Report a bug in Nemantix
-labels: ["bug"]
+labels: ["status: needs triage"]
+type: "Bug"
 body:
   - type: markdown
     attributes:

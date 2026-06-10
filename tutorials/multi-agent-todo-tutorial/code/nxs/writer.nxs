@@ -1,0 +1,103 @@
+from toolset TodoManagerToolset
+     use create_todo,
+         delete_todo,
+         complete_todo,
+         flush_todos
+
+deliberate CreateTodoDeliberate when >> the user wants to create, add, or insert a new todo <<:
+  plan:
+    in: user_request(required) >> request << __in
+    out: result >> outcome << __out
+    body:
+      [[task] = ""]
+      do llm using [
+         [prompt] = "Extract the task description from: [user_request]. Return only the string description, no quotes or other words."
+      ] producing [[task]]
+      
+      # Use the create_todo tool passing the string to it
+      do tool TodoManagerToolset.create_todo using [[text] = [task]] producing [[success]]
+      
+      [[result] = ""]
+      if [[success]]:
+         [[result] = "New Todo successfully created: " | [task]]
+      else:
+         [[result] = "An error occurred while creating the task."]
+      __if
+      
+      return [result]
+    __body
+  __plan
+__deliberate
+
+
+deliberate DeleteTodoDeliberate when >> the user wants to delete, remove, or eliminate a specific todo <<:
+  plan:
+    in: user_request(required) >> request << __in
+    out: result >> outcome << __out
+    body:
+      [[todo_id] = ""]
+      do llm using [[prompt] = "Extract only the numeric ID to be deleted from the request (or context): [user_request]. Return only the number."] producing [[todo_id]]
+      
+      # Use the delete_todo tool
+      do tool TodoManagerToolset.delete_todo using [[todo_id] = to_num([todo_id])] producing [[success]]
+      
+      [[result] = ""]
+      if [[success]]:
+         [[result] = "Todo number " | [todo_id] | " successfully deleted."]
+      else:
+         [[result] = "Error: Todo " | [todo_id] | " not found or impossible to delete."]
+      __if
+
+      return [result]
+    __body
+  __plan
+__deliberate
+
+
+deliberate CompleteTodoDeliberate when >> the user wants to complete, mark as done, or close a todo <<:
+  plan:
+    in: user_request(required) >> request << __in
+    out: result >> outcome << __out
+    body:
+      [[todo_id] = ""]
+      do llm using [[prompt] = "Extract only the numeric ID to be completed from the request: [user_request]. Return only the number."] producing [[todo_id]]
+      
+      # Use the complete_todo tool
+      do tool TodoManagerToolset.complete_todo using [[todo_id] = to_num([todo_id])] producing [[success]]
+      
+      [[result] = ""]
+      if [[success]]:
+         [[result] = "Great! Todo " | [todo_id] | " marked as completed."]
+      else:
+         [[result] = "Error: Impossible to complete the todo " | [todo_id] | "."]
+      __if
+
+      return [result]
+    __body
+  __plan
+__deliberate
+
+
+deliberate FlushTodosDeliberate when >> the user wants to clean, flush, or remove all already completed todos <<:
+  plan:
+    in:
+      user_request(required) >> request <<
+    __in
+    out:
+      result >> outcome <<
+    __out
+
+    body:
+      do tool TodoManagerToolset.flush_todos producing [[db_result]]
+      
+      [[result] = ""]
+      if [[db_result:status] == "success"]:
+         [[result] = "Flush completed. " | to_str([db_result:deleted_count]) | " completed todos have been removed."]
+      else:
+         [[result] = "Error during the flush operation."]
+      __if
+
+      return [result]
+    __body
+  __plan
+__deliberate

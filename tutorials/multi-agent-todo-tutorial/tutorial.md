@@ -725,7 +725,7 @@ Inside the body, we start by constructing the base representation:
 [[formatted_output] = "Todo #"
                     | to_str([todo:id])
                     | " - "
-                    | to_str([todo:text])]
+                    | [todo:text]]
 ```
 
 For a todo such as:

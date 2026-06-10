@@ -80,6 +80,15 @@ all = [
     "nemantix[embeddings,stl,debug,dev,knowledge,observer]"
 ]
 
+[project.scripts]
+nemantix = "nemantix.cli:main"
+
+[project.entry-points.nemantix]
+run     = "nemantix.cli.run:register"
+compile = "nemantix.cli.compile:register"
+sign    = "nemantix.cli.sign:register"
+verify  = "nemantix.cli.verify:register"
+
 [project.urls]
 Documentation = "https://github.com/kebula-it/nemantix#readme"
 Source = "https://github.com/kebula-it/nemantix"

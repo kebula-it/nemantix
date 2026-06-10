@@ -769,8 +769,6 @@ class Coder:
 
     def generate_tool(self, toolset_name, imports_str, do_str, description,
                       previous_error: str | None = None, previous_code: str | None = None) -> str:
-        self._emit_coding_start(script=None, scope=toolset_name, kind='tool')
-
         user_content = (
             f"Name: {toolset_name}\n"
             f"Import Statement: {imports_str}\n"
@@ -809,7 +807,6 @@ class Coder:
             generated_code = "\n".join(lines).strip()
 
         logger.debug(f"LLM Generated Toolset Code:\n{generated_code}")
-        self._emit_coding_end(script=None, scope=toolset_name, kind='tool', attempts=1)
         return generated_code
 
     @classmethod

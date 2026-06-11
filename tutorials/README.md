@@ -53,9 +53,6 @@ It includes:
 
 Each tutorial lives in its own folder and builds a complete working system.
 
-> [!INFO]
-> 
-
 ## 🌤️ 1. Tool-Augmented Weather Agent
 
 Learn how to build your first AI agent that:

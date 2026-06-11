@@ -1,5 +1,11 @@
 # Change Log
 
+## [1.0.9] - 2026-06-11
+### Changes
+- Changed highlight color type of `tool` qualifier (e.g., used in `do` statements.)
+- Changed `deliberate` code snippet to also include the `guidelines` block and the completion qualifier for the plan.
+- Removed `guidelines` code snippet as it is now included in the `deliberate` snippet.
+
 ## [1.0.8] - 2026-05-26
 ### Added
 - Support for code formatting: `Format Document` and `Format Selection`.

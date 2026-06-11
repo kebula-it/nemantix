@@ -1,9 +1,13 @@
 # Changelog
 
+## [1.1.2]
+### Bugfix
+- Python code within `toolset` blocks caused erroneous indentation on snippet pasting.
+- Indentation of one-line copy and pasting is now preserved.
+
 ## [1.1.1]
 ### Bugfix
 - Missing `BOOL` keyword in `slot` types within `frame` definitions.
-
 
 ## [1.1.0]
 ### Added

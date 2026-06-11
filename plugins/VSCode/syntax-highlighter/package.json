@@ -3,7 +3,7 @@
   "displayName": "Nemantix Syntax Highlighter",
   "publisher": "nemantix",
   "description": "Syntax Highlighter for Nemantix Language",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "main": "./out/extension.js",
   "activationEvents": [
     "onLanguage:nemantix"

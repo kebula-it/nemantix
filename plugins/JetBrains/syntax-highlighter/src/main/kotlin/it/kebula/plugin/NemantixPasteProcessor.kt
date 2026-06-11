@@ -51,40 +51,105 @@ class NemantixPasteProcessor : CopyPastePostProcessor<TextBlockTransferableData>
 
         val originalText = document.getText(TextRange(start, end))
 
-        // 1. Heuristic Cleanup: Replace sequences of 3+ spaces with a newline
-        var cleanedText = originalText.replace(Regex("\\s{3,}"), "\n")
+        val startLine = document.getLineNumber(start)
+        val lineStartOffset = document.getLineStartOffset(startLine)
+        val prefix = document.getText(TextRange(lineStartOffset, start))
 
-        // 2. Fix jammed keywords
+        // No math! Just extract the exact literal string of spaces/tabs that exists at the start.
+        val baseIndentString = if (start == lineStartOffset) {
+            originalText.takeWhile { it == ' ' || it == '\t' }.toString()
+        } else {
+            prefix.takeWhile { it == ' ' || it == '\t' }.toString()
+        }
+
+        var cleanedText = originalText
+
+        // 1. Shield Python Blocks safely using @@@
+        val pythonBlocks = mutableListOf<String>()
+        cleanedText = Regex(">>>[\\s\\S]*?<<<").replace(cleanedText) { match ->
+            pythonBlocks.add(match.value)
+            "@@@PYTHON_BLOCK_${pythonBlocks.size - 1}@@@"
+        }
+
+        // 2. Heuristic Cleanup
+        cleanedText = cleanedText.replace(Regex("(?<=\\S)\\s{3,}"), "\n")
         cleanedText = cleanedText.replace(Regex("(__[a-zA-Z0-9]*)"), "\n$1\n")
-        // Use a negative lookbehind (?<!_) so it ignores '__deliberate'
         cleanedText = cleanedText.replace(Regex("(?<!_)(deliberate\\s+)"), "\n$1")
 
-        // 3. Process line by line to calculate proper indentation
+        // 3. Process line by line
         val lines = cleanedText.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         val formattedText = StringBuilder()
-        var indentLevel = 0
-        val tab = "    " // Standard 4 spaces indentation
+        val tab = "    "
+        var isFirstOutputLine = true
+
+        // This tracks only the INTERNAL nesting of the block you pasted
+        var relativeIndentLevel = 0
+
+        fun appendFormatted(text: String, currentRelativeIndent: Int, isRaw: Boolean = false) {
+            if (isRaw) {
+                // Raw python code prints exactly as it was copied
+                formattedText.append(text).append("\n")
+            } else {
+                if (isFirstOutputLine && start > lineStartOffset) {
+                    // Inline paste: first line just gets text (IDE prefix already handles indent)
+                    formattedText.append(text).append("\n")
+                } else {
+                    // Whole line paste OR subsequent lines: Print the Base String + Internal Nesting
+                    formattedText.append(baseIndentString)
+                        .append(tab.repeat(currentRelativeIndent))
+                        .append(text)
+                        .append("\n")
+                }
+            }
+            isFirstOutputLine = false
+        }
 
         val startBlockRegex = Regex("^(?:@[a-zA-Z0-9_:-]+\\s*)*(?:(?:frozen|drafted|undefined)\\s+)?(?:plan:|action\\b|body:|in:|out:|guidelines:|deliberate\\b|toolset\\b|use:|if\\b|elif\\b|else\\b|repeat\\b|while\\b|until\\b|for\\b|>>>)")
 
         for (line in lines) {
-            // A. Decrease indent BEFORE writing the line if it's an end block
-            if (line.startsWith("__") || line.startsWith("<<<")) {
-                indentLevel = maxOf(0, indentLevel - 1)
+
+            // Restore Python blocks
+            if (line.contains("@@@PYTHON_BLOCK_")) {
+                val indexMatch = Regex("@@@PYTHON_BLOCK_(\\d+)@@@").find(line)
+                if (indexMatch != null) {
+                    val index = indexMatch.groupValues[1].toInt()
+                    val pyLines = pythonBlocks[index].split("\n")
+
+                    for (pLine in pyLines) {
+                        val tLine = pLine.trim()
+
+                        if (tLine == "<<<") relativeIndentLevel = maxOf(0, relativeIndentLevel - 1)
+
+                        if (tLine == ">>>" || tLine == "<<<") {
+                            appendFormatted(tLine, relativeIndentLevel)
+                        } else {
+                            appendFormatted(pLine, 0, isRaw = true)
+                        }
+
+                        if (tLine == ">>>") relativeIndentLevel++
+                    }
+                }
+                continue
             }
 
-            // Write the line with current indentation
-            formattedText.append(tab.repeat(indentLevel)).append(line).append("\n")
+            // Standard line processing
+            if (line.startsWith("__") || line.startsWith("<<<")) {
+                relativeIndentLevel = maxOf(0, relativeIndentLevel - 1)
+            }
 
-            // B. Increase indent AFTER writing the line if it's a start block
+            appendFormatted(line, relativeIndentLevel)
+
             if (startBlockRegex.containsMatchIn(line)) {
-                indentLevel++
+                relativeIndentLevel++
             }
         }
 
-        val finalText = formattedText.toString().trimEnd()
+        // 4. Final Polish: Keep trailing newline if it existed
+        var finalText = formattedText.toString().trimEnd()
+        if (originalText.endsWith("\n")) {
+            finalText += "\n"
+        }
 
-        // 4. Run text replacements inside a Write Action
         WriteCommandAction.runWriteCommandAction(project) {
             document.replaceString(start, end, finalText)
         }

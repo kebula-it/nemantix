@@ -14,6 +14,11 @@
     "prefix": "del",
     "body": [
       "deliberate ${1:name} when >> ${2:microprompt} <<:",
+      "\tguidelines:",
+      "\t>>> ${3:instructions} <<<",
+      "\t__guidelines",
+      "",
+      "\t@completion: ${4:_->frozen}",
       "\tplan:",
       "\t\tbody:",
       "\t\t\t$0",
@@ -40,14 +45,5 @@
       "__frame"
     ],
     "description": "Generate a Nemantix frame block"
-  },
-    "Guidelines": {
-    "prefix": "guide",
-    "body": [
-      "guidelines:",
-      ">>> ${0:description} <<<",
-      "__guidelines"
-    ],
-    "description": "Generate a Nemantix guidelines block"
   }
 }

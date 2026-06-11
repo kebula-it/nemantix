@@ -73,9 +73,11 @@ Run the following commands in your terminal:
 # 1. Create a folder for the keys
 mkdir keys
 
-# 2. Generate a local self-signed certificate and private key (Valid for 365 days)
-# Note: Git Bash or WSL is recommended if you are on Windows.
-openssl req -x509 -newkey rsa:2048 -keyout keys/privatekey.pem -out keys/publickey.crt -days 365 -nodes -subj "/CN=localhost"
+# 2. Generate a standard RSA private key
+openssl genrsa -out keys/privatekey.pem 2048
+
+# 3. Extract the public key from it
+openssl rsa -in keys/privatekey.pem -pubout -out keys/publickey.crt
 ```
 
 

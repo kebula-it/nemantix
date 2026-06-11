@@ -21,31 +21,36 @@ from pathlib import Path
 from nemantix.core import Expertise, Agent
 from nemantix.security import Verifier
 
-# 1. Import the LLMProxyFactory
+# 1. Import the LLMProxyFactory, AbstractLLMProxy and Credentials
 from nemantix.llm.factory import LLMProxyFactory
+from nemantix.llm.abstract_proxy import AbstractLLMProxy
+from nemantix.llm.credentials import Credentials
 
-def main():
+def main() -> None:
     current_folder = Path.cwd()
     verifier = Verifier(current_folder / 'keys/publickey.crt')
     credentials_path = current_folder / 'credentials.json'
     
-    # 2. Create your custom LLM Proxy
+    # 2. Set a Credentials Manager
+    credentials = Credentials.load_from_file(file_path=credentials_path)
+    AbstractLLMProxy.set_credentials_manager(credentials)
+
+    # 3. Create your custom LLM Proxy
     # Supported vendors usually include "openai", "anthropic", "google"
     custom_llm = LLMProxyFactory.create_llm_proxy(
         vendor="anthropic",                  # Change this to your preferred vendor
         model_name="claude-..."              # Specify the exact model name string
     )
 
-    # 3. Pass the Proxy to the Expertise
+    # 4. Pass the Proxy to the Expertise
     exp = Expertise.from_local_scripts(
         paths=[current_folder / 'nxs/your_script.nxs'],
         verifier=verifier,
-        credentials_path=credentials_path, # Injects the API key from JSON
         llm=custom_llm                     # Injects the model configuration
     )
 
-    # 4. Create the Agent
-    # Because we don't explicitly pass an llm_proxy here, 
+    # 5. Create the Agent
+    # Because we don't explicitly pass an llm here, 
     # the Agent automatically inherits 'custom_llm' from 'exp'!
     agent = Agent(expertise=exp, build_on_start=True)
     

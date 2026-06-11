@@ -166,7 +166,7 @@ def main() -> None:
             task = input("Enter the task description: ")
             err, out = writer_agent.run(user_request=f"Create a new todo with this description: {task}")
         elif command == 'list':
-            err, out = reader_agent.run(user_request=f"List all my todos")
+            err, out = reader_agent.run(user_request="List all my todos")
         elif command == 'find':
             todo_id = input("Enter the todo ID: ")
             err, out = reader_agent.run(user_request=f"Find the todo with id: {todo_id}")

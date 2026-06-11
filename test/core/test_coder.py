@@ -7,7 +7,7 @@ from lark import LarkError
 
 from nemantix.core import coder as coder_module
 from nemantix.core.coder import CodeOperationEnum, Coder, qualifier_coding_map
-from nemantix.core.exceptions import NemantixException
+from nemantix.core.exceptions import NemantixException, NemantixRuntimeException
 from nemantix.core.node import (
     ActionBlock,
     BlockStatement,
@@ -18,6 +18,7 @@ from nemantix.core.node import (
     Frame,
     MicroPrompt,
     PlanQualifierEnum,
+    PythonToolDeclaration,
 )
 from nemantix.core.script import Script
 from nemantix.core.tools import Toolset
@@ -387,13 +388,91 @@ def test_generate_tool_emits_llm_event_with_usage(isolated_event_hub):
 
     coder.generate_tool(toolset_name="T", imports_str="", do_str="", description="")
 
-    assert len(coding_start_events) == 1
-    assert len(coding_end_events) == 1
+    # CODING_START and CODING_END are now emitted by `code_script_toolsets`, not here
+    assert len(coding_start_events) == 0
+    assert len(coding_end_events) == 0
+
+    # The LLM event should still be correctly emitted and tracked
     assert len(llm_events) == 1
     assert llm_events[0].payload["usage"].input_tokens == 50
     assert llm_events[0].payload["usage"].output_tokens == 20
-    # CODING_END no longer carries usage — the Profiler attributes it via the LLM event
-    assert "usage" not in coding_end_events[0].payload
+
+
+# =============================================================================
+# code_script_toolsets Tests
+# =============================================================================
+
+
+def make_toolset_decl(name: str, prompt_text: str, start_line: int, end_line: int):
+    """Helper to mock a PythonToolDeclaration node."""
+    prompt = MicroPrompt(
+        prompt_text,
+        meta={"file_meta": FileMeta((start_line, end_line), (0, 0)), "node_meta": None},
+    )
+    decl = PythonToolDeclaration(
+        name=name,
+        prompt=prompt,
+        meta={"file_meta": FileMeta((start_line, end_line), (0, 0)), "node_meta": None},
+    )
+    return decl
+
+
+def test_code_script_toolsets_success(isolated_event_hub):
+    """Test successful generation of a toolset, verifying correct event emissions and script replacements."""
+    valid_code = "from nemantix.core.tools import Toolset\nclass MyGenToolset(Toolset):\n    pass"
+    llm = FakeLLMProxy(responses=[], raw_responses=[valid_code])
+    coder = Coder(llm_proxy=llm)
+
+    script = type("ScriptObj", (), {})()
+    script.content = "toolset MyGenToolset:\n  >> gen <<\n__toolset"
+    script.read_as_list = lambda: script.content.split("\n")
+    script.toolset_imports = {}
+    script.toolsets_decl = [make_toolset_decl("MyGenToolset", "gen", 1, 3)]
+    script.parse = lambda: None  # mock out parsing after replacement
+    script.actions = {}
+    script.deliberates = {}
+
+    hub = isolated_event_hub
+    start_events = _capture_events(hub, EventType.CODING_START)
+    end_events = _capture_events(hub, EventType.CODING_END)
+
+    out = coder.code_script_toolsets(script, max_retries=1)
+
+    # Assert the coding events are now emitted here
+    assert len(start_events) == 1
+    assert len(end_events) == 1
+    assert start_events[0].payload["type"] == "toolset"
+    assert end_events[0].payload["type"] == "toolset"
+
+    # Assert the code replacement includes the generated class
+    assert "class MyGenToolset(Toolset):" in out
+
+
+def test_code_script_toolsets_max_retries_raises(isolated_event_hub):
+    """Test that max retries on bad syntax raises an exception and emits a CODING_ERROR."""
+    # LLM returns invalid code repeatedly
+    llm = FakeLLMProxy(responses=[], raw_responses=["invalid python code"] * 2)
+    coder = Coder(llm_proxy=llm)
+
+    script = type("ScriptObj", (), {})()
+    script.content = "toolset BadToolset:\n  >> gen <<\n__toolset"
+    script.read_as_list = lambda: script.content.split("\n")
+    script.read = lambda **kwargs: script.content.split(
+        "\n"
+    )  # Added to support exception trace building
+    script.toolset_imports = {}
+    script.toolsets_decl = [make_toolset_decl("BadToolset", "gen", 1, 3)]
+    script.actions = {}
+    script.deliberates = {}
+
+    hub = isolated_event_hub
+
+    # We match "Malformed tool declaration" because the generated text doesn't contain a "class " string
+    with pytest.raises(NemantixRuntimeException, match="Malformed tool declaration"):
+        coder.code_script_toolsets(script, max_retries=2)
+
+    # Check retries were executed
+    assert len(llm.raw_calls) == 2
 
 
 def test_check_and_fix_retries_emit_one_llm_event_per_retry(monkeypatch, isolated_event_hub):

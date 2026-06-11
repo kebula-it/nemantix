@@ -7,7 +7,7 @@ from lark import LarkError
 
 from nemantix.core import coder as coder_module
 from nemantix.core.coder import CodeOperationEnum, Coder, qualifier_coding_map
-from nemantix.core.exceptions import NemantixException
+from nemantix.core.exceptions import NemantixException, NemantixRuntimeException
 from nemantix.core.node import (
     ActionBlock,
     BlockStatement,
@@ -18,6 +18,7 @@ from nemantix.core.node import (
     Frame,
     MicroPrompt,
     PlanQualifierEnum,
+    PythonToolDeclaration,
 )
 from nemantix.core.script import Script
 from nemantix.core.tools import Toolset
@@ -387,13 +388,91 @@ def test_generate_tool_emits_llm_event_with_usage(isolated_event_hub):
 
     coder.generate_tool(toolset_name="T", imports_str="", do_str="", description="")
 
-    assert len(coding_start_events) == 1
-    assert len(coding_end_events) == 1
+    # CODING_START and CODING_END are now emitted by `code_script_toolsets`, not here
+    assert len(coding_start_events) == 0
+    assert len(coding_end_events) == 0
+
+    # The LLM event should still be correctly emitted and tracked
     assert len(llm_events) == 1
     assert llm_events[0].payload["usage"].input_tokens == 50
     assert llm_events[0].payload["usage"].output_tokens == 20
-    # CODING_END no longer carries usage — the Profiler attributes it via the LLM event
-    assert "usage" not in coding_end_events[0].payload
+
+
+# =============================================================================
+# code_script_toolsets Tests
+# =============================================================================
+
+
+def make_toolset_decl(name: str, prompt_text: str, start_line: int, end_line: int):
+    """Helper to mock a PythonToolDeclaration node."""
+    prompt = MicroPrompt(
+        prompt_text,
+        meta={"file_meta": FileMeta((start_line, end_line), (0, 0)), "node_meta": None},
+    )
+    decl = PythonToolDeclaration(
+        name=name,
+        prompt=prompt,
+        meta={"file_meta": FileMeta((start_line, end_line), (0, 0)), "node_meta": None},
+    )
+    return decl
+
+
+def test_code_script_toolsets_success(isolated_event_hub):
+    """Test successful generation of a toolset, verifying correct event emissions and script replacements."""
+    valid_code = "from nemantix.core.tools import Toolset\nclass MyGenToolset(Toolset):\n    pass"
+    llm = FakeLLMProxy(responses=[], raw_responses=[valid_code])
+    coder = Coder(llm_proxy=llm)
+
+    script = type("ScriptObj", (), {})()
+    script.content = "toolset MyGenToolset:\n  >> gen <<\n__toolset"
+    script.read_as_list = lambda: script.content.split("\n")
+    script.toolset_imports = {}
+    script.toolsets_decl = [make_toolset_decl("MyGenToolset", "gen", 1, 3)]
+    script.parse = lambda: None  # mock out parsing after replacement
+    script.actions = {}
+    script.deliberates = {}
+
+    hub = isolated_event_hub
+    start_events = _capture_events(hub, EventType.CODING_START)
+    end_events = _capture_events(hub, EventType.CODING_END)
+
+    out = coder.code_script_toolsets(script, max_retries=1)
+
+    # Assert the coding events are now emitted here
+    assert len(start_events) == 1
+    assert len(end_events) == 1
+    assert start_events[0].payload["type"] == "toolset"
+    assert end_events[0].payload["type"] == "toolset"
+
+    # Assert the code replacement includes the generated class
+    assert "class MyGenToolset(Toolset):" in out
+
+
+def test_code_script_toolsets_max_retries_raises(isolated_event_hub):
+    """Test that max retries on bad syntax raises an exception and emits a CODING_ERROR."""
+    # LLM returns invalid code repeatedly
+    llm = FakeLLMProxy(responses=[], raw_responses=["invalid python code"] * 2)
+    coder = Coder(llm_proxy=llm)
+
+    script = type("ScriptObj", (), {})()
+    script.content = "toolset BadToolset:\n  >> gen <<\n__toolset"
+    script.read_as_list = lambda: script.content.split("\n")
+    script.read = lambda **kwargs: script.content.split(
+        "\n"
+    )  # Added to support exception trace building
+    script.toolset_imports = {}
+    script.toolsets_decl = [make_toolset_decl("BadToolset", "gen", 1, 3)]
+    script.actions = {}
+    script.deliberates = {}
+
+    hub = isolated_event_hub
+
+    # We match "Malformed tool declaration" because the generated text doesn't contain a "class " string
+    with pytest.raises(NemantixRuntimeException, match="Malformed tool declaration"):
+        coder.code_script_toolsets(script, max_retries=2)
+
+    # Check retries were executed
+    assert len(llm.raw_calls) == 2
 
 
 def test_check_and_fix_retries_emit_one_llm_event_per_retry(monkeypatch, isolated_event_hub):
@@ -644,3 +723,245 @@ def test_code_do_as_frames_raises_exception_max_retries(monkeypatch):
         coder.code_do_as_frames(script, action, [])
 
     assert len(llm.raw_calls) == 6
+
+
+# =============================================================================
+# code_script_actions Tests
+# =============================================================================
+
+
+def test_code_script_actions_skips_and_codes_correctly(monkeypatch):
+    """Test that actions are correctly routed to SKIP or CODE based on their qualifiers."""
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[]))
+
+    # Mock _read_node_nxs to just return a dummy string based on the node's name
+    def mock_read_nxs(script_content_list, node, read_as_list=False):
+        return f"ORIGINAL_{node.name}"
+
+    monkeypatch.setattr(coder, "_read_node_nxs", mock_read_nxs)
+
+    # Mock code_action to return a distinct "coded" string
+    def mock_code_action(coding_type, action_name, script, required_scripts):
+        return f"CODED_{action_name}"
+
+    monkeypatch.setattr(coder, "code_action", mock_code_action)
+
+    # Prepare dummy script
+    script = type("ScriptObj", (), {})()
+    script.read_as_list = lambda: []
+    script.requires = []
+    script.toolset_imports = {}
+    script.toolsets_decl = []
+    script.frames = []
+
+    # One deliberate to ensure non-actions are preserved
+    script.deliberates = {"D1": DummyDeliberate("D1", 1, 1)}
+
+    # Two actions: one to skip (frozen->frozen), one to code (none->drafted)
+    qual_skip = (PlanQualifierEnum.FROZEN, PlanQualifierEnum.FROZEN)
+    qual_code = (PlanQualifierEnum.NONE, PlanQualifierEnum.DRAFTED)
+
+    script.actions = {
+        "A_SKIP": DummyAction("A_SKIP", 2, 2, qualifier=qual_skip),
+        "A_CODE": DummyAction("A_CODE", 3, 3, qualifier=qual_code),
+    }
+
+    # Execute
+    result = coder.code_script_actions(script, required_scripts=[])
+
+    # Assert
+    assert "ORIGINAL_D1" in result  # Non-actions are preserved
+    assert "ORIGINAL_A_SKIP" in result  # Skipped actions are preserved
+    assert "CODED_A_CODE" in result  # Coded actions are replaced
+
+
+# =============================================================================
+# code_script_deliberates Tests
+# =============================================================================
+
+
+def test_code_script_deliberates_skips_and_codes_correctly(monkeypatch):
+    """Test that deliberates are correctly routed to SKIP or CODE based on their qualifiers."""
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[]))
+
+    def mock_read_nxs(script_content_list, node, read_as_list=False):
+        return f"ORIGINAL_{node.name}"
+
+    monkeypatch.setattr(coder, "_read_node_nxs", mock_read_nxs)
+
+    def mock_code_deliberate(coding_type, deliberate_name, script, required_scripts):
+        return f"CODED_{deliberate_name}"
+
+    monkeypatch.setattr(coder, "code_deliberate", mock_code_deliberate)
+
+    script = type("ScriptObj", (), {})()
+    script.read_as_list = lambda: []
+    script.requires = []
+    script.toolset_imports = {}
+    script.toolsets_decl = []
+    script.frames = []
+
+    # One action to ensure non-deliberates are preserved
+    script.actions = {"A1": DummyAction("A1", 1, 1)}
+
+    # Two deliberates: one to skip (frozen->frozen), one to code (none->drafted)
+    qual_skip = (PlanQualifierEnum.FROZEN, PlanQualifierEnum.FROZEN)
+    qual_code = (PlanQualifierEnum.NONE, PlanQualifierEnum.DRAFTED)
+
+    script.deliberates = {
+        "D_SKIP": DummyDeliberate("D_SKIP", 2, 2, qualifier=qual_skip),
+        "D_CODE": DummyDeliberate("D_CODE", 3, 3, qualifier=qual_code),
+    }
+
+    # Execute
+    result = coder.code_script_deliberates(script, required_scripts=[])
+
+    # Assert
+    assert "ORIGINAL_A1" in result  # Non-deliberates are preserved
+    assert "ORIGINAL_D_SKIP" in result  # Skipped deliberates are preserved
+    assert "CODED_D_CODE" in result  # Coded deliberates are replaced
+
+
+# =============================================================================
+# code_script_frames Tests
+# =============================================================================
+
+
+def test_code_script_frames_success(monkeypatch, isolated_event_hub):
+    """Test that missing frames are generated and successfully parsed on the first try."""
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[]))
+
+    # Mock schema extraction to pretend both frames are used in the script
+    monkeypatch.setattr(
+        coder,
+        "_extract_do_schema",
+        lambda script: {
+            "MISSING_FRAME": ["usage statement"],
+            "EXISTING_FRAME": ["usage statement"],
+        },
+    )
+
+    # Mock node reader to output placeholders for already existing nodes
+    def mock_read_nxs(script_content_list, node, read_as_list=False):
+        return getattr(node, "name", "UNNAMED_NODE")
+
+    monkeypatch.setattr(coder, "_read_node_nxs", mock_read_nxs)
+
+    # Mock the LLM generation step
+    monkeypatch.setattr(
+        coder,
+        "generate_frame",
+        lambda name, usages, **kwargs: f"GENERATED_FRAME_CODE_FOR_{name}",
+    )
+
+    # Mock the parser to succeed
+    class DummyParser:
+        def parse(self, text):
+            pass
+
+    monkeypatch.setattr(coder_module, "_get_frame_parser", lambda: DummyParser())
+
+    script = type("ScriptObj", (), {})()
+    script.read_as_list = lambda: []
+    script.requires = []
+    script.toolset_imports = {}
+    script.toolsets_decl = []
+    script.actions = {"A1": DummyAction("A1", 1, 1)}
+    script.deliberates = {}
+
+    # Ensure existing, fully defined frames are kept
+    existing_frame = Frame(
+        "EXISTING_FRAME",
+        meta={"file_meta": FileMeta((1, 1), (0, 0)), "node_meta": None},
+    )
+    existing_frame.children = []  # Not a partial frame
+    script.frames = [existing_frame]
+
+    result = coder.code_script_frames(script)
+
+    # Now the coder will process both, ignoring EXISTING_FRAME and generating MISSING_FRAME
+    assert "EXISTING_FRAME" in result
+    assert "GENERATED_FRAME_CODE_FOR_MISSING_FRAME" in result
+    assert "A1" in result
+
+
+def test_code_script_frames_retries_on_parser_error(monkeypatch, isolated_event_hub):
+    """Test that frame generation retries upon a syntax error, then succeeds."""
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[]))
+    monkeypatch.setattr(
+        coder, "_extract_do_schema", lambda script: {"MISSING_FRAME": ["usage"]}
+    )
+    monkeypatch.setattr(coder, "_read_node_nxs", lambda *args, **kwargs: "")
+
+    # Have generate_frame return 'bad' first, then 'good'
+    gen_results = ["bad", "good"]
+
+    def mock_generate_frame(name, usages, previous_frame=None, previous_error=None):
+        return gen_results.pop(0)
+
+    monkeypatch.setattr(coder, "generate_frame", mock_generate_frame)
+
+    # Make the parser throw SyntaxError on 'bad', but pass on 'good'
+    class DummyParser:
+        def parse(self, text):
+            if text == "bad":
+                raise SyntaxError("Bad syntax!")
+
+    monkeypatch.setattr(coder_module, "_get_frame_parser", lambda: DummyParser())
+
+    script = type("ScriptObj", (), {})()
+    script.read_as_list = lambda: []
+    script.requires = []
+    script.toolset_imports = {}
+    script.toolsets_decl = []
+    script.actions = {}
+    script.deliberates = {}
+    script.frames = []
+
+    # Capture events to verify retry count
+    hub = isolated_event_hub
+    end_events = _capture_events(hub, EventType.CODING_END)
+
+    result = coder.code_script_frames(script)
+
+    # Check that 'good' made it to the final result, and it took 2 attempts
+    assert "good" in result
+    assert len(end_events) == 1
+    assert end_events[0].payload["attempts"] == 2
+
+
+def test_code_script_frames_max_retries_raises(monkeypatch, isolated_event_hub):
+    """Test that exceeding max retries throws NemantixRuntimeException and emits an error event."""
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[]))
+    monkeypatch.setattr(
+        coder, "_extract_do_schema", lambda script: {"MISSING_FRAME": ["usage"]}
+    )
+    monkeypatch.setattr(coder, "_read_node_nxs", lambda *args, **kwargs: "")
+    monkeypatch.setattr(coder, "generate_frame", lambda *args, **kwargs: "always_bad")
+
+    # Parser always throws an error
+    class DummyParser:
+        def parse(self, text):
+            raise SyntaxError("Always bad syntax!")
+
+    monkeypatch.setattr(coder_module, "_get_frame_parser", lambda: DummyParser())
+
+    script = type("ScriptObj", (), {})()
+    script.read_as_list = lambda: []
+    script.requires = []
+    script.toolset_imports = {}
+    script.toolsets_decl = []
+    script.actions = {}
+    script.deliberates = {}
+    script.frames = []
+
+    hub = isolated_event_hub
+    error_events = _capture_events(hub, EventType.CODING_ERROR)
+
+    with pytest.raises(
+        NemantixRuntimeException, match='Cannot code frame "MISSING_FRAME"'
+    ):
+        coder.code_script_frames(script, max_retries=3)
+
+    assert len(error_events) == 1
+    assert "Cannot code frame" in error_events[0].payload["error"]

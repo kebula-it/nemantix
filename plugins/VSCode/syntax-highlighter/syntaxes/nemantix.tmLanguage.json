@@ -159,11 +159,11 @@
       "patterns": [
         {
           "name": "keyword.control.nemantix",
-          "match": "\\b(action|deliberate|require|required|when|plan|optional|default|slot|guidelines|in|out|body|do|using|producing|return|as|if|else|elif|repeat|each|while|until|from|use|with|times|break|continue)\\b"
+          "match": "\\b(action|deliberate|tool|require|required|when|plan|optional|default|slot|guidelines|in|out|body|do|using|producing|return|as|if|else|elif|repeat|each|while|until|from|use|with|times|break|continue)\\b"
         },
         {
           "name": "storage.type.nemantix",
-          "match": "\\b(frame|tool|__frame|toolset|__toolset|TEXT|INT|FLOAT|BOOL|STRUCT|ENUM)\\b"
+          "match": "\\b(frame|__frame|toolset|__toolset|TEXT|INT|FLOAT|BOOL|STRUCT|ENUM)\\b"
         },
         {
           "name": "keyword.control.end.nemantix",

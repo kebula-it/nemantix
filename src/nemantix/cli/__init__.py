@@ -3,12 +3,8 @@ from __future__ import annotations
 import argparse
 import sys
 from importlib.metadata import EntryPoint, entry_points
-from typing import TYPE_CHECKING
 
 from nemantix.cli._normalize import _normalize_argv
-
-if TYPE_CHECKING:
-    pass
 
 
 def main(argv: list[str] | None = None) -> int:

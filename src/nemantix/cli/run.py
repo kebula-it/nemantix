@@ -7,10 +7,20 @@ from typing import Any
 
 from nemantix.core.agent import Agent
 from nemantix.core.expertise import Expertise
+from nemantix.core.tools import Toolset
 from nemantix.security.verifier import DebugVerifier, Verifier
 
 
-def register(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:  # type: ignore[type-arg]
+def _register_cli_toolsets(entries: list[str]) -> None:
+    for entry in entries:
+        if "=" in entry:
+            cls_name, import_path = entry.split("=", 1)
+            Toolset.register(import_path.strip(), cls_name.strip())
+        else:
+            Toolset.register(entry.strip())
+
+
+def register(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     """Add the 'run' subcommand to *subparsers* and return its parser."""
     p = subparsers.add_parser("run", help="Execute NXS/NXC/NXV scripts")
     p.add_argument("paths", nargs="*", help="Scripts to execute")
@@ -80,6 +90,17 @@ def register(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
         action="store_true",
         help="Enable the Profiler and print stats on exit",
     )
+    p.add_argument(
+        "--toolset",
+        action="append",
+        default=[],
+        metavar="TOOLSET",
+        help=(
+            "Toolset to load. Use 'ClassName=module.path' for a direct mapping "
+            "or 'module.path' to add a package to the fallback lookup list. "
+            "Repeatable."
+        ),
+    )
     p.set_defaults(handler=handle, _run_subparser=p)
     return p
 
@@ -91,6 +112,7 @@ def handle(args: argparse.Namespace) -> int:
             args._run_subparser.print_help()
         return 0
 
+    _register_cli_toolsets(args.toolset)
     verifier = Verifier(args.verify) if args.verify else DebugVerifier()
 
     observers: list[Any] = []

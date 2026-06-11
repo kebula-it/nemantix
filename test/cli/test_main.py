@@ -26,10 +26,12 @@ class TestMainDispatcher:
             self._ep("verify", cmd_verify.register),
         ]
 
-    def test_no_args_returns_zero(self) -> None:
+    def test_no_args_prints_global_help_and_returns_one(self) -> None:
         with patch("nemantix.cli.entry_points", return_value=self._all_eps()):
-            rc = main([])
-        assert rc == 0
+            with patch("argparse.ArgumentParser.print_help") as mock_help:
+                rc = main([])
+        mock_help.assert_called_once()
+        assert rc == 1
 
     def test_compile_no_paths_returns_zero(self) -> None:
         with patch("nemantix.cli.entry_points", return_value=self._all_eps()):
@@ -43,7 +45,8 @@ class TestMainDispatcher:
         eps = [self._ep("run", first), self._ep("run", second)]
 
         with patch("nemantix.cli.entry_points", return_value=eps):
-            main([])  # normalised to ["run"] → no paths → returns 0
+            with patch("argparse.ArgumentParser.print_help"):
+                main([])  # no args → global help → returns 1
 
         first.assert_not_called()
         second.assert_called_once()

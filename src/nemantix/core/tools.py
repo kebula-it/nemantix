@@ -1,9 +1,11 @@
 import functools
 import inspect
-
-from typing import Callable, Any
+import pkgutil
+from importlib import import_module
+from typing import Any, Callable
 
 from nemantix.common.logger import get_package_logger
+from nemantix.core.exceptions import NemantixException
 
 logger = get_package_logger(__name__)
 
@@ -33,6 +35,14 @@ class Toolset:
     _named_instances: dict[Any, Any] = {}
     _classes: dict[Any, Any] = {}
     REGISTRY: dict[Any, Any] = {}
+
+    # Lazy import-path registry.
+    # Keys: ClassName → import_path string (unresolved) or type (cached after first load).
+    # "*" → list of import paths scanned on cache-miss, in priority order;
+    #        "nemantix.stl" is always last (built-in fallback).
+    _module_paths: dict[str, type["Toolset"] | str | list[str]] = {
+        "*": ["nemantix.stl"]
+    }
 
     def __init__(self):
         # common state across tools
@@ -66,6 +76,96 @@ class Toolset:
                 )
 
         cls._classes[cls.__name__] = cls
+
+    # ------------------------------------------------------------------
+    # Lazy toolset resolution
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _find_class_in(path: str, class_name: str) -> "type[Toolset] | None":
+        """Return *class_name* from *path* (module or package, no recursion)."""
+        mod = import_module(path)
+        cls = getattr(mod, class_name, None)
+        if cls is not None:
+            return cls
+        if hasattr(mod, "__path__"):
+            for _, name, _ in pkgutil.iter_modules(mod.__path__):
+                sub = import_module(f"{path}.{name}")
+                cls = getattr(sub, class_name, None)
+                if cls is not None:
+                    return cls
+        return None
+
+    @classmethod
+    def register(cls, import_path: str, class_name: str | None = None) -> None:
+        """Register a toolset import path (module or package).
+
+        If *class_name* is omitted (or ``"*"``), prepends *import_path* to the
+        wildcard lookup list so it is scanned on cache-miss before the built-in
+        nemantix.stl fallback.  Otherwise, stores a lazy direct mapping for the
+        given class name — no import happens at registration time.
+        """
+        if not import_path or not all(
+            part.isidentifier() for part in import_path.split(".")
+        ):
+            raise ValueError(f"'{import_path}' is not a valid dotted import path")
+
+        if class_name is None:
+            class_name = "*"
+
+        if class_name != "*" and not class_name.isidentifier():
+            raise ValueError(f"'{class_name}' is not a valid Python class name")
+
+        if class_name == "*":
+            lookup = cls._module_paths["*"]
+            if not isinstance(lookup, list):
+                raise NemantixException(
+                    "_module_paths['*'] must be a list of import paths"
+                )
+            lookup.insert(0, import_path)
+        else:
+            cls._module_paths[class_name] = import_path
+
+    @classmethod
+    def load(cls, class_name: str) -> "Toolset":
+        """Instantiate a toolset by class name, importing its module lazily.
+
+        Resolution order:
+        1. _classes — already imported (via __init_subclass__ or a prior load)
+        2. _module_paths[class_name] — explicit lazy path (module or package)
+        3. _module_paths["*"] — lookup packages, left-to-right; nemantix.stl last
+        """
+        # 1. already imported
+        if class_name in cls._classes:
+            return cls._classes[class_name]()
+
+        # 2. explicit entry — may be a cached type or an unresolved path string
+        entry = cls._module_paths.get(class_name)
+        if entry is not None:
+            if isinstance(entry, type):
+                return entry()
+            if isinstance(entry, str):
+                tool_cls = cls._find_class_in(entry, class_name)
+                if tool_cls is None:
+                    raise NemantixException(
+                        f"Class '{class_name}' not found in '{entry}'."
+                    )
+                cls._module_paths[class_name] = tool_cls
+                return tool_cls()
+
+        # 3. lookup packages
+        lookup = cls._module_paths["*"]
+        if not isinstance(lookup, list):
+            raise NemantixException(
+                "_module_paths['*'] must be a list of package paths"
+            )
+        for pkg_path in lookup:
+            tool_cls = cls._find_class_in(pkg_path, class_name)
+            if tool_cls is not None:
+                cls._module_paths[class_name] = tool_cls
+                return tool_cls()
+
+        raise NemantixException(f"Toolset '{class_name}' not registered.")
 
     def update_state(self, **kwargs):
         self.state.update(kwargs)
@@ -135,8 +235,8 @@ class Toolset:
     def get_tool_names(cls) -> list[str]:
         tool_names = []
         for info in Toolset.REGISTRY.values():
-            if info['cls'] == cls:
-                tool_names.append(info['fn_name'])
+            if info["cls"] == cls:
+                tool_names.append(info["fn_name"])
 
         return tool_names
 
@@ -188,11 +288,11 @@ class Toolset:
 
     @staticmethod
     def run_tool(
-            tool_name: str,
-            *args,
-            instance_alias: str | None = None,
-            instance_args=None,
-            **kwargs,
+        tool_name: str,
+        *args,
+        instance_alias: str | None = None,
+        instance_args=None,
+        **kwargs,
     ):
         """Executes a tool by name"""
         if tool_name not in Toolset.REGISTRY:

@@ -10,7 +10,7 @@ class OpenMeteoTools(Toolset):
     @tool
     def get_weather_by_city(self, city_name: str) -> dict:
 
-        geocode_url = f"https://geocoding-api.open-meteo.com/v1/search"
+        geocode_url = "https://geocoding-api.open-meteo.com/v1/search"
         geo_params = {
             "name": city_name,
             "count": 1,

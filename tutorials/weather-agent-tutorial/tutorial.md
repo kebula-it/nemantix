@@ -324,6 +324,11 @@ The first thing `main()` does is prepare the environment:
 - It loads security keys (used by Nemantix to verify scripts)
 - It loads LLM credentials (to access the model)
 
+> **💡 Want to use a custom LLM?**
+>
+> By default, this tutorial is configured to use OpenAI. If you prefer to use Anthropic Claude, Google Gemini, Azure, or 
+> local open-source models via Ollama, please check out the [LLM Proxy Setup Guide](../llm-setup.md) before proceeding.
+
 This step ensures the system is **secure and properly configured** before the agent runs.
 
 ### Step 2. Creating the Verifier

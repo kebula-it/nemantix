@@ -86,7 +86,7 @@ In the Python code, we linked this to a `credentials.json` file.
 Create a file named `credentials.json` in your project root with exactly one top-level
 key that matches the provider you plan to use. Use the field names below for each provider.
 
-- OpenAI
+### OpenAI
 
 ```json
 {
@@ -94,7 +94,7 @@ key that matches the provider you plan to use. Use the field names below for eac
 }
 ```
 
-- Anthropic (Claude)
+### Anthropic (Claude)
 
 ```json
 {
@@ -102,7 +102,7 @@ key that matches the provider you plan to use. Use the field names below for eac
 }
 ```
 
-- Azure OpenAI
+### Azure OpenAI
 
 ```json
 {
@@ -110,27 +110,39 @@ key that matches the provider you plan to use. Use the field names below for eac
 }
 ```
 
-- OpenRouter
+### OpenRouter
 ```json
 {
   "openrouter_api_key": "openrouter-KEY_HERE"
 }
 ```
 
-- Ollama
+### Ollama
 ```json
 {
   "ollama_api_key": "OLLAMA_KEY_HERE"
 }
 ```
 
+### Llama.Cpp Remote (Experimental)
+```json
+{
+  "llamacpp_api_key": "LLAMACPP_KEY_HERE"
+}
+```
 
-- Google (Gemini / Google Cloud)
+### Google (Gemini / Google Cloud)
 ```json
 {
   "google_api_key": "GOOGLE_API_KEY_HERE"
 }
 ```
+
+### ⚠️ Important: Choosing Your LLM Provider (LLM Proxy)
+While `credentials.json` securely stores your API keys, the actual selection of the provider and model (e.g., switching from the default OpenAI to Anthropic Claude or a local model) is done in your Python code using the `LLMProxyFactory`.
+
+For a detailed guide on how to instantiate the proxy and pass it to your Agent and Expertise,
+please read the [LLM Proxy Setup Guide](./llm-setup.md).
 
 ## Step 5: Folder Structure Check
 
@@ -144,10 +156,10 @@ nemantix-tutorial/
 │   └── privatekey.pem       # (Optional) Generated alongside the crt
 │
 ├── credentials.json         # Your LLM API keys
+├── main.py                  # (Optional) Only needed if configuring a custom LLM
 └── requirements.txt         # Package list
 ```
 
-
 --- 
 
-[Go back to the Tutorials Page](./index.md)
+[Go back to the Tutorials Page](./README.md)

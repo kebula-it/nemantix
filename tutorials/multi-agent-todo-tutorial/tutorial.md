@@ -321,7 +321,10 @@ credentials = current_folder / 'credentials.json'
 This file contains the credentials used to access the LLM provider.
 By default, Nemantix uses GPT models, but you can configure different providers when building your expertise.
 
----
+> **💡 Want to use a custom LLM?**
+>
+> By default, this tutorial is configured to use OpenAI. If you prefer to use Anthropic Claude, Google Gemini, Azure, or 
+> local open-source models via Ollama, please check out the [LLM Proxy Setup Guide](../llm-setup.md) before proceeding.
 
 ## Creating the Reader Expertise
 
@@ -349,8 +352,6 @@ This script contains all the intents, actions and plans related to reading data 
 
 - `verifier`: Used to validate the authenticity of the NXS script before it is executed.
 - `credentials_path`: Allows the agent to access the configured language model.
-
----
 
 ## Creating the Writer Expertise
 

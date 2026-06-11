@@ -270,6 +270,7 @@ class Coder:
                 except SyntaxError as e:
                     prev_error = str(e)
                     prev_frame = frame
+                    frame = None
                     logger.warning(f'Error during frame coding: {e}')
 
             if frame is None:

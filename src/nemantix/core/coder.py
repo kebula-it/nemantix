@@ -102,7 +102,7 @@ class Coder:
         self.enable_fixer = False
         self.create_summary = bool(create_summary)
         self.include_action_body_in_semantics = False
-        
+
         if self.create_summary:
             if summarizer_proxy is None:
                 from nemantix.llm.llama_proxy import LlamaProxy
@@ -297,7 +297,7 @@ class Coder:
             new_content += nxs_content + "\n\n"
 
         return new_content
-    
+
     def code_do_as_frames(self, script: Script, node: Statement, required_scripts: list[Script], max_retries: int = 6):
         # TODO should handle this coding only at runtime?
         if not isinstance(node, ActionBlock) and not isinstance(node, Deliberate):
@@ -438,7 +438,6 @@ class Coder:
 
         return node_code, '\n\n'.join(coded)
 
-
     def code_script_toolsets(self, script: Script, max_retries: int = 6):
         """
         :param script:
@@ -468,6 +467,10 @@ class Coder:
             toolset_alias.add(toolset_name)
             do_str = self._extract_do_str(toolset_alias, script)
             should_generate = False
+
+            if '*' in tools_name:
+                tools_name.remove('*')
+                logger.warning(f'Discarding "*" as tool name for toolset "{toolset_name}".')
 
             for attempt in range(max_retries):
                 index = prompt.find("class ")
@@ -584,7 +587,9 @@ class Coder:
             replaced = self.replace_nxs_code_block(content_list, start_line, end_line, impl, indent=False)
             script.content = replaced
             logger.debug(f"REPLACED\n{replaced}")
+
             script.parse()
+            content_list = script.read_as_list()
 
         return script.content
 
@@ -646,7 +651,7 @@ class Coder:
 
     def summarize(self, code):
         assert self.summarizer is not None
-        
+
         doc = self.summarizer.invoke(CODE_SUMMARY_PROMPT.format(action=code)).text
         doc = doc.replace("`", "").replace("'","").replace('"','').replace("\n"," ")
         doc = doc.replace("action", "code").replace("plaintext","").replace("plan block", "code block")

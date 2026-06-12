@@ -672,6 +672,8 @@ frame Picture:
 __frame
 ```
 Available slot types: [TEXT | INT | BOOL | FLOAT | STRUCT | slot_enum | frame_name]
+NOTE: "slot_enum" means that a slot is an ENUM. Comply to the following syntax to 
+specify the enumeration elements: slot status as ENUM ("COMPLETED", "FAILED", "IN_PROGRESS")
 NOTE: "frame_name" means that a slot can be another frame, resulting in definition of 
 nested frames.
 NOTE: use STRUCT for both lists and dictionaries.

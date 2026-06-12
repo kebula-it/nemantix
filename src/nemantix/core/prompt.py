@@ -228,7 +228,7 @@ deliberate DemoMain when >>> Run this deliberate when the user asks for a two-ac
             __do
             
             # Inline version with frame application to the result with 'as {frame_name}'
-            do action extract_info using [ [text] = [raw_text] ] producing [ [summary], [tags] ] as {frame_name}
+            do action extract_info using [ [text] = [raw_text] ] producing [ [summary] ] as {summary_frame}
 
             return [report_text] # CONTROL FLOW: return with expression
         __body

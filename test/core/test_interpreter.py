@@ -1219,6 +1219,43 @@ def test_do_llm_unsupported_generative_schema(interpreter_instance):
         interpreter_instance.interpret_do_statement(do_stmt)
 
 
+def test_do_tool_structured_output_applies_frame(interpreter_instance):
+    """
+    Tests that removing the 'fn_name == "llm"' check allows standard tools
+    to have their outputs validated and type-cast by a producing_schema.
+    """
+    # frame with an optional 'age' field
+    person = nmx_runtime.Frame("PERSON")
+    person.add_slot("name", cardinality="1", types=[{"name": SlotTypesEnum.TEXT}])
+    person.add_slot("age", cardinality="0..1", types=[{"name": SlotTypesEnum.INT}])
+    interpreter_instance.context.frames["PERSON"] = person
+
+    # A dummy tool that returns a raw dict (missing the 'age' field)
+    interpreter_instance.context.tools["get_person"] = lambda: {"name": "Mario"}
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="get_person",
+        callable_type=nmx_nodes.CallableTypeEnum.TOOL,
+        using=None,
+        prompt=None,
+        producing=make_var("output_var"),
+        producing_schema="PERSON",
+        meta=make_meta(),
+    )
+
+    interpreter_instance.interpret_do_statement(do_stmt)
+
+    # Verify the output was cast through the frame
+    out = interpreter_instance.context.env.get("output_var")
+
+    assert isinstance(out, nmx_runtime.Struct)
+    assert out.get("name") == "Mario"
+    # Proof that the frame was applied! The tool didn't return 'age',
+    # but apply_postfix safely defaulted it to 0.
+    assert out.get("age") == 0
+
+
 # =============================================================================
 # Action implicit/explicit return tests (works with DummyAction + real statements)
 # =============================================================================

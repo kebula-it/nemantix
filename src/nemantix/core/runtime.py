@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 from collections import OrderedDict
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import numpy as np
@@ -400,9 +401,6 @@ class Frame:
                     valid_struct.set(value=inner_struct, key=k)
                     continue
                 else:
-                    # if k not in self.slots:
-                    #     return None
-
                     if not self._match_type(slot=self.slots[k_lo], value=v):
                         return None
 
@@ -477,13 +475,16 @@ class Frame:
         return struct
 
     def _coerce(self, value, slot: dict):
-        kinds = [kind['name'] for kind in slot['types']]
+        kinds = [self._get_type(kind) for kind in slot['types']]
 
         if value is None:
             return self._get_default(slot)
 
         if isinstance(value, str):
             if nmx_nodes.SlotTypesEnum.TEXT in kinds:
+                return value
+
+            if nmx_nodes.SlotTypesEnum.ENUM in kinds:
                 return value
 
         elif isinstance(value, bool):
@@ -505,10 +506,21 @@ class Frame:
             if nmx_nodes.SlotTypesEnum.FRAME in kinds:
                 return self._cast(value, slot)
 
+        elif isinstance(value, Opaque):
+            # ENUM type boxed into an Opaque
+            if isinstance(value.obj, Enum):
+                return value.obj.value
+
+            raise NotImplementedError
+
+        elif isinstance(value, Enum):
+            return value.value
+
         return self._cast(value, slot)
 
     def _cast(self, value, slot: dict):
-        kinds = [kind['name'] for kind in slot['types']]
+        kinds = [self._get_type(kind) for kind in slot['types']]
+
         for kind in kinds:
             if kind == nmx_nodes.SlotTypesEnum.INT:
                 if isinstance(value, (bool, int, float)):
@@ -528,7 +540,7 @@ class Frame:
 
                 return Builtin.to_num(value)
 
-            if kind == nmx_nodes.SlotTypesEnum.TEXT:
+            if kind in [nmx_nodes.SlotTypesEnum.TEXT, nmx_nodes.SlotTypesEnum.ENUM]:
                 return Builtin.to_str(value)
 
             if kind == nmx_nodes.SlotTypesEnum.STRUCT:
@@ -552,9 +564,9 @@ class Frame:
 
     def _get_default(self, slot: dict):
         for kind in slot['types']:
-            kind = kind['name']
+            kind = self._get_type(kind)
 
-            if kind == nmx_nodes.SlotTypesEnum.TEXT:
+            if kind in [nmx_nodes.SlotTypesEnum.TEXT, nmx_nodes.SlotTypesEnum.ENUM]:
                 return ''
 
             elif kind == nmx_nodes.SlotTypesEnum.INT:
@@ -578,21 +590,23 @@ class Frame:
                     struct.set(value=self._get_default(slot=slot_), key=k)
 
                 return struct
-            else:
-                raise NotImplementedError
 
         return None
 
     @staticmethod
-    def _match_type(slot: dict, value) -> bool:
-        for kind in slot['types']:
-            kind = kind['name']
+    def _get_type(kind: dict):
+        return kind.get('type', kind['name'])
 
-            if kind == nmx_nodes.SlotTypesEnum.TEXT:
+    @classmethod
+    def _match_type(cls, slot: dict, value) -> bool:
+        for kind in slot['types']:
+            slot_type = cls._get_type(kind)
+
+            if slot_type == nmx_nodes.SlotTypesEnum.TEXT:
                 if isinstance(value, str):
                     return True
 
-            elif kind == nmx_nodes.SlotTypesEnum.INT:
+            elif slot_type == nmx_nodes.SlotTypesEnum.INT:
                 if isinstance(value, bool):
                     return False
 
@@ -604,26 +618,26 @@ class Frame:
                 if isinstance(value, int):
                     return True
 
-            elif kind == nmx_nodes.SlotTypesEnum.BOOL:
+            elif slot_type == nmx_nodes.SlotTypesEnum.BOOL:
                 if isinstance(value, bool):
                     return True
 
-            elif kind == nmx_nodes.SlotTypesEnum.FLOAT:
+            elif slot_type == nmx_nodes.SlotTypesEnum.FLOAT:
                 # TODO: should return true if value is int? (castable to float)
                 if isinstance(value, float):
                     return True
 
-            elif kind == nmx_nodes.SlotTypesEnum.STRUCT:
+            elif slot_type == nmx_nodes.SlotTypesEnum.STRUCT:
                 # TODO: should also check the inner struct's types?
                 if isinstance(value, Struct):
                     return True
 
-            # TODO: handle FRAME and ENUM types
-            elif kind == nmx_nodes.SlotTypesEnum.FRAME:
-                raise NotImplementedError
+            elif slot_type == nmx_nodes.SlotTypesEnum.ENUM:
+                return value in kind['name']
             else:
-                # ENUM
-                return False
+                # TODO: handle FRAME type
+                assert slot_type == nmx_nodes.SlotTypesEnum.FRAME
+                raise NotImplementedError
 
         return False
 

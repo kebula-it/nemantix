@@ -177,6 +177,8 @@ class Agent:
         Orchestrates the formatting of raw outputs into a Pydantic schema.
         Tries exact programmatic parsing first, then falls back to LLM extraction.
         """
+        self._emit_phase(start=True, phase='format_output')
+
         # METHOD 1: Try the fast, programmatic path
         parsed_result = self._parse_exact(outputs, schema)
 
@@ -188,7 +190,12 @@ class Agent:
         logger.info(
             "Exact parsing failed or output is unstructured. Falling back to LLM."
         )
-        return self._parse_with_llm(outputs, schema)
+
+        formatted_out = self._parse_with_llm(outputs, schema)
+        self._emit_phase(phase='format_output')
+
+        return formatted_out
+
 
     def _unbox_outputs(self, outputs) -> Any:
         if outputs is None:
@@ -305,6 +312,24 @@ class Agent:
             statement="",
             payload=dict(usage=llm_response.usage, name=llm_response.proxy.get_name(),
                          internal_usage=True),
+        )
+        hub.emit(event)
+    
+    @staticmethod
+    def _emit_phase(phase: str, start=False):
+        event_type = EventType.EXECUTOR_PHASE_START if start else EventType.EXECUTOR_PHASE_END
+        hub = EventHub.get_active_hub(event_type=event_type)
+
+        if not hub:
+            return
+
+        event = Event(
+            type=event_type,
+            lines=(0, 0),
+            scope='agent',
+            script=None,
+            statement='',
+            payload=dict(phase=phase),
         )
         hub.emit(event)
 

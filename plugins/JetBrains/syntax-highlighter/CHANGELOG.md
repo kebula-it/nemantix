@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.3]
+- General code pasting improvements.
+
+### Bugfix
+- Deprecation warning.
+- Fix struct indentation in code pasting.
+- Python language injection occurs when there is actual Python code in `toolset` blocks.
+
 ## [1.1.2]
 ### Bugfix
 - Python code within `toolset` blocks caused erroneous indentation on snippet pasting.

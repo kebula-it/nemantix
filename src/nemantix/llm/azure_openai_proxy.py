@@ -2,6 +2,7 @@
 import inspect
 import json
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type
 
 import httpx
@@ -40,15 +41,15 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
     """
 
     def __init__(
-            self,
-            deployment_name: str,
-            api_version: str,
-            azure_endpoint: str,
-            temperature: Optional[float] = None,
-            max_output_tokens: Optional[int] = None,
-            grammar_path: Optional[str] = None,
-            reasoning_effort="high",
-            **kwargs: Any,
+        self,
+        deployment_name: str,
+        api_version: str,
+        azure_endpoint: str,
+        temperature: Optional[float] = None,
+        max_output_tokens: Optional[int] = None,
+        grammar_path: Optional[str | Path] = None,
+        reasoning_effort="high",
+        **kwargs: Any,
     ):
         self._deployment_name = deployment_name
         self._bound_tools: List[ToolSpec] = []
@@ -74,19 +75,26 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             http_headers["Host"] = hostname
 
         httpx_client = httpx.Client(
-            verify=not disable_ssl_verification,
-            headers=http_headers
+            verify=not disable_ssl_verification, headers=http_headers
         )
         client_kwargs["http_client"] = httpx_client
 
-        for k in ("azure_ad_token", "azure_ad_token_provider", "organization", "project", "azure_deployment"):
+        for k in (
+            "azure_ad_token",
+            "azure_ad_token_provider",
+            "organization",
+            "project",
+            "azure_deployment",
+        ):
             if k in kwargs and kwargs[k] is not None:
                 client_kwargs[k] = kwargs[k]
 
         try:
             self._client = AzureOpenAI(**client_kwargs)
         except Exception as e:
-            raise LLMProxyException(f"Failed to initialize Azure OpenAI client: {e}") from e
+            raise LLMProxyException(
+                f"Failed to initialize Azure OpenAI client: {e}"
+            ) from e
 
         self._temperature = temperature
         self._max_output_tokens = max_output_tokens
@@ -96,7 +104,7 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
                 self._grammar = f.read()
 
     # ----------------------------- helpers -----------------------------
-    def _build_usage(self, u) -> 'LLMUsage':
+    def _build_usage(self, u) -> "LLMUsage":
         cached = 0
         if u and getattr(u, "prompt_tokens_details", None):
             cached = getattr(u.prompt_tokens_details, "cached_tokens", 0) or 0
@@ -144,15 +152,18 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
 
     # ----------------------------- interface -----------------------------
     def get_name(self) -> str:
-        return f'Azure OpenAI {self._deployment_name}'
+        return f"Azure OpenAI {self._deployment_name}"
 
-    def invoke(self, prompt: str | list, tool_choice='auto', **kwargs: Any) -> 'LLMResponse':
+    def invoke(
+        self, prompt: str | list, tool_choice="auto", **kwargs: Any
+    ) -> "LLMResponse":
         try:
             # if 1 message -> convert to user message. If list of messages->pass it (for context)            message = [{"role": "user", "content": prompt}] if type(prompt) is str else prompt
             message = (
                 [{"role": "user", "content": prompt}]
                 if isinstance(prompt, str)
-                else prompt)
+                else prompt
+            )
 
             req: Dict[str, Any] = {
                 "model": self._deployment_name,
@@ -180,19 +191,29 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             resp = self._client.chat.completions.create(**req)
             msg = resp.choices[0].message
 
-            tool_calls = self._extract_tool_calls(msg.__dict__ if hasattr(msg, "__dict__") else dict(msg))
+            tool_calls = self._extract_tool_calls(
+                msg.__dict__ if hasattr(msg, "__dict__") else dict(msg)
+            )
 
             if msg.tool_calls:
                 msg = self._call_tools(msg, message, prompt, request=req)
 
             text = msg.content or ""
 
-            return LLMResponse(text=text, tool_calls=tool_calls, proxy=self, 
-                               usage=self._build_usage(resp.usage))
+            return LLMResponse(
+                text=text,
+                tool_calls=tool_calls,
+                proxy=self,
+                usage=self._build_usage(resp.usage),
+            )
         except Exception as e:
-            raise LLMProxyException(f"Error invoking Azure OpenAI LLM: {e} {e.__cause__}") from e
+            raise LLMProxyException(
+                f"Error invoking Azure OpenAI LLM: {e} {e.__cause__}"
+            ) from e
 
-    def invoke_structured(self, prompt: str, schema: Type[BaseModel], tool_choice='auto', **kwargs: Any) -> 'StructuredLLMResponse':
+    def invoke_structured(
+        self, prompt: str, schema: Type[BaseModel], tool_choice="auto", **kwargs: Any
+    ) -> "StructuredLLMResponse":
         """
         Uses Azure OpenAI Structured Outputs (json_schema) to enforce responses
         matching the provided Pydantic schema. Requires a deployment that
@@ -208,9 +229,8 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
         }
 
         messages = (
-            [{"role": "user", "content": prompt}]
-            if isinstance(prompt, str)
-            else prompt)
+            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        )
 
         try:
             req = {
@@ -239,22 +259,29 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             content = msg.content or "{}"
             data = json.loads(content)
 
-            return StructuredLLMResponse(result=schema.model_validate(data), proxy=self, 
-                                         usage=self._build_usage(resp.usage))
+            return StructuredLLMResponse(
+                result=schema.model_validate(data),
+                proxy=self,
+                usage=self._build_usage(resp.usage),
+            )
         except Exception as e:
-            raise LLMProxyException(f"Error invoking Azure OpenAI LLM (structured): {e}") from e
+            raise LLMProxyException(
+                f"Error invoking Azure OpenAI LLM (structured): {e}"
+            ) from e
 
-    def invoke_grammar_based(self, prompt: str | list, **kwargs: Any) -> 'LLMResponse':
+    def invoke_grammar_based(self, prompt: str | list, **kwargs: Any) -> "LLMResponse":
         # Azure grammar/tools: support only GPT-5+ families (e.g., gpt-5*).
         model_name = kwargs.get("azure_deployment", self._deployment_name).lower()
-        supported_prefixes = ("gpt-5", )
+        supported_prefixes = ("gpt-5",)
         if not any(model_name.startswith(pref) for pref in supported_prefixes):
             raise NotImplementedError(
                 "invoke_grammar_based is not supported on this deployment; use GPT-5 models or newer."
             )
 
         if not self._grammar:
-            raise LLMProxyException("Grammar not loaded: provide grammar_path during initialization")
+            raise LLMProxyException(
+                "Grammar not loaded: provide grammar_path during initialization"
+            )
 
         try:
             req: Dict[str, Any] = {
@@ -288,19 +315,20 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             msg = None
 
             try:
-                if not getattr(resp, 'output', None):
+                if not getattr(resp, "output", None):
                     raise ValueError("Output array is empty or missing.")
 
                 for item in reversed(resp.output):
-
-                    if hasattr(item, 'content') and item.content:
+                    if hasattr(item, "content") and item.content:
                         msg = item.content[0].text
                         break
 
                     elif type(item).__name__ == "ResponseCustomToolCall":
-                        tool_args = getattr(item, 'input', None) or getattr(item, 'args', None) or getattr(item,
-                                                                                                           'arguments',
-                                                                                                           None)
+                        tool_args = (
+                            getattr(item, "input", None)
+                            or getattr(item, "args", None)
+                            or getattr(item, "arguments", None)
+                        )
 
                         if isinstance(tool_args, dict):
                             msg = next(iter(tool_args.values()), str(tool_args))
@@ -323,7 +351,8 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
                 tool_calls=[],
                 usage=LLMUsage(
                     input_tokens=getattr(resp.usage, "input_tokens", 0) or 0,
-                    output_tokens=getattr(resp.usage, "output_tokens", 0) or 0),
+                    output_tokens=getattr(resp.usage, "output_tokens", 0) or 0,
+                ),
                 proxy=self,
             )
 
@@ -358,12 +387,16 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
                     except Exception:
                         continue
         except Exception as e:
-            raise LLMProxyException(f"Error streaming from Azure OpenAI LLM: {e}") from e
+            raise LLMProxyException(
+                f"Error streaming from Azure OpenAI LLM: {e}"
+            ) from e
 
     def supports_tool_use(self) -> bool:
         return True
 
-    def bind_tools(self, toolset_class: Type['Toolset'], tool_names: List[str] = None) -> "AzureOpenAILLMProxy":
+    def bind_tools(
+        self, toolset_class: Type["Toolset"], tool_names: List[str] = None
+    ) -> "AzureOpenAILLMProxy":
         try:
             bound_tools = []
 
@@ -379,28 +412,30 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
 
                 properties = {}
                 required = []
-                for p_name, param in info['parameters'].items():
+                for p_name, param in info["parameters"].items():
                     properties[p_name] = {
                         "type": self._map_parameter_type(param),
-                        "description": p_name
+                        "description": p_name,
                     }
                     if param.default == inspect.Parameter.empty:
                         required.append(p_name)
 
-                bound_tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "description": (info['docstring'] or "").strip(),
-                        "parameters": {
-                            "type": "object",
-                            "properties": properties,
-                            "required": required,
-                            "additionalProperties": False
+                bound_tools.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "description": (info["docstring"] or "").strip(),
+                            "parameters": {
+                                "type": "object",
+                                "properties": properties,
+                                "required": required,
+                                "additionalProperties": False,
+                            },
+                            "strict": True,
                         },
-                        "strict": True
                     }
-                })
+                )
 
             self._bound_tools = bound_tools
             return self
@@ -411,13 +446,15 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
         self._bound_tools = []
         return self
 
-    def messages_from(self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]) -> list[dict]:
+    def messages_from(
+        self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]
+    ) -> list[dict]:
         messages = []
 
         for value in prompts_with_roles:
             if isinstance(value, dict):
-                assert 'prompt' in value
-                assert 'role' in value
+                assert "prompt" in value
+                assert "role" in value
                 prompt = value["prompt"]
                 role = value["role"]
             else:
@@ -440,7 +477,7 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             fn_name = tool_call.function.name
             args_str = tool_call.function.arguments
 
-            tool_name = f'{self._toolset_class.__name__}.{fn_name}'
+            tool_name = f"{self._toolset_class.__name__}.{fn_name}"
             tool_instance = self._toolset_class.get_tool(tool_name)
 
             try:
@@ -453,15 +490,25 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             try:
                 result = tool_instance(**args)
                 # Ensure result is a string (JSON stringify dicts/lists)
-                tool_result_str = json.dumps(result) if not isinstance(result, str) else result
+                tool_result_str = (
+                    json.dumps(result) if not isinstance(result, str) else result
+                )
             except Exception as e:
                 # Pass execution errors back so the LLM knows it failed
                 tool_result_str = f"Error executing tool: {e}"
                 logger.warning(tool_result_str)
 
-            logger.debug(f'Call of tool "{fn_name}" ended with result:\n"{tool_result_str}"')
-            messages.append(dict(role='tool', tool_call_id=tool_call.id,
-                                 name=fn_name, content=tool_result_str))
+            logger.debug(
+                f'Call of tool "{fn_name}" ended with result:\n"{tool_result_str}"'
+            )
+            messages.append(
+                dict(
+                    role="tool",
+                    tool_call_id=tool_call.id,
+                    name=fn_name,
+                    content=tool_result_str,
+                )
+            )
 
         # Second LLM call: Send the tool results back to get the final answer
         request["messages"] = messages

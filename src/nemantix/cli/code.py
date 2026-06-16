@@ -10,9 +10,9 @@ from nemantix.security.verifier import DebugVerifier
 
 
 def register(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:  # type: ignore[type-arg]
-    """Add the 'compile' subcommand to *subparsers* and return its parser."""
+    """Add the 'code' subcommand to *subparsers* and return its parser."""
     p = subparsers.add_parser(
-        "compile", help="Compile NXS scripts to NXC without executing them"
+        "code", help="Compile NXS scripts to NXC without executing them"
     )
     p.add_argument("paths", nargs="*", help="NXS scripts to compile")
     p.add_argument(

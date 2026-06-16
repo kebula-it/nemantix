@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SUBCOMMANDS: set[str] = {"run", "compile", "sign", "verify"}
+SUBCOMMANDS: set[str] = {"run", "code", "sign", "verify"}
 
 
 _HELP_FLAGS: frozenset[str] = frozenset({"-h", "--help"})

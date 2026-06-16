@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import nemantix.cli.compile as cmd_compile
+import nemantix.cli.code as cmd_code
 import nemantix.cli.run as cmd_run
 import nemantix.cli.sign as cmd_sign
 import nemantix.cli.verify as cmd_verify
@@ -21,7 +21,7 @@ class TestMainDispatcher:
     def _all_eps(self) -> list[MagicMock]:
         return [
             self._ep("run", cmd_run.register),
-            self._ep("compile", cmd_compile.register),
+            self._ep("code", cmd_code.register),
             self._ep("sign", cmd_sign.register),
             self._ep("verify", cmd_verify.register),
         ]
@@ -33,9 +33,9 @@ class TestMainDispatcher:
         mock_help.assert_called_once()
         assert rc == 1
 
-    def test_compile_no_paths_returns_zero(self) -> None:
+    def test_code_no_paths_returns_zero(self) -> None:
         with patch("nemantix.cli.entry_points", return_value=self._all_eps()):
-            rc = main(["compile"])
+            rc = main(["code"])
         assert rc == 0
 
     def test_deduplicates_entry_points_last_wins(self) -> None:

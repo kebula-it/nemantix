@@ -85,7 +85,7 @@ nemantix = "nemantix.cli:main"
 
 [project.entry-points.nemantix]
 run     = "nemantix.cli.run:register"
-compile = "nemantix.cli.compile:register"
+code = "nemantix.cli.code:register"
 sign    = "nemantix.cli.sign:register"
 verify  = "nemantix.cli.verify:register"
 

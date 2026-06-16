@@ -286,6 +286,12 @@ profiler.print()
 ### 📑 Documentation
 Read the full documentation in [docs/](docs/00%20-%20Welcome%20to%20Nemantix.md).
 
+### 📚 Tutorials
+
+Ready to build with Nemantix? Check out our step-by-step guides:
+
+* 👉 **[Nemantix Tutorials](./tutorials/README.md)** – Find the complete hands-on learning path, including the environment setup guide, the LLM Proxy configuration, and end-to-end practical tutorials.
+
 ---
 ## ⚖️ License and Owner
 Nemantix is licensed under the _**Nemantix Source Available License Agreement**_ **(NSAL)**. The full license is available [here](LICENSE.md). <br>

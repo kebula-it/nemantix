@@ -57,7 +57,7 @@ class LLMProxyFactory:
         elif vendor == "google":
             return GoogleLLMProxy(model_name, **kwargs)
 
-        elif vendor == 'antrophic':
+        elif vendor == 'anthropic':
             return AnthropicLLMProxy(model_name, **kwargs)
 
         elif vendor in ['OpenRouter', 'open-router', 'open_router']:

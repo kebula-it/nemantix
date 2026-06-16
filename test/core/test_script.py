@@ -52,6 +52,10 @@ class DummyAction:
         self.output = outs or []
         self.children = []
 
+    @staticmethod
+    def get_annotation_value(*_: str):
+        return None
+
 
 class DummyPlan:
     def __init__(self, children, ins=None, outs=None):
@@ -73,6 +77,10 @@ class DummyDeliberate:
 
     def get_plan(self):
         return self._plan
+
+    @staticmethod
+    def get_annotation_value(*_: str):
+        return None
 
 
 # ==========================================

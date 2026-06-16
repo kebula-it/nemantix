@@ -13,7 +13,8 @@ from nemantix.core.node import (
     Frame,
     ImportToolsetStatement,
     PythonToolDeclaration,
-    Require, SingleValue,
+    Require,
+    SingleValue,
 )
 from nemantix.core.parser import ParserLark
 from nemantix.core.source_manager import SourceManager
@@ -175,7 +176,7 @@ class Script:
                 summary = None
                 try:
                     summary = n.get_annotation_value("intent.summary")
-                except:
+                except NemantixException:
                     pass
                 summary = summary.value if isinstance(summary, SingleValue) else summary
                 self.delib_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs, summary=summary)
@@ -201,7 +202,7 @@ class Script:
                 summary = None
                 try:
                     summary = n.get_annotation_value("intent.summary")
-                except:
+                except NemantixException:
                     pass
                 summary = summary.value if isinstance(summary, SingleValue) else summary
                 self.action_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs,

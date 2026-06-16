@@ -19,7 +19,7 @@ In this file we define and connect all the core runtime components, including:
 - The credentials configuration (for LLM access)
 - The Toolset (e.g. TodoManagerToolset)
 - The Expertise objects (Reader and Writer)
-- nThe Agent instances
+- The Agent instances
 - The CLI loop that routes user input
 
 In other words, all Python-side orchestration code lives here.

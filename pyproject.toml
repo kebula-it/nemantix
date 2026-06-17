@@ -88,6 +88,7 @@ run     = "nemantix.cli.run:register"
 code = "nemantix.cli.code:register"
 sign    = "nemantix.cli.sign:register"
 verify  = "nemantix.cli.verify:register"
+keygen  = "nemantix.cli.keygen:register"
 
 [project.urls]
 Documentation = "https://github.com/kebula-it/nemantix#readme"

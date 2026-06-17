@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import nemantix.cli.code as cmd_code
+import nemantix.cli.keygen as cmd_keygen
 import nemantix.cli.run as cmd_run
 import nemantix.cli.sign as cmd_sign
 import nemantix.cli.verify as cmd_verify
@@ -24,6 +25,7 @@ class TestMainDispatcher:
             self._ep("code", cmd_code.register),
             self._ep("sign", cmd_sign.register),
             self._ep("verify", cmd_verify.register),
+            self._ep("keygen", cmd_keygen.register),
         ]
 
     def test_no_args_prints_global_help_and_returns_one(self) -> None:

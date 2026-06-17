@@ -68,16 +68,15 @@ environment variables to avoid exposing secrets in shell history.
 | `--kb-vector-subdir`     | `vector_db`   | Vector store subdirectory                         |
 | `--kb-vector-store-type` | `qdrant`      | Vector store type (`qdrant`, `faiss`, `milvus`)   |
 
-**Environment variables for KB credentials (obbligatorie con `--use-knowledge-base`):**
+**Environment variables for KB credentials (required with `--use-knowledge-base`):**
 
 | Variable               | Description                      |
 |------------------------|----------------------------------|
 | `NEMANTIX_KB_USERNAME` | Database username — **required** |
 | `NEMANTIX_KB_PASSWORD` | Database password — **required** |
 
-> Se `--use-knowledge-base` è attivo ma `--kb-view-ids` è assente o una delle due
-> variabili non è impostata, il CLI termina con exit code `1` e stampa un messaggio
-> descrittivo su stderr.
+> If `--use-knowledge-base` is set but `--kb-view-id` is missing or either environment
+> variable is not set, the CLI exits with code `1` and prints a descriptive message to stderr.
 
 **Example:**
 

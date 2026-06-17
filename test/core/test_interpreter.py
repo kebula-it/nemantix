@@ -192,7 +192,8 @@ class DummyLLM:
             result = dummy_data
 
         return SimpleNamespace(
-            result=result, usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            result=result,
+            usage=SimpleNamespace(input_tokens=0, output_tokens=0),
             proxy=self,
         )
 
@@ -203,8 +204,7 @@ def interpreter_instance(dummy_llm_proxy_config_class):
     emb = DummyEmbedder()
     llm = DummyLLM()
     llm_proxies = dummy_llm_proxy_config_class(dummy_llm=llm)
-    return Interpreter(expertise=exp, llm=llm, embedder=emb,
-                       proxy_config=llm_proxies)
+    return Interpreter(expertise=exp, llm=llm, embedder=emb, proxy_config=llm_proxies)
 
 
 # =============================================================================
@@ -1531,3 +1531,36 @@ def test_eval_schemed_collection_missing_subframe_raises(interpreter_instance):
         interpreter_instance.eval_schemed_collection(
             schemed_col, enclosing_frame=enclosing_frame
         )
+
+
+# =============================================================================
+# interpret_imports — toolset resolution error propagation
+# =============================================================================
+
+
+def _make_import(name: str, elements) -> nmx_nodes.ImportToolsetStatement:
+    return nmx_nodes.ImportToolsetStatement(
+        name=name,
+        elements=elements,
+        args=None,
+        alias=None,
+        meta=make_meta(),
+    )
+
+
+def test_interpret_imports_wildcard_unknown_toolset_raises_with_original_message(
+    interpreter_instance,
+):
+    """from _GhostToolset import * — load() failure must surface as RuntimeException."""
+    stmt = _make_import("_GhostToolset", "*")
+    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"_GhostToolset"):
+        interpreter_instance.interpret_imports([stmt])
+
+
+def test_interpret_imports_direct_unknown_toolset_raises_with_original_message(
+    interpreter_instance,
+):
+    """from _GhostToolset import some_tool — load() failure must surface as RuntimeException."""
+    stmt = _make_import("_GhostToolset", ["some_tool"])
+    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"_GhostToolset"):
+        interpreter_instance.interpret_imports([stmt])

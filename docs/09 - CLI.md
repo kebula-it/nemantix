@@ -6,7 +6,7 @@ The Nemantix CLI (`nemantix`) exposes five subcommands that map to the
 | Subcommand | Purpose                                         |
 |------------|-------------------------------------------------|
 | `run`      | Execute NXS / NXC / NXV scripts via an Agent    |
-| `code`     | Compile NXS scripts to NXC without executing    |
+| `code`     | Code NXS scripts to NXC without executing       |
 | `sign`     | Sign NXC files to produce verifiable NXV files  |
 | `verify`   | Verify the cryptographic signature of NXV files |
 | `keygen`   | Generate an ECDSA key pair for signing          |
@@ -41,7 +41,7 @@ nemantix run [paths ...] [options]
 | `--vendor`             | `openai`           | LLM vendor (env: `NEMANTIX_VENDOR`)                         |
 | `--model`              | `gpt-5-mini`       | LLM model name (env: `NEMANTIX_MODEL`)                      |
 | `--credentials`        | `credentials.json` | Path to credentials JSON file                               |
-| `--export-location`    | `coding_output`    | Directory for compiled script output                        |
+| `--export-location`    | `coding_output`    | Directory for coded script output                           |
 | `--no-build`           | `false`            | Skip build-on-start                                         |
 | `--use-embedder`       | `false`            | Enable sentence-transformer embedder                        |
 | `--use-knowledge-base` | `false`            | Enable the Knowledge Base                                   |
@@ -124,7 +124,7 @@ For details on writing custom toolsets see
 
 ## `nemantix code`
 
-Compiles one or more NXS scripts to NXC without executing them. Useful for
+Codes one or more NXS scripts to NXC without executing them. Useful for
 iterating on the coding step independently.
 
 ```bash
@@ -133,7 +133,7 @@ nemantix code [paths ...] [options]
 
 | Flag            | Default            | Description                            |
 |-----------------|--------------------|----------------------------------------|
-| `paths`         | —                  | NXS scripts to compile (positional)    |
+| `paths`         | —                  | NXS scripts to code (positional)       |
 | `--output`      | same dir as source | Output directory for NXC files         |
 | `--vendor`      | `openai`           | LLM vendor (env: `NEMANTIX_VENDOR`)    |
 | `--model`       | `gpt-5-mini`       | LLM model name (env: `NEMANTIX_MODEL`) |

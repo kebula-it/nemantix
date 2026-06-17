@@ -394,8 +394,7 @@ observer = Observer()
 exp = Expertise.from_local_scripts(paths=['examples/ticket.nxs'],
                                    verifier=DebugVerifier(),
                                    observers=[Debugger(), profiler, 
-                                              tracer, observer],
-                                   credentials_path='credentials.json')
+                                              tracer, observer])
 
 agent = Agent(expertise=exp, build_on_start=True)
 

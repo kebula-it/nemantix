@@ -2,7 +2,9 @@
 
 In this tutorial, we’ll build a small but fully functional multi-agent TODO system using Nemantix.
 
-The goal is not just to create another CLI application, but to understand a different way of structuring software: one where behavior is delegated to specialized agents, and application logic is defined declaratively through NXS expertises instead of being hardcoded in Python.
+The goal is not just to create another CLI application, but to understand a different way of structuring software: one
+where behavior is delegated to specialized agents, and application logic is defined declaratively through NXS expertises
+instead of being hardcoded in Python.
 
 # `main.py`
 
@@ -24,7 +26,6 @@ In this file we define and connect all the core runtime components, including:
 
 In other words, all Python-side orchestration code lives here.
 
-
 # The Imports — Understanding Dependencies
 
 ```python
@@ -36,14 +37,15 @@ from nemantix.security import Verifier
 ```
 
 What Each Import Does?
-|Import	                        | Purpose
+|Import | Purpose
 |-------------------------------|----------------------------------------
-| `sqlite3`	                    | Python's built-in SQLite database library for creating, reading, and managing the TODO database
+| `sqlite3`                        | Python's built-in SQLite database library for creating, reading, and managing the
+TODO database
 | `pathlib.Path`                | Object-oriented path handling (safer and more portable than string paths)
 | `nemantix.core.tools.Toolset` | Base class for creating reusable tool collections that agents can call
-| `nemantix.core.tools.tool`	| Decorator that transforms Python methods into agent-callable operations
-| `nemantix.core.Expertise`	    | Orchestrates NXS expertise; loads agent behavior definitions from scripts
-| `nemantix.core.Agent`	        | The agent itself—coordinates reasoning, execution, memory, and tool calling
+| `nemantix.core.tools.tool`    | Decorator that transforms Python methods into agent-callable operations
+| `nemantix.core.Expertise`        | Orchestrates NXS expertise; loads agent behavior definitions from scripts
+| `nemantix.core.Agent`            | The agent itself—coordinates reasoning, execution, memory, and tool calling
 | `nemantix.security.Verifier`  |Cryptographically verifies that NXS scripts are authentic and unmodified
 
 ## Understanding `Toolsets` and the `@tool` Decorator
@@ -61,15 +63,16 @@ class TodoManagerToolset(Toolset):
 ```
 
 Why Create a Toolset?
-Without a Toolset, database logic would be scattered everywhere or embedded directly in agent prompts. With a Toolset, you get:
+Without a Toolset, database logic would be scattered everywhere or embedded directly in agent prompts. With a Toolset,
+you get:
 
-| Benefit	             | Explanation
-|------------------------|----------------------------
-| Separation of Concerns | Business logic (databases) stays separate from agent orchestration
-| Reusability	         | Multiple agents can use the same toolset without code duplication
-| Clarity	             | Each tool has a single, well-defined responsibility
-| Type Safety	         | Function signatures define exact inputs and outputs
-| Verifiability	         | Tool calls are traceable, auditable, and inspectable
+| Benefit	               | Explanation                                                        |
+|------------------------|--------------------------------------------------------------------|
+| Separation of Concerns | Business logic (databases) stays separate from agent orchestration |
+| Reusability	           | Multiple agents can use the same toolset without code duplication  |
+| Clarity	               | Each tool has a single, well-defined responsibility                |
+| Type Safety	           | Function signatures define exact inputs and outputs                |
+| Verifiability	         | Tool calls are traceable, auditable, and inspectable               |
 
 What Does the `@tool` Decorator Do?
 
@@ -85,11 +88,11 @@ The `@tool` decorator transforms a regular Python method into an agent-callable 
 - Making it discoverable — The Nemantix framework scans the toolset and identifies all @tool methods
 - Creating a callable interface — Agents can reference and invoke this tool by name
 - Result: When an agent receives a request like "Create a new todo with text 'Buy groceries'", it can:
-  - Recognize that the `create_todo` tool exists
-  - Extract the parameter "Buy groceries" from the natural-language request
-  - Call the tool with the correct parameter
-  - Receive and return the result to the user
-  
+    - Recognize that the `create_todo` tool exists
+    - Extract the parameter "Buy groceries" from the natural-language request
+    - Call the tool with the correct parameter
+    - Receive and return the result to the user
+
 # The TodoManagerToolset
 
 ## Setting Up the Database
@@ -115,13 +118,15 @@ What happens:
 def __del__(self):
     self.close()
 
+
 def close(self):
     self._db.close()
 ```
 
 Why this matters:
 
-The destructor (`__del__`) ensures that when the toolset is garbage collected, the database connection is properly closed
+The destructor (`__del__`) ensures that when the toolset is garbage collected, the database connection is properly
+closed
 The `close()` method can be called explicitly if needed.
 
 ## Database Initialization
@@ -129,7 +134,7 @@ The `close()` method can be called explicitly if needed.
 ```python
 def _init_db(self):
     cu = self._db.cursor()
-    
+
     cu.execute('''
     CREATE TABLE IF NOT EXISTS Todo (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,7 +142,7 @@ def _init_db(self):
         is_completed INT DEFAULT 0
     )
     ''')
-    
+
     self._db.commit()
     cu.close()
 ```
@@ -148,7 +153,7 @@ def _init_db(self):
 @tool
 def create_todo(self, text: str) -> bool:
     cu = self._db.cursor()
-    
+
     try:
         cu.execute('INSERT INTO Todo (text) VALUES (?)', (text,))
         self._db.commit()
@@ -166,21 +171,21 @@ def create_todo(self, text: str) -> bool:
 @tool
 def find_todo(self, todo_id: int) -> dict:
     cu = self._db.cursor()
-    
+
     cu.execute(
         'SELECT id, text, is_completed ROM Todo WHERE id = ?',
         (todo_id,)
     )
-    
+
     row = cu.fetchone()
     cu.close()
-    
+
     if not row:
         return {
             "status": "error",
             "error": f"No Todo found with ID {todo_id}"
         }
-    
+
     return {
         "status": "success",
         "todo": {
@@ -200,7 +205,7 @@ def list_todos(self) -> dict:
     cu.execute('SELECT id, text, is_completed FROM Todo')
     rows = cu.fetchall()
     cu.close()
-    
+
     todos = [
         {
             'id': row[0],
@@ -209,7 +214,7 @@ def list_todos(self) -> dict:
         }
         for row in rows
     ]
-    
+
     return {"status": "success", "todos": todos}
 ```
 
@@ -223,7 +228,7 @@ def delete_todo(self, todo_id: int) -> bool:
     rows_affected = cu.rowcount
     self._db.commit()
     cu.close()
-    
+
     return rows_affected > 0
 ```
 
@@ -237,7 +242,7 @@ def complete_todo(self, todo_id: int) -> bool:
     rows_affected = cu.rowcount
     self._db.commit()
     cu.close()
-    
+
     return rows_affected > 0
 ```
 
@@ -251,11 +256,9 @@ def flush_todos(self) -> dict:
     deleted_count = cu.rowcount
     self._db.commit()
     cu.close()
-        
+
     return {"status": "success", "deleted_count": deleted_count}
 ```
-
-
 
 # `main()` - The Entry Point
 
@@ -272,14 +275,15 @@ Let's begin with the function declaration:
 
 ```python
 def main() -> None:
-    # the rest of the code
+# the rest of the code
 ```
 
 ## Creating the Agent Expertise
 
 Before we can create an agent, we need to define its **Expertise**.
 
-In Nemantix, an `Expertise` represents the collection of NXS scripts that describe what an agent is capable of doing. You can think of it as the agent's "skill set" or "knowledge domain".
+In Nemantix, an `Expertise` represents the collection of NXS scripts that describe what an agent is capable of doing.
+You can think of it as the agent's "skill set" or "knowledge domain".
 
 Our TODO application uses two different expertises:
 
@@ -296,10 +300,10 @@ First, let's prepare a few paths that will be used by both expertises:
 current_folder = Path.cwd()
 
 verifier = Verifier(current_folder / 'keys/publickey.crt')
-credentials = current_folder / 'credentials.json'
 ```
 
 **What are these objects?**
+
 - `current_folder`: Gets the current working directory so we can build paths relative to our project.
 
 - `Verifier`
@@ -312,18 +316,12 @@ Nemantix supports verification of NXS scripts through public-key cryptography.
 
 The verifier checks that the scripts being loaded are trusted and have not been modified unexpectedly.
 
-- `credentials.json`
-
-```python
-credentials = current_folder / 'credentials.json'
-```
-
-This file contains the credentials used to access the LLM provider.
 By default, Nemantix uses GPT models, but you can configure different providers when building your expertise.
+Credentials for LLM proxies are automatically loaded from a `.env` file.
 
 > **💡 Want to use a custom LLM?**
 >
-> By default, this tutorial is configured to use OpenAI. If you prefer to use Anthropic Claude, Google Gemini, Azure, or 
+> By default, this tutorial is configured to use OpenAI. If you prefer to use Anthropic Claude, Google Gemini, Azure, or
 > local open-source models via Ollama, please check out the [LLM Proxy Setup Guide](../llm-setup.md) before proceeding.
 
 ## Creating the Reader Expertise
@@ -334,7 +332,6 @@ Now we can load the NXS script that contains all the logic for reading todos.
 reader_exp = Expertise.from_local_scripts(
     paths=[current_folder / 'nxs/reader.nxs'],
     verifier=verifier,
-    credentials_path=credentials,
 )
 ```
 
@@ -343,6 +340,7 @@ Let's examine the parameters:
 - `paths`: A list of NXS files to load.
 
 In this case we only load one script:
+
 ```text
 nxs/
 └── reader.nxs
@@ -351,7 +349,6 @@ nxs/
 This script contains all the intents, actions and plans related to reading data from the todo list.
 
 - `verifier`: Used to validate the authenticity of the NXS script before it is executed.
-- `credentials_path`: Allows the agent to access the configured language model.
 
 ## Creating the Writer Expertise
 
@@ -361,7 +358,6 @@ The writer expertise is created in exactly the same way:
 writer_exp = Expertise.from_local_scripts(
     paths=[current_folder / 'nxs/writer.nxs'],
     verifier=verifier,
-    credentials_path=credentials,
 )
 ```
 
@@ -581,7 +577,7 @@ Inside your project directory, create a folder named `nxs`:
 ```text
 project/
 ├── main.py
-├── credentials.json
+├── .env
 ├── keys/
 │   └── publickey.crt
 └── nxs/
@@ -592,7 +588,7 @@ Inside the `nxs` folder, create a file called `reader.nxs`:
 ```text
 project/
 ├── main.py
-├── credentials.json
+├── .env
 ├── keys/
 │   └── publickey.crt
 └── nxs/
@@ -605,7 +601,6 @@ This is the file that will be loaded by the Reader Expertise:
 reader_exp = Expertise.from_local_scripts(
     paths=[current_folder / 'nxs/reader.nxs'],
     verifier=verifier,
-    credentials_path=credentials,
 )
 ```
 
@@ -635,8 +630,8 @@ deliberate ListTodosDeliberate when >> the user wants to see the list of all tod
 __deliberate
 ```
 
-In the next sections, we'll break down each part of this script and understand how actions, tools, and deliberates work together to implement the Reader Agent's behavior.
-
+In the next sections, we'll break down each part of this script and understand how actions, tools, and deliberates work
+together to implement the Reader Agent's behavior.
 
 ## Implementing the Reader Expertise
 
@@ -665,16 +660,16 @@ from toolset TodoManagerToolset use find_todo, list_todos
 This statement imports two tools:
 
 | Tool         | Purpose                             |
-| ------------ | ----------------------------------- |
+|--------------|-------------------------------------|
 | `find_todo`  | Retrieves a specific todo by its ID |
 | `list_todos` | Retrieves all todos                 |
 
 Tools are the bridge between an agent and the outside world.
 
-While the agent can reason about requests, it needs tools whenever it wants to interact with external systems such as databases, APIs, files, or services.
+While the agent can reason about requests, it needs tools whenever it wants to interact with external systems such as
+databases, APIs, files, or services.
 
 In our case, these tools provide access to the TODO storage layer.
-
 
 ## Creating a Reusable Formatting Action
 
@@ -923,7 +918,8 @@ Because all formatting is centralized in a single action, any future change only
 
 With the Reader Expertise completed, it's time to implement the second half of our application: the Writer Expertise.
 
-While the Reader Agent is responsible for retrieving information, the Writer Agent handles every operation that modifies the TODO list.
+While the Reader Agent is responsible for retrieving information, the Writer Agent handles every operation that modifies
+the TODO list.
 
 Create a new file called `writer.nxs` inside the `nxs` directory:
 
@@ -942,8 +938,8 @@ This file will contain all workflows responsible for:
 - Completing todos
 - Removing completed todos
 
-Unlike the Reader Expertise, which contains a reusable action for formatting data, the Writer Expertise focuses entirely on orchestration and tool execution.
-
+Unlike the Reader Expertise, which contains a reusable action for formatting data, the Writer Expertise focuses entirely
+on orchestration and tool execution.
 
 ## Importing the Required Tools
 
@@ -960,14 +956,13 @@ from toolset TodoManagerToolset
 These tools represent the write operations available to the agent.
 
 | Tool            | Purpose                     |
-| --------------- | --------------------------- |
+|-----------------|-----------------------------|
 | `create_todo`   | Creates a new todo          |
 | `delete_todo`   | Deletes a todo by ID        |
 | `complete_todo` | Marks a todo as completed   |
 | `flush_todos`   | Removes all completed todos |
 
 The Writer Agent will use these tools whenever it needs to update the underlying TODO storage.
-
 
 ## Creating Todos
 
@@ -1021,7 +1016,6 @@ finish the Nemantix tutorial
 
 This allows the workflow to work with natural language without requiring rigid command formats.
 
-
 ### Creating the Todo
 
 Once the description has been extracted, we invoke the tool:
@@ -1047,7 +1041,6 @@ New Todo successfully created: finish the Nemantix tutorial
 ```
 
 Otherwise an error message is generated.
-
 
 ## Deleting Todos
 
@@ -1093,7 +1086,6 @@ becomes:
 12
 ```
 
-
 ### Executing the Deletion
 
 The extracted identifier is then passed to the tool:
@@ -1107,7 +1099,6 @@ do tool TodoManagerToolset.delete_todo
 If the deletion succeeds, the workflow returns a confirmation message.
 
 Otherwise, an error message informs the user that the operation could not be completed.
-
 
 ## Completing Todos
 
@@ -1161,7 +1152,8 @@ Great! Todo 3 marked as completed.
 
 Otherwise, it reports the failure.
 
-The structure is very similar to the deletion workflow, demonstrating how Nemantix plans can reuse the same orchestration pattern while targeting different tools.
+The structure is very similar to the deletion workflow, demonstrating how Nemantix plans can reuse the same
+orchestration pattern while targeting different tools.
 
 ---
 
@@ -1231,7 +1223,8 @@ If the operation fails, an error message is returned instead.
 
 At this point, we’ve completed a full end-to-end Nemantix application using a multi-agent architecture.
 
-What started as a simple CLI TODO manager has evolved into a structured system where behavior is no longer hardcoded in Python, but distributed across agent expertises defined in NXS.
+What started as a simple CLI TODO manager has evolved into a structured system where behavior is no longer hardcoded in
+Python, but distributed across agent expertises defined in NXS.
 
 This completes the full implementation of the Nemantix multi-agent TODO system.
 

@@ -495,15 +495,13 @@ class Expertise:
 
     @staticmethod
     def get_default_llm(
-        credentials_path: PathLike,
         vendor="openai",
         model="gpt-5-mini",
         temperature=1,
         **kwargs,
     ) -> AbstractLLMProxy:
         """Returns a default LLM proxy."""
-        credentials = Path(credentials_path)
-        cred_manager = Credentials.load_from_file(file_path=str(credentials))
+        cred_manager = Credentials()
         AbstractLLMProxy.set_credentials_manager(cred_manager)
 
         llm = LLMProxyFactory.create_llm_proxy(

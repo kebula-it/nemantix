@@ -103,7 +103,6 @@ def run_ingestion():
     llm = Expertise.get_default_llm(
         vendor="openai", 
         model="gpt-5-mini", 
-        credentials_path="credentials.json"
     )
 
     # Configure the Knowledge Base Manager
@@ -214,7 +213,7 @@ from nemantix.llm.abstract_proxy import AbstractLLMProxy
 from nemantix.llm.factory import LLMProxyFactory
 from nemantix.llm.credentials import Credentials
 
-creds = Credentials.load_from_file(file_path="credentials.json")  # optional; will fallback to env if missing
+creds = Credentials()  # optional; will fallback to env if missing
 AbstractLLMProxy.set_credentials_manager(creds)
 
 llm_proxy = LLMProxyFactory.create_llm_proxy(
@@ -310,8 +309,7 @@ exp = Expertise.from_local_scripts(paths=[...],
                                    observers=[...],
                                    model='gpt-5-mini', vendor='openai',
                                    # if true, will use the KB assigned to Agent
-                                   experimental_enhance_coding=True,
-                                   credentials_path='credentials.json')
+                                   experimental_enhance_coding=True)
 ```
 If enabled, additional context is retrieved during the coding of a `deliberate` according to its guidelines.
 

@@ -147,8 +147,7 @@ verifier = Verifier(public_key_path='path-your-key')  # for production
 
 # see: docs/06 - Agents.md for full instantiation options
 exp = Expertise.from_local_scripts(paths=['examples/ticket.nxs'],
-                                   verifier=verifier,
-                                   credentials_path='credentials.json')
+                                   verifier=verifier)
 
 # NXV verification occurs on agent instantiation
 agent = Agent(expertise=exp, build_on_start=True)
@@ -272,8 +271,7 @@ profiler = Profiler()
 # NOTE: insert "do breakpoint" in your script at relevant lines
 exp = Expertise.from_local_scripts(paths=['examples/ticket.nxs'],
                                    verifier=DebugVerifier(),
-                                   observers=[debugger, profiler],
-                                   credentials_path='credentials.json')
+                                   observers=[debugger, profiler])
 
 # same as before
 agent = Agent(expertise=exp, build_on_start=True)

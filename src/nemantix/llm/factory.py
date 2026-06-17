@@ -52,21 +52,25 @@ class LLMProxyFactory:
             return OpenAILLMProxy(model_name, grammar_path=grammar_path, **kwargs)
 
         elif vendor == "azure":
+            if grammar_path is None:
+                grammar_path = get_grammar_path()
+
             return AzureOpenAILLMProxy(model_name, grammar_path=grammar_path, **kwargs)
 
         elif vendor == "google":
             return GoogleLLMProxy(model_name, **kwargs)
 
-        elif vendor == 'antrophic':
+        elif vendor == "anthropic":
             return AnthropicLLMProxy(model_name, **kwargs)
 
-        elif vendor in ['OpenRouter', 'open-router', 'open_router']:
+        elif vendor in ["OpenRouter", "open-router", "open_router"]:
             return OpenRouterLLMProxy(model_name, grammar_path=grammar_path, **kwargs)
-        
-        elif vendor in ['llama.cpp', 'llama-cpp', 'llama-cpp-remote']:
+
+        elif vendor in ["llama.cpp", "llama-cpp", "llama-cpp-remote"]:
             from nemantix.experimental.llama_cpp_remote_proxy import (
                 LlamaCppRemoteLLMProxy,
             )
+
             return LlamaCppRemoteLLMProxy(model_name, **kwargs)
 
         elif vendor == "ollama":
@@ -74,8 +78,9 @@ class LLMProxyFactory:
 
             return LlamaProxy(model_name, **kwargs)
 
-        elif vendor == 'local':
+        elif vendor == "local":
             from nemantix.llm.local_proxy import LocalLLMProxy
+
             return LocalLLMProxy(model_name, **kwargs)
         else:
             raise LLMProxyException(f"Unsupported LLM vendor: {vendor}")

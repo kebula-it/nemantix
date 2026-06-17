@@ -57,9 +57,9 @@ class NemantixPasteProcessor : CopyPastePostProcessor<TextBlockTransferableData>
 
         // No math! Just extract the exact literal string of spaces/tabs that exists at the start.
         val baseIndentString = if (start == lineStartOffset) {
-            originalText.takeWhile { it == ' ' || it == '\t' }.toString()
+            originalText.takeWhile { it == ' ' || it == '\t' }
         } else {
-            prefix.takeWhile { it == ' ' || it == '\t' }.toString()
+            prefix.takeWhile { it == ' ' || it == '\t' }
         }
 
         var cleanedText = originalText
@@ -82,21 +82,18 @@ class NemantixPasteProcessor : CopyPastePostProcessor<TextBlockTransferableData>
         val tab = "    "
         var isFirstOutputLine = true
 
-        // This tracks only the INTERNAL nesting of the block you pasted
         var relativeIndentLevel = 0
+        val containerIndentStack = mutableListOf<Int>() // Tracks visual depth of nested () and []
 
-        fun appendFormatted(text: String, currentRelativeIndent: Int, isRaw: Boolean = false) {
+        fun appendFormatted(text: String, currentTotalIndent: Int, isRaw: Boolean = false) {
             if (isRaw) {
-                // Raw python code prints exactly as it was copied
                 formattedText.append(text).append("\n")
             } else {
                 if (isFirstOutputLine && start > lineStartOffset) {
-                    // Inline paste: first line just gets text (IDE prefix already handles indent)
                     formattedText.append(text).append("\n")
                 } else {
-                    // Whole line paste OR subsequent lines: Print the Base String + Internal Nesting
                     formattedText.append(baseIndentString)
-                        .append(tab.repeat(currentRelativeIndent))
+                        .append(tab.repeat(currentTotalIndent))
                         .append(text)
                         .append("\n")
                 }
@@ -106,42 +103,78 @@ class NemantixPasteProcessor : CopyPastePostProcessor<TextBlockTransferableData>
 
         val startBlockRegex = Regex("^(?:@[a-zA-Z0-9_:-]+\\s*)*(?:(?:frozen|drafted|undefined)\\s+)?(?:plan:|action\\b|body:|in:|out:|guidelines:|deliberate\\b|toolset\\b|use:|if\\b|elif\\b|else\\b|repeat\\b|while\\b|until\\b|for\\b|>>>)")
 
+        // Helper function to process standard lines and boundary lines identically
+        fun processLineFormatting(textLine: String) {
+            if (textLine.startsWith("__") || textLine.startsWith("<<<")) {
+                relativeIndentLevel = maxOf(0, relativeIndentLevel - 1)
+            }
+
+            // Strip strings so we don't count brackets inside text like "Ticket-[ID]"
+            val codeOnly = textLine.replace(Regex("\"[^\"]*\""), "")
+
+            val opens = codeOnly.count { it == '(' || it == '[' }
+            val closes = codeOnly.count { it == ')' || it == ']' }
+
+            // Count how many brackets close at the very beginning of the line
+            val closesAtStart = codeOnly.takeWhile { it == ')' || it == ']' || it.isWhitespace() }
+                .count { it == ')' || it == ']' }
+
+            // Pull indentation back out immediately if the line starts with closing brackets
+            for (i in 0 until closesAtStart) {
+                if (containerIndentStack.isNotEmpty()) containerIndentStack.removeLast()
+            }
+
+            val currentContainerIndent = containerIndentStack.lastOrNull() ?: 0
+
+            // Print the line with both structural and container indentation combined
+            appendFormatted(textLine, relativeIndentLevel + currentContainerIndent)
+
+            if (startBlockRegex.containsMatchIn(textLine)) {
+                relativeIndentLevel++
+            }
+
+            // Process the net bracket change for the REST of the line
+            val remainingCloses = closes - closesAtStart
+            val netChangeAfterStart = opens - remainingCloses
+
+            if (netChangeAfterStart > 0) {
+                // If a line opens multiple containers, they all share the SAME visual indent increase
+                val nextVisualIndent = currentContainerIndent + 1
+                for (i in 0 until netChangeAfterStart) {
+                    containerIndentStack.add(nextVisualIndent)
+                }
+            } else if (netChangeAfterStart < 0) {
+                // Pop containers if there are trailing closures at the end of the line (e.g., `] )`)
+                for (i in 0 until -netChangeAfterStart) {
+                    if (containerIndentStack.isNotEmpty()) containerIndentStack.removeLast()
+                }
+            }
+        }
+
         for (line in lines) {
-
-            // Restore Python blocks
+            // Restore Python blocks safely
             if (line.contains("@@@PYTHON_BLOCK_")) {
-                val indexMatch = Regex("@@@PYTHON_BLOCK_(\\d+)@@@").find(line)
-                if (indexMatch != null) {
-                    val index = indexMatch.groupValues[1].toInt()
-                    val pyLines = pythonBlocks[index].split("\n")
+                val resolvedText = line.replace(Regex("@@@PYTHON_BLOCK_(\\d+)@@@")) { match ->
+                    val index = match.groupValues[1].toInt()
+                    pythonBlocks[index]
+                }
 
-                    for (pLine in pyLines) {
-                        val tLine = pLine.trim()
+                val pyLines = resolvedText.split("\n")
 
-                        if (tLine == "<<<") relativeIndentLevel = maxOf(0, relativeIndentLevel - 1)
-
-                        if (tLine == ">>>" || tLine == "<<<") {
-                            appendFormatted(tLine, relativeIndentLevel)
-                        } else {
-                            appendFormatted(pLine, 0, isRaw = true)
-                        }
-
-                        if (tLine == ">>>") relativeIndentLevel++
+                for ((i, pLine) in pyLines.withIndex()) {
+                    if (i == 0 || i == pyLines.size - 1) {
+                        // Process the bounds (>>> and <<<) as standard Nemantix lines
+                        processLineFormatting(pLine.trim())
+                    } else {
+                        // Internal Python lines remain raw
+                        appendFormatted(pLine, 0, isRaw = true)
                     }
                 }
                 continue
             }
 
             // Standard line processing
-            if (line.startsWith("__") || line.startsWith("<<<")) {
-                relativeIndentLevel = maxOf(0, relativeIndentLevel - 1)
-            }
-
-            appendFormatted(line, relativeIndentLevel)
-
-            if (startBlockRegex.containsMatchIn(line)) {
-                relativeIndentLevel++
-            }
+            processLineFormatting(line)
         }
 
         // 4. Final Polish: Keep trailing newline if it existed
@@ -150,7 +183,7 @@ class NemantixPasteProcessor : CopyPastePostProcessor<TextBlockTransferableData>
             finalText += "\n"
         }
 
-        WriteCommandAction.runWriteCommandAction(project) {
+        WriteCommandAction.writeCommandAction(project).run<Throwable> {
             document.replaceString(start, end, finalText)
         }
     }

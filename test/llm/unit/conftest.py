@@ -1,14 +1,14 @@
 from argparse import Namespace
 from dataclasses import dataclass
-from typing import Any, List, Iterator
+from typing import Any, Iterator, List
 
 import pytest
 from google import genai
 
 from nemantix.llm import AbstractLLMProxy, Credentials
+from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
 from nemantix.llm.google_proxy import GoogleLLMProxy
 from nemantix.llm.openai_proxy import OpenAILLMProxy
-from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
 
 
 class MockMessage:
@@ -21,6 +21,7 @@ class MockMessage:
         if exclude_none:
             d = {k: v for k, v in d.items() if v is not None}
         return d
+
 
 @pytest.fixture
 def mock_google_client():
@@ -40,14 +41,27 @@ def mock_google_client():
             if self.usage_metadata is None:
                 self.usage_metadata = MockUsageMetadata()
 
-    # noinspection PyUnusedLocal
     class MockModels:
         @staticmethod
         def generate_content(*args, **kwargs):
-            if contents := kwargs.get("contents"):
+            contents = kwargs.get("contents")
+
+            # --- Safely extract plain text from the normalized messages list ---
+            prompt_text = ""
+            if isinstance(contents, list):
+                for msg in contents:
+                    for part in msg.get("parts", []):
+                        prompt_text += part.get("text", "")
+            elif isinstance(contents, str):
+                prompt_text = contents
+            # -------------------------------------------------------------------
+
+            if prompt_text:
                 config = kwargs.get("config", {})
                 tools = getattr(config, "tools", [])
-                if "tempo" in contents and tools:
+
+                # Check the extracted string instead of the raw list
+                if "tempo" in prompt_text and tools:
                     return MockResponse(
                         "",
                         [
@@ -58,7 +72,7 @@ def mock_google_client():
                             )
                         ],
                     )
-                return MockResponse(contents, [])
+                return MockResponse(prompt_text, [])
             return MockResponse("", [])
 
         @staticmethod

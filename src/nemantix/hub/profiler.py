@@ -216,23 +216,27 @@ class Profiler(Observable):
         print("=" * line_size)
 
         print('Request resolution:')
+        phases_time = 0
         if not self.executor_phases:
             print('\nno request resolution steps recorded.')
         else:
             for node in self.executor_phases:
+                phases_time += node.total_time
                 deliberate_str = f' ({node.deliberate})' if node.deliberate else ''
                 uncoded_str = ' [uncoded]' if node.uncoded else ''
                 token_str = f'  [{node.input_tokens} in / {node.output_tokens} out]' \
                     if (node.input_tokens or node.output_tokens) else ''
                 print(f'  {node.phase}{deliberate_str}{uncoded_str}: {node.total_time:.3f}s{token_str}')
+            
+            print(f'\nTotal request resolution time: {phases_time:>5.2f}s')
 
         print('-' * line_size)
 
         print('Coding:')
+        coding_time = 0
         if not self.coding_stack:
             print('\nnothing coded.')
         else:
-            coding_time = 0
             for node in self.coding_stack:
                 total_time = node.total_time
                 coding_time += total_time
@@ -258,8 +262,11 @@ class Profiler(Observable):
         for root in display_roots:
             self._print_tree(root, depth=0)
 
-        elapsed = sum(root.total_time * 1000.0 for root in display_roots)
-        print(f'\nTotal execution time: {elapsed / 1000.0:>7.4f}s')
+        elapsed = sum(root.total_time * 1000.0 for root in display_roots) / 1000.0
+        print(f'\nTotal execution time: {elapsed:>7.4f}s')
+        print('-' * line_size)
+
+        print(f'\nTotal time: {phases_time + coding_time + elapsed:>7.4f}s')
 
         total_tokens = self.total_input_tokens + self.total_output_tokens
         if total_tokens > 0:

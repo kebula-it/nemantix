@@ -3,7 +3,8 @@ from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type
 
 from pydantic import BaseModel
 
-from .abstract_proxy import (
+from nemantix.common.logger import get_package_logger
+from nemantix.llm.abstract_proxy import (
     AbstractLLMProxy,
     LLMProxyException,
     LLMResponse,
@@ -12,7 +13,7 @@ from .abstract_proxy import (
 )
 
 if TYPE_CHECKING:
-    from ..core.tools import Toolset
+    from nemantix.core.tools import Toolset
 
 try:
     import anthropic
@@ -22,6 +23,9 @@ except ImportError as e:
     ) from e
 
 
+logger = get_package_logger(__name__)
+
+
 class AnthropicLLMProxy(AbstractLLMProxy):
     """
     LLM proxy for Anthropic models (e.g., Claude Sonnet, Opus) using the official SDK.
@@ -29,12 +33,12 @@ class AnthropicLLMProxy(AbstractLLMProxy):
     """
 
     def __init__(
-            self,
-            model_name: str,
-            temperature: Optional[float] = None,
-            max_output_tokens: Optional[int] = None,
-            base_url: Optional[str] = None,
-            **kwargs: Any,
+        self,
+        model_name: str,
+        temperature: Optional[float] = None,
+        max_output_tokens: Optional[int] = None,
+        base_url: Optional[str] = None,
+        **kwargs: Any,
     ):
         self.model_name = model_name
         self._bound_tools: List[Dict[str, Any]] = []
@@ -52,8 +56,6 @@ class AnthropicLLMProxy(AbstractLLMProxy):
                 f"Failed to initialize Anthropic client: {e}"
             ) from e
 
-        # Anthropic *requires* max_tokens for its Messages API.
-        # We default to 4096 if not provided.
         self._temperature = temperature
         self._max_output_tokens = max_output_tokens or 4096
 
@@ -84,22 +86,19 @@ class AnthropicLLMProxy(AbstractLLMProxy):
     # ----------------------------- interface -----------------------------
 
     def get_name(self) -> str:
-        return f'Anthropic {self.model_name}'
+        return f"Anthropic {self.model_name}"
 
     def invoke(self, prompt: str | list, **kwargs: Any) -> LLMResponse:
         try:
-            # Handle prompt as string or list of messages
-            messages = (
-                [{"role": "user", "content": prompt}]
-                if isinstance(prompt, str)
-                else prompt
-            )
+            messages, system_prompt = self._normalize_messages(prompt)
 
             req: Dict[str, Any] = {
                 "model": self.model_name,
                 "messages": messages,
                 "max_tokens": self._max_output_tokens,
             }
+            if system_prompt is not None:
+                req["system"] = system_prompt
             if self._temperature is not None:
                 req["temperature"] = self._temperature
             if self._bound_tools:
@@ -119,16 +118,22 @@ class AnthropicLLMProxy(AbstractLLMProxy):
                     tool_calls.append(
                         {
                             "name": block.name,
-                            "args": block.input,  # Anthropic returns this as a dict automatically
+                            "args": block.input,
                         }
                     )
 
-            return LLMResponse(text=text.strip(), tool_calls=tool_calls,
-                               usage=self._build_usage(response.usage), proxy=self)
+            return LLMResponse(
+                text=text.strip(),
+                tool_calls=tool_calls,
+                usage=self._build_usage(response.usage),
+                proxy=self,
+            )
         except Exception as e:
             raise LLMProxyException(f"Error invoking Anthropic LLM: {e}") from e
 
-    def invoke_structured(self, prompt: str, schema: Type[BaseModel], **kwargs) -> StructuredLLMResponse:
+    def invoke_structured(
+        self, prompt: str | list, schema: Type[BaseModel], **kwargs
+    ) -> StructuredLLMResponse:
         """
         Uses Anthropic's tool choice forcing to guarantee the output matches
         the provided Pydantic schema.
@@ -141,9 +146,11 @@ class AnthropicLLMProxy(AbstractLLMProxy):
         }
 
         try:
+            messages, system_prompt = self._normalize_messages(prompt)
+
             req: Dict[str, Any] = {
                 "model": self.model_name,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": messages,
                 "max_tokens": self._max_output_tokens,
                 "tools": [tool_schema],
                 "tool_choice": {
@@ -151,12 +158,13 @@ class AnthropicLLMProxy(AbstractLLMProxy):
                     "name": tool_name,
                 },  # Force the model to use this tool
             }
+            if system_prompt is not None:
+                req["system"] = system_prompt
             if self._temperature is not None:
                 req["temperature"] = self._temperature
 
             response = self._client.messages.create(**req)
 
-            # Find the forced tool use block
             for block in response.content:
                 if block.type == "tool_use" and block.name == tool_name:
                     return StructuredLLMResponse(
@@ -165,7 +173,6 @@ class AnthropicLLMProxy(AbstractLLMProxy):
                         proxy=self,
                     )
 
-            # Fallback if the API somehow didn't return a tool block (highly unlikely with tool_choice forced)
             raise LLMProxyException(
                 "Anthropic API did not return the requested structured tool block."
             )
@@ -176,22 +183,22 @@ class AnthropicLLMProxy(AbstractLLMProxy):
             ) from e
 
     def invoke_grammar_based(self, prompt: str | list, **kwargs: Any) -> LLMResponse:
-        """
-        This method is not implemented for standard Anthropic models natively
-        through the public API.
-        """
-        raise NotImplementedError(
-            "invoke_grammar_based is not natively implemented for Anthropic models."
+        logger.warning(
+            "Grammar invoke is not natively supported, using invoke() instead."
         )
+        return self.invoke(prompt, **kwargs)
 
-    def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
+    def stream(self, prompt: str | list, **kwargs: Any) -> Iterator[str]:
         try:
-            messages = [{"role": "user", "content": prompt}]
+            messages, system_prompt = self._normalize_messages(prompt)
+
             req: Dict[str, Any] = {
                 "model": self.model_name,
                 "messages": messages,
                 "max_tokens": self._max_output_tokens,
             }
+            if system_prompt is not None:
+                req["system"] = system_prompt
             if self._temperature is not None:
                 req["temperature"] = self._temperature
             if self._bound_tools:
@@ -211,7 +218,7 @@ class AnthropicLLMProxy(AbstractLLMProxy):
         return True
 
     def bind_tools(
-            self, toolset_class: Type["Toolset"], tool_names: List[str]
+        self, toolset_class: Type["Toolset"], tool_names: List[str]
     ) -> "AnthropicLLMProxy":
         try:
             bound_tools = []
@@ -254,5 +261,61 @@ class AnthropicLLMProxy(AbstractLLMProxy):
         self._bound_tools = []
         return self
 
-    def messages_from(self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]) -> list[dict]:
+    def messages_from(
+        self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]
+    ) -> list[dict]:
         raise NotImplementedError
+
+    @staticmethod
+    def _normalize_messages(prompt: str | list) -> tuple[list[dict], Any]:
+        raw_messages = (
+            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        )
+
+        def normalize_content(content):
+            if isinstance(content, str):
+                return content
+            if isinstance(content, dict):
+                b_type = content.get("type")
+                if b_type in ("input_text", "output_text", "text"):
+                    return {
+                        "type": "text",
+                        "text": content.get("text", content.get("content", "")),
+                    }
+                elif b_type in ("tool_use", "tool_result", "image", "document"):
+                    return [content]  # Preserve Anthropic-native blocks
+                return str(content)
+            if isinstance(content, list):
+                normalized = []
+                for block in content:
+                    if isinstance(block, str):
+                        normalized.append({"type": "text", "text": block})
+                    elif isinstance(block, dict):
+                        b_type = block.get("type")
+                        if b_type in ("input_text", "output_text", "text"):
+                            text_val = block.get("text", block.get("content", ""))
+                            normalized.append({"type": "text", "text": str(text_val)})
+                        elif b_type in ("tool_use", "tool_result", "image", "document"):
+                            normalized.append(block)  # Preserve Anthropic-native blocks
+                        else:
+                            # Fallback for unrecognized framework artifacts
+                            normalized.append({"type": "text", "text": str(block)})
+                return normalized
+            return str(content)
+
+        messages = []
+        system_prompt = None
+
+        for msg in raw_messages:
+            if not isinstance(msg, dict):
+                continue
+
+            role = msg.get("role")
+            content = msg.get("content", "")
+
+            if role == "system":
+                system_prompt = normalize_content(content)
+            elif role in ("user", "assistant"):
+                messages.append({"role": role, "content": normalize_content(content)})
+
+        return messages, system_prompt

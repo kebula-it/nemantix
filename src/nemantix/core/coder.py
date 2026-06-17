@@ -267,7 +267,7 @@ class Coder:
                 try:
                     frame_parser.parse(frame)
                     break
-                except SyntaxError as e:
+                except (SyntaxError, LarkError) as e:
                     prev_error = str(e)
                     prev_frame = frame
                     frame = None

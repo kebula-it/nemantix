@@ -226,6 +226,9 @@ deliberate DemoMain when >>> Run this deliberate when the user asks for a two-ac
                 producing [ [report_text] ]
                 >> build the final report
             __do
+            
+            # Inline version with frame application to the result with 'as {frame_name}'
+            do action extract_info using [ [text] = [raw_text] ] producing [ [summary] ] as {summary_frame}
 
             return [report_text] # CONTROL FLOW: return with expression
         __body
@@ -669,6 +672,8 @@ frame Picture:
 __frame
 ```
 Available slot types: [TEXT | INT | BOOL | FLOAT | STRUCT | slot_enum | frame_name]
+NOTE: "slot_enum" means that a slot is an ENUM. Comply to the following syntax to 
+specify the enumeration elements: slot status as ENUM ("COMPLETED", "FAILED", "IN_PROGRESS")
 NOTE: "frame_name" means that a slot can be another frame, resulting in definition of 
 nested frames.
 NOTE: use STRUCT for both lists and dictionaries.

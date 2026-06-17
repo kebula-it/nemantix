@@ -32,4 +32,4 @@ def test_factory_unsupported_vendor(monkeypatch):
         Credentials.load_from_file(file_path="nonexistent.json")
     )
     with pytest.raises(LLMProxyException):
-        LLMProxyFactory.create_llm_proxy("anthropic", "claude-3")
+        LLMProxyFactory.create_llm_proxy("x-ai", "grok")

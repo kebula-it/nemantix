@@ -465,8 +465,6 @@ def test_code_script_toolsets_max_retries_raises(isolated_event_hub):
     script.actions = {}
     script.deliberates = {}
 
-    hub = isolated_event_hub
-
     # We match "Malformed tool declaration" because the generated text doesn't contain a "class " string
     with pytest.raises(NemantixRuntimeException, match="Malformed tool declaration"):
         coder.code_script_toolsets(script, max_retries=2)

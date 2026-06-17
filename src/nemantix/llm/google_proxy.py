@@ -6,7 +6,8 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-from .abstract_proxy import (
+from nemantix.common.logger import get_package_logger
+from nemantix.llm.abstract_proxy import (
     AbstractLLMProxy,
     LLMProxyException,
     LLMResponse,
@@ -16,6 +17,9 @@ from .abstract_proxy import (
 
 if TYPE_CHECKING:
     from nemantix.core.tools import Toolset
+
+
+logger = get_package_logger(__name__)
 
 
 class GoogleLLMProxy(AbstractLLMProxy):
@@ -28,14 +32,14 @@ class GoogleLLMProxy(AbstractLLMProxy):
     """
 
     def __init__(
-            self,
-            model_name: str,
-            temperature: Optional[float] = None,
-            max_output_tokens: Optional[int] = None,
-            top_k: Optional[int] = None,
-            top_p: Optional[float] = None,
-            grammar_path: Optional[str] = None,
-            **kwargs: Any,
+        self,
+        model_name: str,
+        temperature: Optional[float] = None,
+        max_output_tokens: Optional[int] = None,
+        top_k: Optional[int] = None,
+        top_p: Optional[float] = None,
+        grammar_path: Optional[str] = None,
+        **kwargs: Any,
     ):
         """
         Initializes the Google Generative AI LLM proxy.
@@ -83,89 +87,63 @@ class GoogleLLMProxy(AbstractLLMProxy):
         )
 
     def get_name(self) -> str:
-        return f'Google {self.model_name}'
+        return f"Google {self.model_name}"
 
     def invoke(self, prompt: str | list, **kwargs) -> LLMResponse:
-        """
-        Invokes the Gemini model with a given prompt.
-
-        This method sends the prompt to the model and processes the response.
-        It can handle two types of responses:
-        1. A standard text response.
-        2. A function call request from the model.
-
-        It also wraps API calls in a try-except block to catch potential
-        Google API errors and re-raise them as a custom LLMProxyException.
-
-        Args:
-            prompt: The user prompt to send to the model.
-
-        Returns:
-            A dictionary with the following keys:
-            - text: A string containing the model's text response.
-            - tool_calls: A dictionary representing a function call, with 'name' and 'args' keys.
-
-        Raises:
-            LLMProxyException: If the model is not bound, or if an API error occurs.
-        """
         try:
+            messages, system_instruction = self._normalize_messages(prompt)
+            config = self._build_config(system_instruction=system_instruction)
+
             response = self._client.models.generate_content(
-                model=self.model_name, contents=prompt, config=self._generation_config
+                model=self.model_name, contents=messages, config=config
             )
 
             tool_calls_list = []
-            for part in response.parts:
-                if part.function_call:
-                    tool_calls_list.append(
-                        {
-                            "name": part.function_call.name,
-                            "args": dict(part.function_call.args),
-                        }
-                    )
+            if response.parts:
+                for part in response.parts:
+                    if part.function_call:
+                        tool_calls_list.append(
+                            {
+                                "name": part.function_call.name,
+                                "args": dict(part.function_call.args),
+                            }
+                        )
 
-            # If no function call is found, return the consolidated text response.
-            return LLMResponse(text=response.text or '', tool_calls=tool_calls_list,
-                               usage=self._build_usage(response.usage_metadata),
-                               proxy=self)
+            return LLMResponse(
+                text=response.text or "",
+                tool_calls=tool_calls_list,
+                usage=self._build_usage(response.usage_metadata),
+                proxy=self,
+            )
         except Exception as e:
-            # Catch any other unexpected errors during the process.
             raise LLMProxyException(
                 f"An unexpected error occurred during invocation: {e}"
             ) from e
 
-    def invoke_structured(self, prompt: str, schema: Type[BaseModel], **kwargs) -> StructuredLLMResponse:
-        """
-        Uses Structured Outputs (response_format: json_schema) to force the
-        model to return JSON that conforms to the provided Pydantic schema.
-
-        Requires a model that supports Structured Outputs in Chat Completions.
-        """
+    def invoke_structured(
+        self, prompt: str | list, schema: Type[BaseModel], **kwargs
+    ) -> StructuredLLMResponse:
         json_schema = schema.model_json_schema()
 
         try:
-            full_config = types.GenerateContentConfig(
-                temperature=self._generation_config.temperature,
-                max_output_tokens=self._generation_config.max_output_tokens,
-                top_k=self._generation_config.top_k,
-                top_p=self._generation_config.top_p,
-                automatic_function_calling=self._generation_config.automatic_function_calling,
+            messages, system_instruction = self._normalize_messages(prompt)
+
+            # Apply structured output overrides to the base config
+            config = self._build_config(
+                system_instruction=system_instruction,
                 response_mime_type="application/json",
                 response_json_schema=json_schema,
             )
 
-            # Send the request to the model
             response = self._client.models.generate_content(
                 model=self.model_name,
-                contents=prompt,
-                config=full_config,  # Pass the full configuration
+                contents=messages,
+                config=config,
             )
 
             content = response.text or "{}"
-            data = json.loads(
-                content
-            )  # Ensured that the JSON is valid with structured outputs
+            data = json.loads(content)
 
-            # Return the validated data with the Pydantic model
             return StructuredLLMResponse(
                 result=schema.model_validate(data),
                 usage=self._build_usage(response.usage_metadata),
@@ -188,18 +166,21 @@ class GoogleLLMProxy(AbstractLLMProxy):
         Raises:
             NotImplementedError: If called, since grammar-based invocation is not supported for Google Gemini models.
         """
-        raise NotImplementedError(
-            "invoke_grammar_based is not implemented for Google Gemini models."
+        logger.warning(
+            "Grammar invoke is not natively supported, using invoke() instead."
         )
+        return self.invoke(prompt, **kwargs)
 
-    def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
+    def stream(self, prompt: str | list, **kwargs: Any) -> Iterator[str]:
         try:
+            messages, system_instruction = self._normalize_messages(prompt)
+            config = self._build_config(system_instruction=system_instruction)
+
             for chunk in self._client.models.generate_content_stream(
-                    model=self.model_name, contents=prompt, config=self._generation_config
+                model=self.model_name, contents=messages, config=config
             ):
                 yield chunk.text
         except Exception as e:
-            # Catch any other unexpected errors during the process.
             raise LLMProxyException(
                 f"An unexpected error occurred during invocation: {e}"
             ) from e
@@ -222,7 +203,7 @@ class GoogleLLMProxy(AbstractLLMProxy):
         return types.Type.STRING
 
     def bind_tools(
-            self, toolset_class: Type["Toolset"], tool_names: List[str]
+        self, toolset_class: Type["Toolset"], tool_names: List[str]
     ) -> "GoogleLLMProxy":
         if not tool_names:
             self._generation_config.tools = None
@@ -250,7 +231,7 @@ class GoogleLLMProxy(AbstractLLMProxy):
                     types.FunctionDeclaration(
                         name=name,
                         description=(info["docstring"] or "").strip()
-                                    or "No description provided.",
+                        or "No description provided.",
                         parameters=types.Schema(
                             type=types.Type.OBJECT,
                             properties=properties,
@@ -276,5 +257,86 @@ class GoogleLLMProxy(AbstractLLMProxy):
         self._generation_config.tools = None
         return self
 
-    def messages_from(self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]) -> list[dict]:
+    def messages_from(
+        self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]
+    ) -> list[dict]:
         raise NotImplementedError
+
+    @staticmethod
+    def _normalize_messages(prompt: str | list) -> tuple[list[dict], Optional[str]]:
+        raw_messages = (
+            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        )
+
+        def extract_text(content) -> str:
+            if isinstance(content, str):
+                return content
+            if isinstance(content, dict):
+                # Look for standard text fields
+                return str(
+                    content.get(
+                        "text", content.get("content", content.get("value", ""))
+                    )
+                )
+            if isinstance(content, list):
+                # Join text from multiple nested blocks
+                text_parts = []
+                for block in content:
+                    if isinstance(block, str):
+                        text_parts.append(block)
+                    elif isinstance(block, dict):
+                        text_parts.append(
+                            str(
+                                block.get(
+                                    "text", block.get("content", block.get("value", ""))
+                                )
+                            )
+                        )
+                return "\n".join(text_parts)
+            return str(content)
+
+        messages = []
+        system_instruction = None
+
+        for msg in raw_messages:
+            if not isinstance(msg, dict):
+                continue
+
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+
+            extracted_text = extract_text(content)
+
+            if role == "system":
+                # Google Gemini expects system_instruction explicitly in the config
+                if system_instruction is None:
+                    system_instruction = extracted_text
+                else:
+                    system_instruction += "\n" + extracted_text
+            else:
+                # Map standard roles to Gemini roles
+                gemini_role = "model" if role == "assistant" else "user"
+                messages.append(
+                    {"role": gemini_role, "parts": [{"text": extracted_text}]}
+                )
+
+        return messages, system_instruction
+
+    def _build_config(
+        self, system_instruction: Optional[str] = None, **overrides
+    ) -> types.GenerateContentConfig:
+        """Safely merges base config with dynamic system instructions and overrides."""
+        config_kwargs = {
+            "temperature": self._generation_config.temperature,
+            "max_output_tokens": self._generation_config.max_output_tokens,
+            "top_k": self._generation_config.top_k,
+            "top_p": self._generation_config.top_p,
+            "automatic_function_calling": self._generation_config.automatic_function_calling,
+            "tools": self._generation_config.tools,
+        }
+
+        if system_instruction is not None:
+            config_kwargs["system_instruction"] = system_instruction
+
+        config_kwargs.update(overrides)
+        return types.GenerateContentConfig(**config_kwargs)

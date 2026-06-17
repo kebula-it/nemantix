@@ -458,7 +458,6 @@ Available builtins:
 * `print(*args, **kwargs)`: prints to console the given arguments.
 * `coalesce(*args, **kwargs)`: returns the first non-none (if any) among `args` and `kwargs`.
 * `exists(x)`: returns `True` if `x` is not none; otherwise `False`.
-* `breakpoint()`: puts a breakpoint where called; use for basic debugging purpose.
 * `size(*args)`: returns the `len()` of the given `args`.
 * `type(x)`: returns a string describing the type of `x`.
 Possible types are:

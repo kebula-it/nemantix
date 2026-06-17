@@ -1,0 +1,91 @@
+from toolset TodoManagerToolset use find_todo, list_todos
+
+action ConvertTodoToStringAction >> Converts a todo into a string representation <<:
+  in:
+    todo (required) >> The todo data <<
+  __in
+
+  out:
+    formatted_todo >> The formatted string representation of the todo <<
+  __out
+
+  body:
+    [[formatted_output] = "Todo #" 
+                        | to_str([todo:id]) 
+                        | " - " 
+                        | [todo:text]
+                        ]
+
+    if [[todo:is_completed]]:
+       [[formatted_output] = [formatted_output] | " \[Completed\]"]
+    else:
+       [[formatted_output] = [formatted_output] | " \[Pending\]"]
+    __if
+
+    return [formatted_output]
+
+  __body
+__action
+
+deliberate FindTodoDeliberate when >> the user wants to search, find or read a single specific todo <<:
+  plan:
+    in:
+        user_request(required) >> the user request <<
+    __in
+    out:
+      result >> the details of the found todo <<
+    __out
+    body:
+      [[todo_id] = ""]
+      do llm using [
+         [prompt] = "Extract only the numeric ID of the todo from this request. No other words. Request: [user_request]"
+      ] producing [ [todo_id] ]
+
+      do tool TodoManagerToolset.find_todo
+         using [[todo_id] = to_num([todo_id])]
+         producing [[db_result]]
+
+      [[result] = ""]
+      if [[db_result:status] == "success"]:
+         do action ConvertTodoToStringAction
+            using [[todo] = [todo]] producing [[todo_str]]
+
+         [[result] = [todo_str]]
+      else:
+         [[result] = [db_result:error]]
+      __if
+
+      return [result]
+    __body
+  __plan
+__deliberate
+
+deliberate ListTodosDeliberate when >> the user wants to see the list of all todos, show them or list them <<:
+  plan:
+    in:
+        user_request(required) >> the user request <<
+    __in
+    out:
+      result >> the list of todos <<
+    __out
+    body:
+      do tool TodoManagerToolset.list_todos producing [[db_result]]
+
+      [[result] = ""]
+      if [[db_result:status] == "success"]:
+         [[result] = "Here are your Todos:\n"]
+
+         repeat each [db_result:todos] as [index], [todo]:
+             do action ConvertTodoToStringAction
+                using [[todo] = [todo]] producing [[todo_str]]
+
+             [[result] = "[result]\n[todo_str]"]
+         __repeat
+      else:
+         [[result] = "Unable to retrieve the list of todos."]
+      __if
+
+      return [result]
+    __body
+  __plan
+__deliberate

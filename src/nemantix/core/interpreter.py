@@ -83,9 +83,9 @@ BUILTIN_FUNCTIONS = {
 
 
 class ReturnType(Enum):
-    NONE = (0,)
-    RETURN = (1,)
-    BREAK = (2,)
+    NONE = 0,
+    RETURN = 1,
+    BREAK = 2,
     CONTINUE = 3
 
     def is_return(self) -> bool:
@@ -945,11 +945,7 @@ class Interpreter:
             producing_schema = getattr(do, "producing_schema", None)
             schema_applied = False
 
-            if (
-                isinstance(producing_schema, str)
-                and fn_name != "llm"
-                and outputs is not None
-            ):
+            if isinstance(producing_schema, str) and outputs is not None:
                 result = self._apply_frame_schema(do, result, producing_schema)
                 schema_applied = True
 

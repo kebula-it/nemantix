@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+from enum import Enum
 from pathlib import Path
 
 from nemantix.common import context
@@ -56,6 +57,12 @@ def _topo_order(
         raise ValueError(f"Dependencies cycle detected among: {remaining}")
 
     return order
+
+
+class FallbackEnum(Enum):
+    NONE = 0
+    VOLATILE = 1
+    PERSISTENT = 2
 
 
 class Expertise:
@@ -116,7 +123,7 @@ class Expertise:
         observers: list | None = None,
         export_location: PathLike = None,
         export=True,
-        allow_fallback_deliberate=False,
+        allow_fallback_deliberate:FallbackEnum=FallbackEnum.NONE,
         experimental_enhance_coding=False,
         experimental_enable_fixer=False,
         experimental_include_action_body_in_semantics=False,
@@ -157,11 +164,11 @@ class Expertise:
         self._fallback_counter: int = 0
         self.fallback_names: set[str] = set()
         self.fallback_name_by_script_loc: dict[str, str] = {}
-        self.allow_fallback_deliberate = bool(allow_fallback_deliberate)
+        self.allow_fallback_deliberate = allow_fallback_deliberate
 
         # read nx_ and create map {location:script} and 'requires' map:
         for script in script_list:
-            if self.allow_fallback_deliberate:
+            if self.allow_fallback_deliberate != FallbackEnum.NONE:
                 # inject per-script fallback deliberate into script content
                 self._inject_fallback_into_script(script)
 
@@ -454,7 +461,7 @@ class Expertise:
 
         observers = kwargs.pop("observers", None)
         enable_fixer = kwargs.pop("experimental_enable_fixer", False)
-        allow_fallback = kwargs.pop("allow_fallback_deliberate", False)
+        allow_fallback = kwargs.pop("allow_fallback_deliberate", FallbackEnum.NONE)
         enhance_coding = kwargs.pop("experimental_enhance_coding", False)
         include_body_semantics = kwargs.pop(
             "experimental_include_action_body_in_semantics", False

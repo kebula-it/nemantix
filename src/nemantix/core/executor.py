@@ -15,7 +15,7 @@ from nemantix.core.exceptions import (
     NemantixParserException,
     NemantixRuntimeException,
 )
-from nemantix.core.expertise import Expertise
+from nemantix.core.expertise import Expertise, FallbackEnum
 from nemantix.core.interpreter import Interpreter
 from nemantix.core.node import FileMeta, PlanQualifierEnum
 from nemantix.core.parser import AstTransformer, _get_fstring_parser
@@ -127,6 +127,7 @@ class Executor:
 
         assert isinstance(external_vars, dict)
         self.expertise = expertise
+        self._volatile_state: tuple | None = None
 
         self.proxies = proxy_config
         self.llm = llm or self.proxies.internal
@@ -225,12 +226,15 @@ class Executor:
             export_path = script.source_manager.join(output_dir, new_filename)
             script.write(script.content, source_manager=None, location=export_path)
 
-        if uncoded:
-            return self.execute_uncoded_request(user_request, deliberate, script)
+        try:
+            if uncoded:
+                return self.execute_uncoded_request(user_request, deliberate, script)
 
-        return self.interpreter.interpret_coded_request(
-            script, request_deliberate=deliberate, user_inputs=inputs
-        )
+            return self.interpreter.interpret_coded_request(
+                script, request_deliberate=deliberate, user_inputs=inputs
+            )
+        finally:
+            self._cleanup_volatile_deliberate()
 
     def execute_uncoded_request(
         self, user_request: str, deliberate: nmx_nodes.Deliberate, script: Script
@@ -334,7 +338,7 @@ class Executor:
         motivation = selection_response.motivation or "None"
 
         if deliberate_name.upper() == self._NO_DELIBERATE:
-            if not self.expertise.allow_fallback_deliberate:
+            if self.expertise.allow_fallback_deliberate == FallbackEnum.NONE:
                 raise NemantixRuntimeException(
                     f'Request "{request}" cannot be answered by provided deliberates!\n'
                     f'Motivation: "{motivation}".'
@@ -347,11 +351,16 @@ class Executor:
                     f'Request "{request}" cannot be answered and no fallback '
                     f'deliberate is available. Motivation: "{motivation}".'
                 )
-
-            deliberate_name = self._promote_fallback(request, fallback_name)
+            if self.expertise.allow_fallback_deliberate == FallbackEnum.PERSISTENT:
+                deliberate_name = self._promote_fallback(request, fallback_name)
+            elif self.expertise.allow_fallback_deliberate == FallbackEnum.VOLATILE:
+                deliberate_name = self._promote_fallback(request, fallback_name, volatile=True)
 
         elif self.expertise.is_fallback(deliberate_name):
-            deliberate_name = self._promote_fallback(request, deliberate_name)
+            if self.expertise.allow_fallback_deliberate == FallbackEnum.PERSISTENT:
+                deliberate_name = self._promote_fallback(request, deliberate_name)
+            elif self.expertise.allow_fallback_deliberate == FallbackEnum.VOLATILE:
+                deliberate_name = self._promote_fallback(request, deliberate_name, volatile=True)
 
         script = self.expertise.get_script_from_deliberate(deliberate_name)
         return script.deliberates[deliberate_name]
@@ -595,7 +604,7 @@ class Executor:
         )
         return collection
 
-    def _promote_fallback(self, request: str, fallback_name: str) -> str:
+    def _promote_fallback(self, request: str, fallback_name: str, volatile: bool = False) -> str:
         """Turn a fallback deliberate into a concrete, reusable deliberate.
 
         1. Ask the LLM for a new identity (name / when / guidelines) generalizing
@@ -612,6 +621,9 @@ class Executor:
         script_loc = self.expertise.deliberate_to_script_loc[fallback_name]
         script = self.expertise.script_by_loc[script_loc]
         fallback_deliberate = script.deliberates[fallback_name]
+
+        if volatile:
+            original_content = script.content if isinstance(script.content, str) else "\n".join(script.content)
 
         # 1. generate identity
         identity = self._generate_deliberate_identity(request)
@@ -658,12 +670,29 @@ class Executor:
         self.uncoded_actions_runtime_coding(
             deliberate=new_deliberate, script=script, request=request
         )
-        # update coded scripts
-        self.expertise.export()
 
-        # 5. append a fresh fallback for future requests
-        self.expertise.append_fallback_deliberate(script_loc)
+        if not volatile:
+            # update coded scripts
+            self.expertise.export()
+            # 5. append a fresh fallback for future requests
+            self.expertise.append_fallback_deliberate(script_loc)
+        else:
+            self._volatile_state = (script_loc, original_content, fallback_name)
+
         return new_name
+
+    def _cleanup_volatile_deliberate(self) -> None:
+        if self._volatile_state is None:
+            return
+        script_loc, original_content, fallback_name = self._volatile_state
+        self._volatile_state = None
+
+        script = self.expertise.script_by_loc[script_loc]
+        script.content = original_content
+        script.parse()
+        self.expertise._refresh_script_maps(script_loc)
+        self.expertise.fallback_names.add(fallback_name)
+        self.expertise.fallback_name_by_script_loc[script_loc] = fallback_name
 
     def _generate_deliberate_identity(self, request: str) -> IdentitySchema:
         existing_names = sorted(

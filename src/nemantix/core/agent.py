@@ -839,7 +839,7 @@ __deliberate
 
     @staticmethod
     def _doc_to_str(doc: nmx_runtime.DocRef) -> str:
-        return (f'{{"node_id": "{doc.node_id}", "content": "{doc.content}",'
+        return (f'{{"node_id": "{doc.node_id}", "content": "{doc.content}", '
                 f'"breadcrumbs": "{doc.breadcrumbs}"}}')
 
 

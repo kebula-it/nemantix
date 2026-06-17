@@ -399,9 +399,9 @@ class Interpreter:
                 if toolset_class is None:
                     try:
                         Toolset.load(tool_class)
-                    except nmx_ex.NemantixException:
-                        pass
-                    toolset_class = Toolset._classes.get(tool_class)
+                        toolset_class = Toolset._classes.get(tool_class)
+                    except nmx_ex.NemantixException as exc:
+                        raise self._runtime_exception(str(exc)) from exc
 
                 if toolset_class is None:
                     raise self._runtime_exception(f"No toolset {tool_class}!")
@@ -411,8 +411,8 @@ class Interpreter:
             elif tool_class not in Toolset._classes:
                 try:
                     Toolset.load(tool_class)
-                except nmx_ex.NemantixException:
-                    pass
+                except nmx_ex.NemantixException as exc:
+                    raise self._runtime_exception(str(exc)) from exc
 
             for tool in elements:
                 if isinstance(tool_alias, str):

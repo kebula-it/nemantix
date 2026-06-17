@@ -1,10 +1,12 @@
 import collections
 from typing import Any, Optional, Type
 
-from nemantix.core.agent import Agent
+from pydantic import BaseModel
+
+from nemantix.core.agent import Agent, ReActAgent
 from nemantix.core.exceptions import NemantixException
 from nemantix.core.expertise import Expertise
-from pydantic import BaseModel
+from nemantix.core.runtime import DocRef, Opaque, Struct
 
 
 class StatefulAgent(Agent):
@@ -65,13 +67,20 @@ class StatefulAgent(Agent):
         if output is None:
             return "<Task completed silently>"
 
+        if isinstance(output, DocRef):
+            return ReActAgent._doc_to_str(doc=output)
+        
+        if isinstance(output, Struct):
+            return self._struct_to_str(content=output)
+        
+        if isinstance(output, Opaque):
+            return ReActAgent._opaque_preview(opaque=output)
+
         if isinstance(output, BaseModel):
             return output.model_dump_json()
 
         if isinstance(output, dict):
             return str(output)
-
-        # TODO: handle Nemantix objects
 
         string_output = str(output).strip()
 
@@ -80,3 +89,27 @@ class StatefulAgent(Agent):
             return string_output[:self.max_strings_size] + "... [Truncated for length]"
 
         return string_output
+    
+    def _struct_to_str(self, content: Struct) -> str:
+        args, kwargs = content.to_args_and_kwargs()
+        string = []
+
+        for i, arg in enumerate(args):
+            if isinstance(arg, DocRef):
+                arg = ReActAgent._doc_to_str(doc=arg)
+
+            elif isinstance(arg, Struct):
+                arg = self._struct_to_str(content=arg)
+
+            string.append(f"{i}: {arg}")
+
+        for k, v in kwargs.items():
+            if isinstance(v, DocRef):
+                v = ReActAgent._doc_to_str(doc=v)
+
+            elif isinstance(v, Struct):
+                v = self._struct_to_str(content=v)
+
+            string.append(f"{k}: {v}")
+
+        return f"{{{', '.join(string)}}}"

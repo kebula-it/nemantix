@@ -97,9 +97,7 @@ def google_llm_proxy(mock_google_client, monkeypatch):
 
     # Optionally, mock the API key if needed
     monkeypatch.setenv("GOOGLE_API_KEY", "mock-api-key")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
 
     # Return the proxy instance
     return GoogleLLMProxy(
@@ -199,9 +197,7 @@ def openai_llm_proxy(mock_openai_client, monkeypatch):
     # Patch the OpenAI class that OpenAILLMProxy imports and uses
     monkeypatch.setattr("nemantix.llm.openai_proxy.OpenAI", mock_openai_client)
     monkeypatch.setenv("OPENAI_API_KEY", "mock-api-key")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
     return OpenAILLMProxy("gpt-4o-mini", temperature=0.2, max_output_tokens=42)
 
 
@@ -289,9 +285,7 @@ def anthropic_llm_proxy(mock_anthropic_client, monkeypatch):
         "nemantix.llm.anthropic_proxy.anthropic.Anthropic", mock_anthropic_client
     )
     monkeypatch.setenv("ANTHROPIC_API_KEY", "mock-api-key")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
     return AnthropicLLMProxy(
         "claude-3-5-sonnet-20241022", temperature=0.2, max_output_tokens=42
     )

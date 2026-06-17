@@ -15,9 +15,7 @@ def test_factory_creates_openai_and_google(monkeypatch):
     # Provide credentials via env
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
     monkeypatch.setenv("GOOGLE_API_KEY", "gk-env")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
 
     openai = LLMProxyFactory.create_llm_proxy("openai", "gpt-4o", temperature=0.1)
     google = LLMProxyFactory.create_llm_proxy("google", "gemini-pro", top_p=0.5)
@@ -28,8 +26,7 @@ def test_factory_creates_openai_and_google(monkeypatch):
 
 def test_factory_unsupported_vendor(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
+
     with pytest.raises(LLMProxyException):
         LLMProxyFactory.create_llm_proxy("x-ai", "grok")

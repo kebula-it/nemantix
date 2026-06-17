@@ -1,13 +1,14 @@
 import pytest
-from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
+
+from nemantix.core import Toolset, tool
 from nemantix.llm.abstract_proxy import (
     AbstractLLMProxy,
     LLMProxyException,
     LLMResponse,
     LLMUsage,
 )
+from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
 from nemantix.llm.credentials import Credentials
-from nemantix.core import Toolset, tool
 
 
 def test_anthropic_init_and_invoke_stream_bind_unbind(anthropic_llm_proxy):
@@ -64,9 +65,7 @@ def test_anthropic_errors_surface(monkeypatch):
     monkeypatch.setattr("nemantix.llm.anthropic_proxy.anthropic.Anthropic", bad_ctor)
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-env")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
 
     with pytest.raises(
         LLMProxyException, match="Failed to initialize Anthropic client: boom"

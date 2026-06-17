@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from nemantix.common.logger import get_package_logger
 from nemantix.llm.abstract_proxy import AbstractLLMProxy
 from nemantix.llm.credentials import Credentials
@@ -28,13 +26,9 @@ class LLMProxyConfig:
         coding: dict | AbstractLLMProxy | None = None,
         default_vendor="openai",
         default_model="gpt-5-mini",
-        credentials_path: str | Path | None = "credentials.json",
         **default_kwargs,
     ):
-        if credentials_path is None:
-            credentials_path = "."
-
-        credential_manager = Credentials.load_from_file(file_path=str(credentials_path))
+        credential_manager = Credentials()
         AbstractLLMProxy.set_credentials_manager(credential_manager)
 
         self.default_spec = dict(

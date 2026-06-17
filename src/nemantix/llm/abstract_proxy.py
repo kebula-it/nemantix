@@ -60,7 +60,10 @@ class AbstractLLMProxy(abc.ABC):
         This should be called once at the application's startup.
         """
         AbstractLLMProxy._credentials_manager = manager
-        # print("Credentials manager set for AbstractLLMProxy.")
+
+    @classmethod
+    def is_credential_manager_set(cls) -> bool:
+        return cls._credentials_manager is not None
 
     @staticmethod
     def _get_api_key(

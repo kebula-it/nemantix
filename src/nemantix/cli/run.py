@@ -2,13 +2,48 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nemantix.knowledge_base.core.nemantix_knowledge_base import KnowledgeBaseConfig
 
 from nemantix.core.agent import Agent
 from nemantix.core.expertise import Expertise
 from nemantix.core.tools import Toolset
 from nemantix.security.verifier import DebugVerifier, Verifier
+
+
+def _build_kb_config(args: argparse.Namespace) -> "KnowledgeBaseConfig | None":
+    if not args.use_knowledge_base:
+        return None
+    if not args.kb_view_ids:
+        raise ValueError("--kb-view-ids is required when --use-knowledge-base is set.")
+    username = os.environ.get("NEMANTIX_KB_USERNAME", "")
+    if not username:
+        raise ValueError(
+            "NEMANTIX_KB_USERNAME environment variable is required when --use-knowledge-base is set."
+        )
+    password = os.environ.get("NEMANTIX_KB_PASSWORD", "")
+    if not password:
+        raise ValueError(
+            "NEMANTIX_KB_PASSWORD environment variable is required when --use-knowledge-base is set."
+        )
+    from nemantix.knowledge_base.core.nemantix_knowledge_base import KnowledgeBaseConfig
+
+    return KnowledgeBaseConfig(
+        view_ids=args.kb_view_ids,
+        db_engine=args.kb_db_engine,
+        db_username=username,
+        db_password=password,
+        db_host=args.kb_db_host,
+        db_port=args.kb_db_port,
+        db_database=args.kb_db_database,
+        base_storage_path=args.kb_base_storage_path,
+        vector_subdir=args.kb_vector_subdir,
+        vector_store_type=args.kb_vector_store_type,
+    )
 
 
 def _register_cli_toolsets(entries: list[str]) -> None:
@@ -49,7 +84,7 @@ def register(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     p.add_argument(
         "--export-location",
         dest="export_location",
-        default=None,
+        default="coding_output",
         help="Directory for compiled script export",
     )
     p.add_argument(
@@ -101,6 +136,58 @@ def register(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
             "Repeatable."
         ),
     )
+    # Knowledge Base flags
+    p.add_argument(
+        "--kb-view-id",
+        dest="kb_view_ids",
+        action="append",
+        default=None,
+        metavar="VIEW_ID",
+        help="Knowledge Base view ID. Repeatable. Required with --use-knowledge-base.",
+    )
+    p.add_argument(
+        "--kb-db-engine",
+        dest="kb_db_engine",
+        default="postgresql",
+        help="KB database engine (default: postgresql)",
+    )
+    p.add_argument(
+        "--kb-db-host",
+        dest="kb_db_host",
+        default="localhost",
+        help="KB database host (default: localhost)",
+    )
+    p.add_argument(
+        "--kb-db-port",
+        dest="kb_db_port",
+        type=int,
+        default=5432,
+        help="KB database port (default: 5432)",
+    )
+    p.add_argument(
+        "--kb-db-database",
+        dest="kb_db_database",
+        default="nemantix_db",
+        help="KB database name (default: nemantix_db)",
+    )
+    p.add_argument(
+        "--kb-base-storage-path",
+        dest="kb_base_storage_path",
+        default="kb_storage",
+        help="KB base storage path (default: kb_storage)",
+    )
+    p.add_argument(
+        "--kb-vector-subdir",
+        dest="kb_vector_subdir",
+        default="vector_db",
+        help="KB vector store subdirectory (default: vector_db)",
+    )
+    p.add_argument(
+        "--kb-vector-store-type",
+        dest="kb_vector_store_type",
+        default="qdrant",
+        help="KB vector store type (default: qdrant)",
+    )
     p.set_defaults(handler=handle, _run_subparser=p)
     return p
 
@@ -135,11 +222,18 @@ def handle(args: argparse.Namespace) -> int:
         observers=observers or None,
     )
 
+    try:
+        kb_config = _build_kb_config(args)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
     agent = Agent(
         expertise=expertise,
         build_on_start=not args.no_build,
         use_embedder=args.use_embedder,
         use_knowledge_base=args.use_knowledge_base,
+        kb_config=kb_config,
         log_level=args.log_level,
     )
 

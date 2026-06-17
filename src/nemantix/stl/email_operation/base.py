@@ -32,13 +32,13 @@ class EmailToolset(Toolset):
     """
 
     def __init__(
-            self,
-            email_user: Optional[str] = None,
-            email_password: Optional[str] = None,
-            smtp_server: str = "smtp.gmail.com",
-            smtp_port: int = 465,
-            imap_server: str = "imap.gmail.com",
-            imap_port: int = 993,
+        self,
+        email_user: Optional[str] = None,
+        email_password: Optional[str] = None,
+        smtp_server: str = "smtp.gmail.com",
+        smtp_port: int = 465,
+        imap_server: str = "imap.gmail.com",
+        imap_port: int = 993,
     ):
         # 1. Try arguments first, then environment variables
         super().__init__()
@@ -109,7 +109,9 @@ class EmailToolset(Toolset):
 
             # Port 465 = Implicit SSL (Gmail/Yahoo)
             if self.smtp_port == 465:
-                with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, context=context) as server:
+                with smtplib.SMTP_SSL(
+                    self.smtp_server, self.smtp_port, context=context
+                ) as server:
                     server.login(self.email_user, self.password)
                     server.send_message(msg)
 
@@ -125,7 +127,9 @@ class EmailToolset(Toolset):
             return f"Failed to send email: {str(e)}"
 
     @tool
-    def read_emails(self, limit: int = 5, folder: str = "INBOX") -> List[Dict[str, Any]]:
+    def read_emails(
+        self, limit: int = 5, folder: str = "INBOX"
+    ) -> List[Dict[str, Any]]:
         """
         Reads recent emails via IMAP.
 
@@ -184,11 +188,13 @@ class EmailToolset(Toolset):
                             if payload and isinstance(payload, bytes):
                                 body = payload.decode()
 
-                        results.append({
-                            "from": msg.get("From"),
-                            "subject": subject,
-                            "body_preview": body[:100] + "...",
-                        })
+                        results.append(
+                            {
+                                "from": msg.get("From"),
+                                "subject": subject,
+                                "body_preview": body[:100] + "...",
+                            }
+                        )
 
             mail.logout()
             return results

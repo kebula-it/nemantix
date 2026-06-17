@@ -15,12 +15,16 @@ from nemantix.llm.credentials import Credentials
 
 class DummyProxy(AbstractLLMProxy):
     def invoke(self, prompt: str, **kwargs: Any) -> LLMResponse:
-        return LLMResponse(text=prompt, tool_calls=[], usage=LLMUsage(input_tokens=0, output_tokens=0))
+        return LLMResponse(
+            text=prompt, tool_calls=[], usage=LLMUsage(input_tokens=0, output_tokens=0)
+        )
 
     def get_name(self) -> str:
-        return 'Dummy'
+        return "Dummy"
 
-    def invoke_structured(self, prompt: str, schema: Type[BaseModel]) -> StructuredLLMResponse:
+    def invoke_structured(
+        self, prompt: str, schema: Type[BaseModel]
+    ) -> StructuredLLMResponse:
         raise NotImplementedError()
 
     def invoke_grammar_based(self, prompt: str, **kwargs: Any) -> LLMResponse:
@@ -39,7 +43,9 @@ class DummyProxy(AbstractLLMProxy):
     def unbind_tools(self) -> "DummyProxy":
         return self
 
-    def messages_from(self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]) -> list[dict]:
+    def messages_from(
+        self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]
+    ) -> list[dict]:
         return prompts_with_roles
 
 

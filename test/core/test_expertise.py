@@ -171,7 +171,11 @@ def test_expertise_build_codes_nxs_to_nxc_updates_maps_and_exports(
 
     def coding_side_effect(*, script, required_scripts, external_vars_names):
         call_log.append(
-            (script.location, [rs.location for rs in required_scripts], external_vars_names)
+            (
+                script.location,
+                [rs.location for rs in required_scripts],
+                external_vars_names,
+            )
         )
         return f"CODED::{script.location}"
 
@@ -235,8 +239,7 @@ def test_get_all_deliberates_semantics_collects_from_all_scripts(mock_get_tools)
     d1, d2, d3 = MagicMock(), MagicMock(), MagicMock()
     d1.name, d2.name, d3.name = "D1", "D2", "D3"
 
-    s1 = _mk_script(
-        "a.nxs", ScriptTypeEnum.NXS, deliberates={"D1": d1, "D2": d2})
+    s1 = _mk_script("a.nxs", ScriptTypeEnum.NXS, deliberates={"D1": d1, "D2": d2})
     s2 = _mk_script("b.nxs", ScriptTypeEnum.NXS, deliberates={"D3": d3})
 
     coder = MagicMock()
@@ -301,7 +304,9 @@ def test_verify_only_checks_nxv_scripts(mock_get_tools):
 
 
 @patch("nemantix.core.expertise.Toolset.get_registered_classes", return_value=[])
-def test_get_script_from_deliberate_returns_script_and_raises_for_missing(mock_get_tools):
+def test_get_script_from_deliberate_returns_script_and_raises_for_missing(
+    mock_get_tools,
+):
     script = _mk_script(
         "a.nxs", ScriptTypeEnum.NXS, deliberates={"DelibA": _named_obj("DelibA")}
     )

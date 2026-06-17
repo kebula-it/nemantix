@@ -115,11 +115,11 @@ class MathSolverToolset(Toolset):
 
     @tool
     def calculate_integral(
-            self,
-            expression: str,
-            variable: str,
-            lower_limit: Optional[str] = None,
-            upper_limit: Optional[str] = None,
+        self,
+        expression: str,
+        variable: str,
+        lower_limit: Optional[str] = None,
+        upper_limit: Optional[str] = None,
     ) -> str:
         """
         Calculates the integral of an expression. Performs indefinite integration if limits are omitted.

@@ -1,7 +1,10 @@
 from typing import Optional, List, Generator, Dict
 
 from nemantix.knowledge_base.document_structure.coordinates import Coordinates
-from nemantix.knowledge_base.document_structure.schemas import DocumentHierarchyModel, NodeModel
+from nemantix.knowledge_base.document_structure.schemas import (
+    DocumentHierarchyModel,
+    NodeModel,
+)
 
 HIERARCHY_SEGMENT_SEPARATOR = "<|>"
 HIERARCHY_KEY_VALUE_SEPARATOR = "::"
@@ -41,14 +44,15 @@ class HierarchyNode:
         metadata (dict): Additional key-value information associated with the node.
     """
 
-    def __init__(self,
-                 node_id: str,
-                 kind: str,
-                 label: str,
-                 coordinates: Coordinates,
-                 parent_id: Optional[str] = None,
-                 metadata: Optional[dict] = None
-                 ):
+    def __init__(
+        self,
+        node_id: str,
+        kind: str,
+        label: str,
+        coordinates: Coordinates,
+        parent_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ):
         if not isinstance(coordinates, Coordinates):
             raise TypeError("coordinates must be an instance of Coordinates")
 
@@ -228,9 +232,7 @@ class DocumentHierarchy:
 
         if include_document:
             doc_label = (
-                    self.metadata.get("title")
-                    or self.metadata.get("name")
-                    or self.doc_id
+                self.metadata.get("title") or self.metadata.get("name") or self.doc_id
             )
             parts.append(
                 f"document{HIERARCHY_KEY_VALUE_SEPARATOR}{_sanitize_hierarchy_value(doc_label)}"
@@ -315,7 +317,7 @@ class DocumentHierarchy:
         """
         metadata = {
             "title": planner_output.title,
-            "document_type": planner_output.document_type
+            "document_type": planner_output.document_type,
         }
 
         hierarchy = cls(doc_id=doc_id, metadata=metadata)
@@ -327,7 +329,9 @@ class DocumentHierarchy:
         hierarchy.validate()
         return hierarchy
 
-    def _add_node_recursive(self, node_model: NodeModel, parent_id: Optional[str] = None) -> None:
+    def _add_node_recursive(
+        self, node_model: NodeModel, parent_id: Optional[str] = None
+    ) -> None:
         """
         Recursively unpacks NodeModels and adds them to the hierarchy tree.
 
@@ -390,9 +394,11 @@ class DocumentHierarchy:
                 continue
 
             kind, label = part.split(HIERARCHY_KEY_VALUE_SEPARATOR, 1)
-            out.append({
-                "kind": kind,
-                "label": label,
-            })
+            out.append(
+                {
+                    "kind": kind,
+                    "label": label,
+                }
+            )
 
         return out

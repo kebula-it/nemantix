@@ -18,7 +18,9 @@ from nemantix.security.verifier import BaseVerifier
 logger = get_package_logger(__name__)
 
 
-def _topo_order(imports_map: dict[str, list[str]], only_internal: bool = True) -> list[str]:
+def _topo_order(
+    imports_map: dict[str, list[str]], only_internal: bool = True
+) -> list[str]:
     nodes = set(imports_map.keys())
     if not only_internal:
         # include not present as keys
@@ -58,7 +60,8 @@ def _topo_order(imports_map: dict[str, list[str]], only_internal: bool = True) -
 
 class Expertise:
     """Orchestrates nxs/nxc/nxs Script"""
-    FALLBACK_DELIBERATE_PREFIX = '__Fallback__'
+
+    FALLBACK_DELIBERATE_PREFIX = "__Fallback__"
 
     # Template for the fallback deliberate injected into each user script.
     # `@completion: undefined->undefined` keeps the Coder from coding it in `build()`
@@ -83,7 +86,8 @@ class Expertise:
         "        body:\n"
         "        __body\n"
         "    __plan\n"
-        "__deliberate\n")
+        "__deliberate\n"
+    )
 
     # Template for a freshly promoted deliberate. Its plan body is empty and
     # will be filled by `Coder.code_deliberate(COMPLETE, ...)`. The `_->frozen`
@@ -101,12 +105,22 @@ class Expertise:
         "        body:\n"
         "        __body\n"
         "    __plan\n"
-        "__deliberate\n")
+        "__deliberate\n"
+    )
 
-    def __init__(self, script_list: list[Script], coder: Coder, verifier: BaseVerifier, observers: list | None = None,
-                 export_location: PathLike = None, export=True, allow_fallback_deliberate=False,
-                 experimental_enhance_coding=False, experimental_enable_fixer=False,
-                 experimental_include_action_body_in_semantics=False):
+    def __init__(
+        self,
+        script_list: list[Script],
+        coder: Coder,
+        verifier: BaseVerifier,
+        observers: list | None = None,
+        export_location: PathLike = None,
+        export=True,
+        allow_fallback_deliberate=False,
+        experimental_enhance_coding=False,
+        experimental_enable_fixer=False,
+        experimental_include_action_body_in_semantics=False,
+    ):
         assert isinstance(verifier, BaseVerifier)
 
         self.toolset_classes = Toolset.get_registered_classes()
@@ -115,7 +129,9 @@ class Expertise:
 
         self.coder = coder
         self.coder.enable_fixer = bool(experimental_enable_fixer)
-        self.coder.include_action_body_in_semantics = bool(experimental_include_action_body_in_semantics)
+        self.coder.include_action_body_in_semantics = bool(
+            experimental_include_action_body_in_semantics
+        )
 
         self.verifier = verifier
         self.export_location = export_location
@@ -128,7 +144,7 @@ class Expertise:
         if observers:
             event_hub = context.event_hub.get()
             if event_hub is None:
-                logger.info('Setting event-hub context instance.')
+                logger.info("Setting event-hub context instance.")
                 context.event_hub.set(EventHub())
                 event_hub = context.event_hub.get()
 
@@ -151,7 +167,9 @@ class Expertise:
 
             script.parse()
             self.script_by_loc[script.get_location()] = script
-            self.requires_map[script.get_location()] = [r.file_path for r in script.requires]
+            self.requires_map[script.get_location()] = [
+                r.file_path for r in script.requires
+            ]
 
         self.source_ordered_list = []  # coding order basing on imports
         self.deliberate_to_script_loc = {}  # delib_name:script_loc
@@ -164,7 +182,9 @@ class Expertise:
         elif isinstance(external_vars_names, list) or external_vars_names is None:
             self.external_vars_names = external_vars_names
         else:
-            raise NemantixException("external_vars_names must be the list of names of the variables")
+            raise NemantixException(
+                "external_vars_names must be the list of names of the variables"
+            )
 
     def set_knowledge_base(self, knowledge_base):
         from nemantix.knowledge_base.core.nemantix_knowledge_base import (
@@ -172,7 +192,9 @@ class Expertise:
         )
 
         if self.enhance_conding and isinstance(knowledge_base, NemantixKnowledgeBase):
-            logger.info('[EXPERIMENTAL] Using the Knowledge-base to enhance the coding.')
+            logger.info(
+                "[EXPERIMENTAL] Using the Knowledge-base to enhance the coding."
+            )
             self.coder.knowledge_base = knowledge_base
 
     def build(self):
@@ -196,9 +218,11 @@ class Expertise:
                 # NOTE: avoid coding of fallback deliberate
                 required_scripts = self.get_required_scripts(script)
 
-                nxc_content = self.coder.coding(script=script,
-                                                required_scripts=required_scripts,
-                                                external_vars_names=self.external_vars_names)
+                nxc_content = self.coder.coding(
+                    script=script,
+                    required_scripts=required_scripts,
+                    external_vars_names=self.external_vars_names,
+                )
 
                 # partial replacement (only content)
                 script.content = nxc_content
@@ -211,10 +235,19 @@ class Expertise:
 
             # emit expertise build for all type of script (type sent in scope, also)
             if event_hub is not None:
-                name = self.coder.llm_proxy.model_name if hasattr(self.coder.llm_proxy,
-                                                                  "model_name") else self.coder.llm_proxy.__class__.__name__
-                event = Event(type=EventType.EXPERTISE_BUILD, lines=(0, 0), scope=str(script.type.value),
-                              script=script, statement='', payload={"model": name, "coded": coded})
+                name = (
+                    self.coder.llm_proxy.model_name
+                    if hasattr(self.coder.llm_proxy, "model_name")
+                    else self.coder.llm_proxy.__class__.__name__
+                )
+                event = Event(
+                    type=EventType.EXPERTISE_BUILD,
+                    lines=(0, 0),
+                    scope=str(script.type.value),
+                    script=script,
+                    statement="",
+                    payload={"model": name, "coded": coded},
+                )
                 event_hub.emit(event=event)
 
             self.update(source_ordered_list=self.source_ordered_list)
@@ -243,18 +276,25 @@ class Expertise:
         if self.do_export:
             for script in self.script_by_loc.values():
                 # get default export location or set to chosen export location
-                output_dir = self.export_location if self.export_location \
+                output_dir = (
+                    self.export_location
+                    if self.export_location
                     else script.source_manager.get_default_export_location()
+                )
 
-                new_filename = script.source_manager.get_file_name(script.get_location()) + ".nxc"
+                new_filename = (
+                    script.source_manager.get_file_name(script.get_location()) + ".nxc"
+                )
                 export_path = script.source_manager.join(output_dir, new_filename)
 
                 # do not export fallback deliberates
                 if script.get_location() in self.fallback_name_by_script_loc:
-                    fallback_name = self.fallback_name_by_script_loc[script.get_location()]
+                    fallback_name = self.fallback_name_by_script_loc[
+                        script.get_location()
+                    ]
                     fallback_deliberate = script.deliberates[fallback_name]
 
-                    file_meta = fallback_deliberate.meta['file_meta']
+                    file_meta = fallback_deliberate.meta["file_meta"]
                     assert isinstance(file_meta, FileMeta)
                     start_line, end_line = file_meta.line
 
@@ -264,7 +304,7 @@ class Expertise:
                     for _ in range(end_line - start_line + 1):
                         content.pop(start_line - 1)
 
-                    content = '\n'.join(content)
+                    content = "\n".join(content)
                     script.content = content
                     script.write(content, source_manager=None, location=export_path)
 
@@ -272,7 +312,9 @@ class Expertise:
                     script.content = original_content
                     script.parse()
                 else:
-                    script.write(script.content, source_manager=None, location=export_path)
+                    script.write(
+                        script.content, source_manager=None, location=export_path
+                    )
         else:
             logger.info("Export deactivated.")
 
@@ -305,14 +347,18 @@ class Expertise:
 
         for script in self.script_by_loc.values():
             for deliberate in script.deliberates.values():
-                deliberate_semantics.append(self.coder.get_deliberate_semantics(deliberate))
+                deliberate_semantics.append(
+                    self.coder.get_deliberate_semantics(deliberate)
+                )
 
         return deliberate_semantics
 
     def get_script_from_deliberate(self, deliberate_name: str) -> Script:
         location = self.deliberate_to_script_loc.get(deliberate_name, None)
         if location is None:
-            raise NemantixException(f'Cannot find script location for deliberate "{deliberate_name}"!')
+            raise NemantixException(
+                f'Cannot find script location for deliberate "{deliberate_name}"!'
+            )
 
         assert isinstance(location, str)
         script = self.script_by_loc.get(location, None)
@@ -321,7 +367,9 @@ class Expertise:
 
         return script
 
-    def update_script_content(self, script_location: str, original_node: BlockStatement, new_content: str):
+    def update_script_content(
+        self, script_location: str, original_node: BlockStatement, new_content: str
+    ):
         orig_code = self.script_by_loc[script_location].content
 
         if isinstance(orig_code, str):
@@ -332,8 +380,13 @@ class Expertise:
         assert isinstance(file_meta, FileMeta)
         start_line, end_line = file_meta.line[0] - 1, file_meta.line[1] - 1
 
-        repl_content = self.coder.replace_nxs_code_block(orig_code, start_line, end_line, new_content,
-                                                         indent=False if start_line != 0 else False)
+        repl_content = self.coder.replace_nxs_code_block(
+            orig_code,
+            start_line,
+            end_line,
+            new_content,
+            indent=False if start_line != 0 else False,
+        )
         # rebuild script content
         self.script_by_loc[script_location].content = repl_content
         self.script_by_loc[script_location].parse()
@@ -347,45 +400,66 @@ class Expertise:
 
         name = original_node.name if hasattr(original_node, "name") else ""
         node_type = "action" if isinstance(original_node, ActionBlock) else "deliberate"
-        model = self.coder.llm_proxy.model_name if hasattr(self.coder.llm_proxy,
-                                                           "model_name") else self.coder.llm_proxy.__class__.__name__
+        model = (
+            self.coder.llm_proxy.model_name
+            if hasattr(self.coder.llm_proxy, "model_name")
+            else self.coder.llm_proxy.__class__.__name__
+        )
 
         if (event_hub := context.event_hub.get()) is not None:
-            event = Event(type=EventType.SCRIPT_UPDATE, lines=(0, 0), scope=name,
-                          script=self.script_by_loc[script_location], statement='',
-                          payload={"model": model, "type": node_type})
+            event = Event(
+                type=EventType.SCRIPT_UPDATE,
+                lines=(0, 0),
+                scope=name,
+                script=self.script_by_loc[script_location],
+                statement="",
+                payload={"model": model, "type": node_type},
+            )
             event_hub.emit(event)
 
         return self.script_by_loc[script_location]
 
     def get_required_scripts(self, script: Script) -> list[Script]:
         try:
-            reqs = [self.script_by_loc[loc]
-                    for loc in self.requires_map[script.get_location()]]
+            reqs = [
+                self.script_by_loc[loc]
+                for loc in self.requires_map[script.get_location()]
+            ]
             return reqs
         except KeyError as e:
             raise NemantixException(
                 f"Could not find required script: {str(e)}.\n Script required by '{script.get_location()}'."
-                f"\nPlease check the path in the require or check you have passed the script to the Expertise.")
+                f"\nPlease check the path in the require or check you have passed the script to the Expertise."
+            )
 
     @classmethod
-    def from_local_scripts(cls, paths: list[PathLike] | list[Script], verifier: BaseVerifier,
-                           llm: AbstractLLMProxy | None = None,
-                           export_location: PathLike = None, export=True,
-                           create_summary= False, **kwargs) -> "Expertise":
+    def from_local_scripts(
+        cls,
+        paths: list[PathLike] | list[Script],
+        verifier: BaseVerifier,
+        llm: AbstractLLMProxy | None = None,
+        export_location: PathLike = None,
+        export=True,
+        create_summary=False,
+        **kwargs,
+    ) -> "Expertise":
         """Instantiates an Expertise assuming local source files or Script list."""
         if not all(isinstance(p, Script) for p in paths):
-            scripts = [Script(location=path, source_manager=LocalSourceManager())
-                       for path in paths]
+            scripts = [
+                Script(location=path, source_manager=LocalSourceManager())
+                for path in paths
+            ]
         else:
             scripts = paths
 
-        observers = kwargs.pop('observers', None)
-        enable_fixer = kwargs.pop('experimental_enable_fixer', False)
-        allow_fallback = kwargs.pop('allow_fallback_deliberate', False)
-        enhance_coding = kwargs.pop('experimental_enhance_coding', False)
-        include_body_semantics = kwargs.pop('experimental_include_action_body_in_semantics', False)
-        
+        observers = kwargs.pop("observers", None)
+        enable_fixer = kwargs.pop("experimental_enable_fixer", False)
+        allow_fallback = kwargs.pop("allow_fallback_deliberate", False)
+        enhance_coding = kwargs.pop("experimental_enhance_coding", False)
+        include_body_semantics = kwargs.pop(
+            "experimental_include_action_body_in_semantics", False
+        )
+
         logger.debug(f"Allow fallback value = {allow_fallback} ")
 
         if llm is None:
@@ -399,23 +473,35 @@ class Expertise:
         assert isinstance(llm, AbstractLLMProxy)
         coder = Coder(llm_proxy=llm, create_summary=create_summary)
 
-        return Expertise(script_list=scripts, coder=coder, verifier=verifier, observers=observers,
-                         export_location=export_location, export=export,
-                         allow_fallback_deliberate=allow_fallback,
-                         experimental_enhance_coding=enhance_coding,
-                         experimental_enable_fixer=enable_fixer,
-                         experimental_include_action_body_in_semantics=include_body_semantics)
+        return Expertise(
+            script_list=scripts,
+            coder=coder,
+            verifier=verifier,
+            observers=observers,
+            export_location=export_location,
+            export=export,
+            allow_fallback_deliberate=allow_fallback,
+            experimental_enhance_coding=enhance_coding,
+            experimental_enable_fixer=enable_fixer,
+            experimental_include_action_body_in_semantics=include_body_semantics,
+        )
 
     @staticmethod
-    def get_default_llm(credentials_path: PathLike, vendor='openai',
-                        model='gpt-5-mini', temperature=1, **kwargs) -> AbstractLLMProxy:
+    def get_default_llm(
+        credentials_path: PathLike,
+        vendor="openai",
+        model="gpt-5-mini",
+        temperature=1,
+        **kwargs,
+    ) -> AbstractLLMProxy:
         """Returns a default LLM proxy."""
         credentials = Path(credentials_path)
         cred_manager = Credentials.load_from_file(file_path=str(credentials))
         AbstractLLMProxy.set_credentials_manager(cred_manager)
 
-        llm = LLMProxyFactory.create_llm_proxy(vendor, model_name=model,
-                                               temperature=float(temperature), **kwargs)
+        llm = LLMProxyFactory.create_llm_proxy(
+            vendor, model_name=model, temperature=float(temperature), **kwargs
+        )
         return llm
 
     def _make_fallback_name(self) -> str:
@@ -426,12 +512,12 @@ class Expertise:
         """
         while True:
             self._fallback_counter += 1
-            name = f'{self.FALLBACK_DELIBERATE_PREFIX}{self._fallback_counter}'
+            name = f"{self.FALLBACK_DELIBERATE_PREFIX}{self._fallback_counter}"
 
             if name in self.fallback_names:
                 continue
 
-            if name in getattr(self, 'deliberate_to_script_loc', {}):
+            if name in getattr(self, "deliberate_to_script_loc", {}):
                 continue
 
             return name
@@ -467,13 +553,18 @@ class Expertise:
     def get_fallback_name(self, script_loc: str) -> str | None:
         return self.fallback_name_by_script_loc.get(script_loc)
 
-    def build_promoted_deliberate_block(self, name: str, when: str, guidelines: str) -> str:
+    def build_promoted_deliberate_block(
+        self, name: str, when: str, guidelines: str
+    ) -> str:
         """Build the NXS text for a newly promoted deliberate (empty plan)."""
         safe_when = (when or "").replace("<<<", "<<").replace(">>>", ">>").strip()
-        safe_guidelines = (guidelines or "").replace("<<<", "<<").replace(">>>", ">>").strip()
+        safe_guidelines = (
+            (guidelines or "").replace("<<<", "<<").replace(">>>", ">>").strip()
+        )
 
-        return self.PROMOTED_DELIBERATE_TEMPLATE.format(name=name, when=safe_when,
-                                                        guidelines=safe_guidelines)
+        return self.PROMOTED_DELIBERATE_TEMPLATE.format(
+            name=name, when=safe_when, guidelines=safe_guidelines
+        )
 
     def append_fallback_deliberate(self, script_loc: str) -> str:
         """Append a fresh fallback deliberate to the given script and refresh maps.

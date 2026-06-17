@@ -1,4 +1,5 @@
 """Static analysis of NXS/NXC/NXV ASTs: Symbol, Scope, SymbolTable, SymbolTableBuilder."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -83,7 +84,9 @@ class Scope:
 
 
 class SymbolTable:
-    def __init__(self, global_scope: Scope, index: list[tuple[FileMeta, Symbol]]) -> None:
+    def __init__(
+        self, global_scope: Scope, index: list[tuple[FileMeta, Symbol]]
+    ) -> None:
         self._global = global_scope
         self._index = index
 
@@ -92,7 +95,7 @@ class SymbolTable:
 
     def at(self, line: int, col: int) -> Symbol | None:
         best: Symbol | None = None
-        best_span = float('inf')
+        best_span = float("inf")
         for fm, sym in self._index:
             if not (fm.line[0] <= line <= fm.line[1]):
                 continue
@@ -168,27 +171,27 @@ def _completion_initial(node: _HasMeta) -> str | None:
 
 
 _BUILTIN_DOCS: dict[str, tuple[str | None, str | None]] = {
-    "exists":    (
+    "exists": (
         "exists(value) → bool",
         "Returns `true` if *value* is not `null`. Extra arguments are ignored.",
     ),
-    "coalesce":  (
+    "coalesce": (
         "coalesce(a, b, ...) → any",
         "Returns the first non-`null` argument. Accepts any number of positional or keyword arguments.",
     ),
-    "print":     (
+    "print": (
         "print(*args, **kwargs)",
         "Prints one or more values to standard output, separated by spaces. `null` values are displayed as `<NONE>`.",
     ),
-    "type":      (
+    "type": (
         "type(value) → str",
         "Returns the runtime type name of *value*: `none`, `num`, `str`, `bool`, `struct`, `doc`, or `opaque`.",
     ),
-    "llm":       (
+    "llm": (
         "llm(prompt) → str",
         "Sends *prompt* to the configured LLM and returns the response.",
     ),
-    "size":      (
+    "size": (
         "size(value, ...) → num",
         "With one argument: returns the length of a string or struct, or `0` for other types. "
         "With multiple arguments: returns the count of arguments.",
@@ -198,43 +201,43 @@ _BUILTIN_DOCS: dict[str, tuple[str | None, str | None]] = {
         "Returns the slice `s[start:end]`. *end* defaults to the length of *s*. "
         "Non-numeric *start*/*end* values default to `0` and `len(s)` respectively.",
     ),
-    "bool":      (
+    "bool": (
         "bool(value) → bool | null",
         "Soft boolean conversion. Returns `null` if *value* is `null`. "
         "Structs: `true` if non-empty. Otherwise delegates to `to_bool`.",
     ),
-    "num":       (
+    "num": (
         "num(value) → num | null",
         "Soft numeric conversion. Returns `null` if *value* is `null` or a collection type. "
         "Otherwise delegates to `to_num`.",
     ),
-    "str":       (
+    "str": (
         "str(value) → str | null",
         "Soft string conversion. Returns `null` if *value* is `null`. Otherwise delegates to `to_str`.",
     ),
-    "to_bool":   (
+    "to_bool": (
         "to_bool(value) → bool",
         "Explicit boolean conversion. Numbers: `false` if `0`. "
         "Strings: parses `'true'`/`'false'`/`'none'`; non-empty strings are `true`. Never returns `null`.",
     ),
-    "to_num":    (
+    "to_num": (
         "to_num(value) → num",
         "Explicit numeric conversion. Booleans become `1`/`0`. "
         "Strings are parsed as integer or float; unrecognised strings return `0`. Never returns `null`.",
     ),
-    "to_str":    (
+    "to_str": (
         "to_str(value) → str",
         "Explicit string conversion. Booleans become lowercase `'true'`/`'false'`. `null` becomes `''`. Never returns `null`.",
     ),
-    "sin":       (
+    "sin": (
         "sin(x) → num",
         "Returns the sine of *x*, where *x* is in radians.",
     ),
-    "cos":       (
+    "cos": (
         "cos(x) → num",
         "Returns the cosine of *x*, where *x* is in radians.",
     ),
-    "sqrt":      (
+    "sqrt": (
         "sqrt(x) → num",
         "Returns the square root of *x*.",
     ),
@@ -257,13 +260,15 @@ class SymbolTableBuilder:
         _sentinel = FileMeta(line=(0, 0), column=(0, 0))
         for enum_val in BuiltinFunctionEnum:
             sig, desc = _BUILTIN_DOCS.get(enum_val.value, (None, None))
-            self._global.define(Symbol(
-                name=enum_val.value,
-                kind=SymbolKind.BUILTIN,
-                defined_at=_sentinel,
-                signature=sig,
-                description=desc,
-            ))
+            self._global.define(
+                Symbol(
+                    name=enum_val.value,
+                    kind=SymbolKind.BUILTIN,
+                    defined_at=_sentinel,
+                    signature=sig,
+                    description=desc,
+                )
+            )
 
     def build(self, statements: list[Statement]) -> SymbolTable:
         for stmt in statements:
@@ -453,7 +458,7 @@ class SymbolTableBuilder:
         self._push()
         for action in node.generated_actions:
             self._visit(action)
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._pop()
         self._lenient = was_lenient
@@ -474,7 +479,7 @@ class SymbolTableBuilder:
             out_fm = _file_meta(out)
             if out_fm and out.name:
                 self._define(out.name, SymbolKind.VARIABLE, out_fm)
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._pop()
 
@@ -491,7 +496,7 @@ class SymbolTableBuilder:
             out_fm = _file_meta(out)
             if out_fm and out.name:
                 self._define(out.name, SymbolKind.VARIABLE, out_fm)
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._lenient = was_lenient
 
@@ -500,7 +505,7 @@ class SymbolTableBuilder:
         if fm and node.name:
             self._define(node.name, SymbolKind.FRAME, fm)
         self._push()
-        for child in (node.children or []):
+        for child in node.children or []:
             if isinstance(child, Slot):
                 self._visit_slot(child)
             else:
@@ -534,45 +539,42 @@ class SymbolTableBuilder:
     def _visit_repeat_each(self, node: RepeatEachBlock) -> None:
         fm = _file_meta(node)
         if fm:
-            for var_name in (node.as_vars or []):
+            for var_name in node.as_vars or []:
                 self._define(var_name, SymbolKind.VARIABLE, fm)
         self._visit_expression(node.each)
         self._push()
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._pop()
 
     def _visit_repeat_times(self, node: RepeatTimesBlock) -> None:
         fm = _file_meta(node)
         if fm:
-            for var_name in (node.as_vars or []):
+            for var_name in node.as_vars or []:
                 self._define(var_name, SymbolKind.VARIABLE, fm)
         self._push()
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._pop()
 
     def _visit_repeat_while(self, node: RepeatWhileBlock) -> None:
         self._visit_expression(node.condition)
         self._push()
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._pop()
 
     def _visit_repeat_until(self, node: RepeatUntilBlock) -> None:
         self._visit_expression(node.condition)
         self._push()
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._pop()
 
     def _visit_do(self, node: DoStatement) -> None:
         fm = _file_meta(node)
         if fm and node.name:
-            is_tool = (
-                node.callable_type == CallableTypeEnum.TOOL
-                or "." in node.name
-            )
+            is_tool = node.callable_type == CallableTypeEnum.TOOL or "." in node.name
             lookup_name = node.name.split(".")[0] if is_tool else node.name
             self._call_reference(lookup_name, fm)
         self._visit_expression(node.using)
@@ -583,26 +585,26 @@ class SymbolTableBuilder:
                 self.unresolved_schemas.append((node.producing_schema, fm))
 
     def _visit_condition_block(self, node: ConditionBlock) -> None:
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
 
     def _visit_if_block(self, node: IfBlock) -> None:
         self._visit_expression(node.condition)
         self._push()
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._pop()
 
     def _visit_elif_block(self, node: ElifBlock) -> None:
         self._visit_expression(node.condition)
         self._push()
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._pop()
 
     def _visit_else_block(self, node: ElseBlock) -> None:
         self._push()
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._pop()
 
@@ -612,6 +614,6 @@ class SymbolTableBuilder:
 
     def _visit_block(self, node: BlockStatement) -> None:
         self._push()
-        for child in (node.children or []):
+        for child in node.children or []:
             self._visit(child)
         self._pop()

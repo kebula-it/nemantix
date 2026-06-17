@@ -17,10 +17,9 @@ class WebSearchToolset(Toolset):
         self.region = region
 
     @tool
-    def search_web(self,
-                   query: str,
-                   max_results: int = 5,
-                   backend: str = "auto") -> List[Dict[str, str]]:
+    def search_web(
+        self, query: str, max_results: int = 5, backend: str = "auto"
+    ) -> List[Dict[str, str]]:
         """
         Performs a general web search with adjustable result limits.
 
@@ -47,21 +46,22 @@ class WebSearchToolset(Toolset):
                     backend=backend,
                 )
                 for r in ddgs_gen:
-                    results.append({
-                        "title": r.get("title", ""),
-                        "link": r.get("href", ""),
-                        "snippet": r.get("body", ""),
-                    })
+                    results.append(
+                        {
+                            "title": r.get("title", ""),
+                            "link": r.get("href", ""),
+                            "snippet": r.get("body", ""),
+                        }
+                    )
         except Exception as e:
             return [{"error": f"Search failed: {str(e)}"}]
 
         return results
 
     @tool
-    def search_news(self,
-                    query: str,
-                    max_results: int = 5,
-                    backend: str = "auto") -> List[Dict[str, str]]:
+    def search_news(
+        self, query: str, max_results: int = 5, backend: str = "auto"
+    ) -> List[Dict[str, str]]:
         """
         Searches strictly for news articles with adjustable result limits.
 
@@ -88,13 +88,15 @@ class WebSearchToolset(Toolset):
                     backend=backend,
                 )
                 for r in ddgs_gen:
-                    results.append({
-                        "title": r.get("title", ""),
-                        "link": r.get("url", ""),
-                        "source": r.get("source", ""),
-                        "date": r.get("date", ""),
-                        "snippet": r.get("body", ""),
-                    })
+                    results.append(
+                        {
+                            "title": r.get("title", ""),
+                            "link": r.get("url", ""),
+                            "source": r.get("source", ""),
+                            "date": r.get("date", ""),
+                            "snippet": r.get("body", ""),
+                        }
+                    )
         except Exception as e:
             return [{"error": f"News search failed: {str(e)}"}]
 

@@ -18,11 +18,11 @@ def get_package_logger(
     logger = logging.getLogger(name)
 
     if level not in [
-            logging.DEBUG,
-            logging.INFO,
-            logging.WARNING,
-            logging.ERROR,
-            logging.CRITICAL,
+        logging.DEBUG,
+        logging.INFO,
+        logging.WARNING,
+        logging.ERROR,
+        logging.CRITICAL,
     ]:
         logger.setLevel(logging.INFO)
     else:
@@ -30,7 +30,8 @@ def get_package_logger(
 
     if not logger.handlers:
         formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] [%(name)s]:[%(lineno)d] %(message)s")
+            "%(asctime)s [%(levelname)s] [%(name)s]:[%(lineno)d] %(message)s"
+        )
 
         # package specific Handler(s)
         if log_file is not None:
@@ -47,6 +48,7 @@ def get_package_logger(
         # logging events
         if name != "nemantix.hub.observer":
             from nemantix.hub.observer import ObserverLogHandler
+
             hub_handler = ObserverLogHandler()
             hub_handler.setFormatter(formatter)
             logger.addHandler(hub_handler)

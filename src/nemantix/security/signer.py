@@ -46,7 +46,7 @@ class Signer:
         content_lines = [f"{SIGNATURE_HEADER} {signature}"] + content_lines
         nxv_content = "\n".join(content_lines)
 
-        output_path = script.get_location_with_extension(ext='nxv')
+        output_path = script.get_location_with_extension(ext="nxv")
         nxv_script = Script(location=output_path, source_manager=script.source_manager)
         nxv_script.write(content=nxv_content, location=output_path)
 

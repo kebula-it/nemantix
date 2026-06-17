@@ -1,4 +1,3 @@
-
 from abc import ABC, abstractmethod
 from typing import Callable
 
@@ -16,9 +15,9 @@ class EventHub:
         }
 
     @staticmethod
-    def get_active_hub(event_type: EventType) -> 'EventHub | None':
+    def get_active_hub(event_type: EventType) -> "EventHub | None":
         """Returns an EventHub instance (of current context) if it exists and if it subscribes to
-           the provided event type.
+        the provided event type.
         """
         hub = context.event_hub.get()
         if hub is not None and hub.has_subscribers(event_type):

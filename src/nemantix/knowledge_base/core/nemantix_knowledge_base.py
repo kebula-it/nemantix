@@ -11,7 +11,10 @@ from nemantix.common.logger import get_package_logger
 from nemantix.common.connectors import DBConnector
 from nemantix.core.exceptions import NemantixException
 from nemantix.knowledge_base.models.base import TextEmbedding
-from nemantix.knowledge_base.persistence.relational_registry import SearchView, DocumentRecord
+from nemantix.knowledge_base.persistence.relational_registry import (
+    SearchView,
+    DocumentRecord,
+)
 from nemantix.knowledge_base.persistence.vector_stores.abstract_store import VectorStore
 from nemantix.knowledge_base.persistence.vector_stores.factory import VectorStoreFactory
 from nemantix.knowledge_base.pipeline.graph_retriever import GraphRAGRetriever
@@ -48,7 +51,9 @@ class NemantixKnowledgeBase:
         self._embedders_cache = {}
         self._graph_cache = {}
 
-        logger.info("Knowledge Base initialized with scope (views): %s", self.config.view_ids)
+        logger.info(
+            "Knowledge Base initialized with scope (views): %s", self.config.view_ids
+        )
 
     @property
     def db(self) -> DBConnector:
@@ -62,15 +67,19 @@ class NemantixKnowledgeBase:
                 password=self.config.db_password,
                 host=self.config.db_host,
                 port=self.config.db_port,
-                database=self.config.db_database
+                database=self.config.db_database,
             )
         return self._db_connector
 
     def _get_embedder(self, model_name: str) -> TextEmbedding:
         if model_name not in self._embedders_cache:
-            from nemantix.knowledge_base.models.embedding import SentenceTransformerWrapper
+            from nemantix.knowledge_base.models.embedding import (
+                SentenceTransformerWrapper,
+            )
 
-            logger.info("[LazyLoad] Loading Embedding Model into RAM (%s)...", model_name)
+            logger.info(
+                "[LazyLoad] Loading Embedding Model into RAM (%s)...", model_name
+            )
             self._embedders_cache[model_name] = SentenceTransformerWrapper(model_name)
 
         return self._embedders_cache[model_name]
@@ -99,7 +108,9 @@ class NemantixKnowledgeBase:
                 logger.error(error_msg)
                 raise NemantixException(error_msg) from e
             except pickle.UnpicklingError as e:
-                raise NemantixException(f"Knowledge Graph file at '{pickle_path}' is corrupted.") from e
+                raise NemantixException(
+                    f"Knowledge Graph file at '{pickle_path}' is corrupted."
+                ) from e
 
         return self._graph_cache[pickle_path]
 
@@ -109,9 +120,14 @@ class NemantixKnowledgeBase:
         by scanning the physical indexes assigned to the current scope.
         """
         with self.db.get_session() as session:
-            views = session.query(SearchView).options(
-                joinedload(SearchView.documents).joinedload(DocumentRecord.indexes)
-            ).filter(SearchView.view_id.in_(self.config.view_ids)).all()
+            views = (
+                session.query(SearchView)
+                .options(
+                    joinedload(SearchView.documents).joinedload(DocumentRecord.indexes)
+                )
+                .filter(SearchView.view_id.in_(self.config.view_ids))
+                .all()
+            )
 
             for view in views:
                 for doc in view.documents:
@@ -124,10 +140,15 @@ class NemantixKnowledgeBase:
         logger.error(error_msg)
         raise NemantixException(error_msg)
 
-    def retrieve(self, query: str, k: int = 5, min_score: float = 0.0,
-                 doc_type: Union[str, List[str], None] = None,
-                 content_type: Union[str, List[str], None] = None,
-                 metadata_filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    def retrieve(
+        self,
+        query: str,
+        k: int = 5,
+        min_score: float = 0.0,
+        doc_type: Union[str, List[str], None] = None,
+        content_type: Union[str, List[str], None] = None,
+        metadata_filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Executes a dense vector search across all collections mapped to the current views,
         enriching hits with context from their respective Knowledge Graphs.
@@ -138,9 +159,14 @@ class NemantixKnowledgeBase:
 
         # DATABASE QUERY (The Map)
         with self.db.get_session() as session:
-            views = session.query(SearchView).options(
-                joinedload(SearchView.documents).joinedload(DocumentRecord.indexes)
-            ).filter(SearchView.view_id.in_(target_views)).all()
+            views = (
+                session.query(SearchView)
+                .options(
+                    joinedload(SearchView.documents).joinedload(DocumentRecord.indexes)
+                )
+                .filter(SearchView.view_id.in_(target_views))
+                .all()
+            )
 
             if not views:
                 raise NemantixException(
@@ -154,7 +180,6 @@ class NemantixKnowledgeBase:
 
             for view in views:
                 for doc in view.documents:
-
                     if doc_type and doc.doc_type not in doc_type:
                         continue
 
@@ -174,12 +199,16 @@ class NemantixKnowledgeBase:
                             "collection": chosen_index.index_name,
                             "graph_path": chosen_index.graph_path,
                             "embedding_model": chosen_index.embedding_model,
-                            "doc_ids": set()  # Using set prevents duplicate lookups
+                            "doc_ids": set(),  # Using set prevents duplicate lookups
                         }
 
                     spaces_map[idx_name]["doc_ids"].add(doc.doc_id)
 
-        logger.info("Found %d unique documents spread across %d physical Indexes.", len(seen_docs), len(spaces_map))
+        logger.info(
+            "Found %d unique documents spread across %d physical Indexes.",
+            len(seen_docs),
+            len(spaces_map),
+        )
 
         # VECTOR SEARCH AND GRAPH ENRICHMENT
         all_results = []
@@ -202,37 +231,35 @@ class NemantixKnowledgeBase:
                 {
                     "field": "doc_id",
                     "operator": "in",
-                    "value": list(space_data["doc_ids"])
+                    "value": list(space_data["doc_ids"]),
                 }
             ]
 
             if content_type:
-                c_types = [content_type] if isinstance(content_type, str) else content_type
-                filters_list.append({
-                    "field": "item_type",
-                    "operator": "in",
-                    "value": c_types
-                })
+                c_types = (
+                    [content_type] if isinstance(content_type, str) else content_type
+                )
+                filters_list.append(
+                    {"field": "item_type", "operator": "in", "value": c_types}
+                )
 
             if metadata_filters and isinstance(metadata_filters, dict):
                 for key, val in metadata_filters.items():
-                    filters_list.append({
-                        "field": key,
-                        "operator": "==",
-                        "value": val
-                    })
+                    filters_list.append({"field": key, "operator": "==", "value": val})
 
             # Load Engines
             kg = self._get_graph(space_data["graph_path"])
             current_vector_store = self._get_vector_store(index_name)
 
             # Execute Retrieval
-            retriever = GraphRAGRetriever(vector_store=current_vector_store, knowledge_graph=kg)
+            retriever = GraphRAGRetriever(
+                vector_store=current_vector_store, knowledge_graph=kg
+            )
             space_results = retriever.retrieve(
                 query_vector=specific_query_vector,
                 k=k,
                 min_score=min_score,
-                filter_dict=filters_list
+                filter_dict=filters_list,
             )
 
             all_results.extend(space_results)

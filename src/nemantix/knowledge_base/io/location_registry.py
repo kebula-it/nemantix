@@ -12,7 +12,7 @@ class LocationRegistry:
     # Register the provider by associating it with the string used in Location
     _providers = {
         "path": LocalFileProvider(),
-        "file": LocalFileProvider()  # Useful alias
+        "file": LocalFileProvider(),  # Useful alias
     }
 
     @classmethod
@@ -24,6 +24,7 @@ class LocationRegistry:
         provider = cls._providers.get(location.location_type)
         if not provider:
             raise ValueError(
-                f"Operation failed: No provider configured for location type '{location.location_type}'")
+                f"Operation failed: No provider configured for location type '{location.location_type}'"
+            )
 
         return provider.get_local_path(location)

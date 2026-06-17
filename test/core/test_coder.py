@@ -48,7 +48,6 @@ class ImportToolsetStmt:
         return f"{self.name}:{self.alias}" if self.alias else f"{self.name}"
 
 
-
 @dataclass
 class ActionInfo:
     semantics: str
@@ -64,8 +63,12 @@ class ActionInfo:
 
 
 class FakeLLMProxy:
-    def __init__(self, responses: list[str], raw_responses: list[str] | None = None,
-                 usage: LLMUsage | None = None):
+    def __init__(
+        self,
+        responses: list[str],
+        raw_responses: list[str] | None = None,
+        usage: LLMUsage | None = None,
+    ):
         self._responses = list(responses)
         self._raw_responses = list(raw_responses or [])
         self.calls: list[list[dict]] = []
@@ -73,21 +76,26 @@ class FakeLLMProxy:
         self._usage = usage or LLMUsage(input_tokens=0, output_tokens=0)
 
     def get_name(self) -> str:
-        return 'Fake-LLM'
+        return "Fake-LLM"
 
     def invoke_grammar_based(self, messages):
         self.calls.append(messages)
         if not self._responses:
             raise RuntimeError("No more fake responses configured")
-        return LLMResponse(text=self._responses.pop(0), tool_calls=[],
-                           usage=self._usage, proxy=self)
+        return LLMResponse(
+            text=self._responses.pop(0), tool_calls=[], usage=self._usage, proxy=self
+        )
 
     def invoke(self, prompt):
         self.raw_calls.append(prompt)
         if not self._raw_responses:
             raise RuntimeError("No more fake raw responses configured")
-        return LLMResponse(text=self._raw_responses.pop(0), tool_calls=[],
-                           usage=self._usage, proxy=self)
+        return LLMResponse(
+            text=self._raw_responses.pop(0),
+            tool_calls=[],
+            usage=self._usage,
+            proxy=self,
+        )
 
 
 @dataclass
@@ -101,7 +109,9 @@ class DummyStatement:
 
 
 class DummyAction(DummyStatement):
-    def __init__(self, name: str, line_start: int, line_end: int, qualifier=None, children=None):
+    def __init__(
+        self, name: str, line_start: int, line_end: int, qualifier=None, children=None
+    ):
         super().__init__(line_start, line_end)
         self.name = name
         self.qualifier = qualifier
@@ -138,7 +148,10 @@ class DummyDeliberate(DummyStatement):
 def make_do_statement(name: str, line_start: int, line_end: int):
     node = DoStatement.__new__(DoStatement)
     node.name = name
-    node.meta = {"file_meta": FileMeta((line_start, line_end), (line_start+1, line_end+1)), "node_meta":None}
+    node.meta = {
+        "file_meta": FileMeta((line_start, line_end), (line_start + 1, line_end + 1)),
+        "node_meta": None,
+    }
     return node
 
 
@@ -162,7 +175,9 @@ def test_qualifier_coding_map_matches_new_coder_rules():
 
 
 def test_extract_toolset_docs_map_import_all(monkeypatch):
-    monkeypatch.setattr(Toolset, "get_registered_classes", classmethod(lambda cls: [MyToolset]))
+    monkeypatch.setattr(
+        Toolset, "get_registered_classes", classmethod(lambda cls: [MyToolset])
+    )
 
     stmt = ImportToolsetStmt(name="MyToolset", elements="*")
     out = Coder._extract_toolset_docs_map([stmt])
@@ -176,7 +191,9 @@ def test_extract_toolset_docs_map_import_all(monkeypatch):
 
 
 def test_extract_toolset_docs_map_import_subset_list(monkeypatch):
-    monkeypatch.setattr(Toolset, "get_registered_classes", classmethod(lambda cls: [MyToolset]))
+    monkeypatch.setattr(
+        Toolset, "get_registered_classes", classmethod(lambda cls: [MyToolset])
+    )
 
     stmt = ImportToolsetStmt(name="MyToolset", elements=["fake_tool2"])
     out = Coder._extract_toolset_docs_map([stmt])
@@ -185,10 +202,14 @@ def test_extract_toolset_docs_map_import_subset_list(monkeypatch):
 
 
 def test_extract_toolset_docs_map_raises_if_toolset_not_available(monkeypatch):
-    monkeypatch.setattr(Toolset, "get_registered_classes", classmethod(lambda cls: [MyToolset]))
+    monkeypatch.setattr(
+        Toolset, "get_registered_classes", classmethod(lambda cls: [MyToolset])
+    )
 
     stmt = ImportToolsetStmt(name="MissingToolset", elements="*")
-    with pytest.raises(NemantixException, match=r"non-available toolset 'MissingToolset'"):
+    with pytest.raises(
+        NemantixException, match=r"non-available toolset 'MissingToolset'"
+    ):
         Coder._extract_toolset_docs_map([stmt])
 
 
@@ -206,7 +227,9 @@ def test_extract_actions_semantics_merges_required_scripts():
         "B1": ActionInfo("bsem", [], []),
     }
 
-    out = coder._extract_actions_semantics(script=script, required_scripts=[required_script])
+    out = coder._extract_actions_semantics(
+        script=script, required_scripts=[required_script]
+    )
 
     assert out == {
         "A1": {"semantics": "sem1", "ins": [], "outs": []},
@@ -219,8 +242,8 @@ def test_extract_do_str_collects_nested_matching_toolset_calls():
     coder = Coder(llm_proxy=FakeLLMProxy(responses=["unused"]))
     script = type("S", (), {})()
     script.content = "do myts.first\ndo otherts.skip\ndo myts.first\ndo myts.second"
-    script.read = lambda **__: script.content.split('\n')
-    script.read_as_list = lambda **__: script.content.split('\n')
+    script.read = lambda **__: script.content.split("\n")
+    script.read_as_list = lambda **__: script.content.split("\n")
     script.actions = {
         "A": DummyAction(
             "A",
@@ -228,7 +251,9 @@ def test_extract_do_str_collects_nested_matching_toolset_calls():
             1,
             children=[
                 make_do_statement("myts.first", 1, 1),
-                make_block_statement(children=[make_do_statement("otherts.skip", 2, 2)]),
+                make_block_statement(
+                    children=[make_do_statement("otherts.skip", 2, 2)]
+                ),
             ],
         )
     }
@@ -264,8 +289,13 @@ def test_check_and_fix_generated_code_success_first_try(monkeypatch):
     monkeypatch.setattr(Script, "parse", lambda self: None)
 
     original = ["A", "B", "C", "D"]
-    out, _ = coder._check_and_fix_generated_code(messages=[], result="X\nY", block_start_line=1, block_end_line=2,
-                                              original_code=original)
+    out, _ = coder._check_and_fix_generated_code(
+        messages=[],
+        result="X\nY",
+        block_start_line=1,
+        block_end_line=2,
+        original_code=original,
+    )
 
     assert out == "A\n    X\n    Y\nD"
     assert llm.calls == []
@@ -285,8 +315,13 @@ def test_check_and_fix_generated_code_retries_then_succeeds(monkeypatch):
 
     monkeypatch.setattr(Script, "parse", parse_side_effect)
 
-    out, _ = coder._check_and_fix_generated_code(messages=[], result="bad", block_start_line=0, block_end_line=0,
-                                              original_code=["ORIG"])
+    out, _ = coder._check_and_fix_generated_code(
+        messages=[],
+        result="bad",
+        block_start_line=0,
+        block_end_line=0,
+        original_code=["ORIG"],
+    )
 
     assert "fixed" in out
     assert len(llm.calls) == 1
@@ -296,16 +331,27 @@ def test_check_and_fix_generated_code_raises_after_max_attempts(monkeypatch):
     llm = FakeLLMProxy(responses=["still bad"] * 6)
     coder = Coder(llm_proxy=llm)
 
-    monkeypatch.setattr(Script, "parse", lambda self: (_ for _ in ()).throw(LarkError("always bad")))
+    monkeypatch.setattr(
+        Script, "parse", lambda self: (_ for _ in ()).throw(LarkError("always bad"))
+    )
 
-    with pytest.raises(NemantixException, match=r"Could not generate parsable code after 6 attempts"):
-        coder._check_and_fix_generated_code(messages=[], result="bad", block_start_line=0, block_end_line=0,
-                                            original_code=["ORIG"])
+    with pytest.raises(
+        NemantixException, match=r"Could not generate parsable code after 6 attempts"
+    ):
+        coder._check_and_fix_generated_code(
+            messages=[],
+            result="bad",
+            block_start_line=0,
+            block_end_line=0,
+            original_code=["ORIG"],
+        )
 
     assert len(llm.calls) == 6
 
 
-def test_code_script_deliberates_uses_deliberate_qualifier_and_copies_non_deliberates(monkeypatch):
+def test_code_script_deliberates_uses_deliberate_qualifier_and_copies_non_deliberates(
+    monkeypatch,
+):
     llm = FakeLLMProxy(responses=["unused"])
     coder = Coder(llm_proxy=llm)
 
@@ -328,7 +374,9 @@ def test_code_script_deliberates_uses_deliberate_qualifier_and_copies_non_delibe
     req = DummyStatement(1, 1)
     frame = DummyStatement(2, 2)
     action = DummyAction("A", 3, 3)
-    d_skip = DummyDeliberate("D_SKIP", 4, 4, qualifier=(PlanQualifierEnum.FROZEN, PlanQualifierEnum.FROZEN))
+    d_skip = DummyDeliberate(
+        "D_SKIP", 4, 4, qualifier=(PlanQualifierEnum.FROZEN, PlanQualifierEnum.FROZEN)
+    )
     d_code = DummyDeliberate("D_CODE", 5, 5, qualifier=None)
 
     script = type("ScriptObj", (), {})()
@@ -352,7 +400,9 @@ def test_code_script_deliberates_uses_deliberate_qualifier_and_copies_non_delibe
 
 
 def test_generate_tool_removes_markdown_fences():
-    llm = FakeLLMProxy(responses=[], raw_responses=["```python\nclass X:\n    pass\n```"])
+    llm = FakeLLMProxy(
+        responses=[], raw_responses=["```python\nclass X:\n    pass\n```"]
+    )
     coder = Coder(llm_proxy=llm)
 
     out = coder.generate_tool(
@@ -368,6 +418,7 @@ def test_generate_tool_removes_markdown_fences():
 # =============================================================================
 # LLM usage events emitted by the coder
 # =============================================================================
+
 
 def _capture_events(hub: EventHub, event_type: EventType) -> list[Event]:
     captured = []
@@ -473,7 +524,9 @@ def test_code_script_toolsets_max_retries_raises(isolated_event_hub):
     assert len(llm.raw_calls) == 2
 
 
-def test_check_and_fix_retries_emit_one_llm_event_per_retry(monkeypatch, isolated_event_hub):
+def test_check_and_fix_retries_emit_one_llm_event_per_retry(
+    monkeypatch, isolated_event_hub
+):
     usage = LLMUsage(input_tokens=30, output_tokens=10)
     llm = FakeLLMProxy(responses=["fixed"] * 2, usage=usage)
     coder = Coder(llm_proxy=llm)
@@ -485,13 +538,19 @@ def test_check_and_fix_retries_emit_one_llm_event_per_retry(monkeypatch, isolate
         calls["n"] += 1
         if calls["n"] == 1:
             from lark import LarkError
+
             raise LarkError("bad syntax")
 
     monkeypatch.setattr(Script, "parse", parse_side_effect)
 
-    coder._check_and_fix_generated_code(messages=[], result="bad", block_start_line=0,
-                                        block_end_line=0, original_code=["ORIG"],
-                                        scope="test")
+    coder._check_and_fix_generated_code(
+        messages=[],
+        result="bad",
+        block_start_line=0,
+        block_end_line=0,
+        original_code=["ORIG"],
+        scope="test",
+    )
 
     # One retry LLM call → one LLM event with the retry's usage
     assert len(llm_events) == 1

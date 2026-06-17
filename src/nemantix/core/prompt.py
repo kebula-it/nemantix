@@ -9,8 +9,8 @@ CORE CONCEPTS
 """
 
 CODING_SYSTEM_PROMPT = (
-        PROLOGUE
-        + """
+    PROLOGUE
+    + """
 PROMPTS INSIDE CODE (CRITICAL)
 NXS may contain natural-language prompts delimited as:
 - inline prompt: `>> ... <<` on the same line
@@ -436,8 +436,8 @@ EVALUATE_DELIBERATE_RULES = """- The input `plan` must be treated as a draft imp
 """
 
 CODING_DELIBERATE_ADDITIONAL_INFO = (
-        CODING_ADDITIONAL_INFO
-        + """
+    CODING_ADDITIONAL_INFO
+    + """
 OTHER DELIBERATES
 {deliberates}
 
@@ -577,8 +577,8 @@ Strictly follow these rules:
 FIX_GENERATION = "The code you generated gave an error during the parsing. Fix the error and rewrite the full corrected code and nothing else. This is the error:"
 
 INTENT_PROMPT = (
-        PROLOGUE
-        + """
+    PROLOGUE
+    + """
 For each `action` block in the following pseudo code, produce a brief doc string.
 Produce a JSON with the name of the action and the docstring. Output example:
 {"write_file": "Writes the given string to the specified file.",
@@ -689,11 +689,17 @@ Strictly follow these rules:
     5. The name of the frame must not contain any white space, use camel case or snake case.
 """
 
-GEN_FRAME_PROMPT = PROLOGUE + """
-Generate a NXS Frame based on the provided name, and custom DSL usage syntax.""" + FRAMES_DSL
+GEN_FRAME_PROMPT = (
+    PROLOGUE
+    + """
+Generate a NXS Frame based on the provided name, and custom DSL usage syntax."""
+    + FRAMES_DSL
+)
 
 
-DO_AS_FRAMES_PROMPT  =  PROLOGUE + """
+DO_AS_FRAMES_PROMPT = (
+    PROLOGUE
+    + """
 Generate a NXS Frame based on the provided custom DSL usage syntax.
 The generated frame must follow the description given in the `as` clause of this `do` statement and the information about the called function. 
 The purpose of the frame is to give an output format for the tool/action/built-in that is being called.
@@ -702,7 +708,9 @@ DO STATEMENT
 {do_statement}
 CALLABLE INFO
 {callable_info}
-""" + FRAMES_DSL
+"""
+    + FRAMES_DSL
+)
 
 SCHEMA_APPLY_PROMPT = """
 Map each output variable name to the most appropriate slot of frame '{frame_name}'.
@@ -713,32 +721,37 @@ Omit variables with no clear slot match.
 """
 
 # Interpreter: semantic inclusion prompts
-RIGHT_SEM_INCL_PROMPT = ('Semantic inclusion (a ~> b) is a form of conceptual implication or semantic '
-                         'specialization which is more restrictive than usual similarity '
-                         'between two values: means that "a" is semantically included in "b". '
-                         '(think about "a" and "b" as two ontologies, and check whether "a" is '
-                         'a subset of "b".) '
-                         'For example: ["dog" ~> "animal"] is true - because all dogs are'
-                         'animals, whereas ["animal" ~> "dog"] is false - because there'
-                         'are animals that are not dogs (but lions, fishes, etc). NOTE:'
-                         'you should think in this way to solve semantic inclusion.')
-LEFT_SEM_INCL_PROMPT = ('Semantic inclusion (a <~ b) is a form of conceptual implication or semantic '
-                        'specialization which is more restrictive than usual similarity '
-                        'between two values: means that "b" is semantically included in "a". '
-                        '(think about "a" and "b" as two ontologies, and check whether "b" is '
-                        'a subset of "a".) '
-                        'For example: ["animal" <~ "dog"] is true - because all dogs are'
-                        'animals, whereas ["dog" <~ "animal"] is false - because there'
-                        'are animals that are not dogs (but lions, fishes, etc). NOTE:'
-                        'you should think in this way to solve semantic inclusion.')
-SEM_INCL_TEMPLATE = ('Task: Evaluate the expression: [{}]. Return true or false,'
-                     'along with a score in 0-1 range that quantifies the degree of '
-                     'semantic inclusion (0: weak or none, 1: full or strong).')
+RIGHT_SEM_INCL_PROMPT = (
+    "Semantic inclusion (a ~> b) is a form of conceptual implication or semantic "
+    "specialization which is more restrictive than usual similarity "
+    'between two values: means that "a" is semantically included in "b". '
+    '(think about "a" and "b" as two ontologies, and check whether "a" is '
+    'a subset of "b".) '
+    'For example: ["dog" ~> "animal"] is true - because all dogs are'
+    'animals, whereas ["animal" ~> "dog"] is false - because there'
+    "are animals that are not dogs (but lions, fishes, etc). NOTE:"
+    "you should think in this way to solve semantic inclusion."
+)
+LEFT_SEM_INCL_PROMPT = (
+    "Semantic inclusion (a <~ b) is a form of conceptual implication or semantic "
+    "specialization which is more restrictive than usual similarity "
+    'between two values: means that "b" is semantically included in "a". '
+    '(think about "a" and "b" as two ontologies, and check whether "b" is '
+    'a subset of "a".) '
+    'For example: ["animal" <~ "dog"] is true - because all dogs are'
+    'animals, whereas ["dog" <~ "animal"] is false - because there'
+    "are animals that are not dogs (but lions, fishes, etc). NOTE:"
+    "you should think in this way to solve semantic inclusion."
+)
+SEM_INCL_TEMPLATE = (
+    "Task: Evaluate the expression: [{}]. Return true or false,"
+    "along with a score in 0-1 range that quantifies the degree of "
+    "semantic inclusion (0: weak or none, 1: full or strong)."
+)
 
 
 ##################################################################
-CODE_SUMMARY_PROMPT = \
-"""You are an expert in the NXS programming language.
+CODE_SUMMARY_PROMPT = """You are an expert in the NXS programming language.
 
 Read the following NXS code block and generate its docstring.
 

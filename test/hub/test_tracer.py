@@ -11,6 +11,7 @@ from nemantix.hub.tracer import Tracer, _NavNode
 # Event helpers (reuse same pattern as test_profiler.py)
 # =============================================================================
 
+
 def make_enter_event(name: str, type_: str, timestamp: float) -> Event:
     return Event(
         type=EventType.CALL_ENTER,
@@ -47,7 +48,9 @@ def make_coding_start_event(scope: str, type_: str, timestamp: float) -> Event:
     )
 
 
-def make_coding_end_event(scope: str, type_: str, timestamp: float, attempts: int) -> Event:
+def make_coding_end_event(
+    scope: str, type_: str, timestamp: float, attempts: int
+) -> Event:
     return Event(
         type=EventType.CODING_END,
         lines=(1, 1),
@@ -92,6 +95,7 @@ def make_executor_phase_end_event(phase: str, timestamp: float) -> Event:
 # Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def hub() -> EventHub:
     return EventHub()
@@ -112,6 +116,7 @@ def subscribed_tracer(hub) -> Tracer:
 # =============================================================================
 # Group 1: _NavNode properties
 # =============================================================================
+
 
 def test_nav_node_duration():
     """duration is end_abs minus start_abs."""
@@ -134,6 +139,7 @@ def test_nav_node_default_detail():
 # =============================================================================
 # Group 2: _compute_base_time
 # =============================================================================
+
 
 def test_compute_base_time_from_roots_only(hub, subscribed_tracer):
     """Base time is the earliest start_time across completed_roots."""
@@ -170,6 +176,7 @@ def test_compute_base_time_empty_returns_zero(tracer):
 # =============================================================================
 # Group 3: _build_nav_tree
 # =============================================================================
+
 
 def test_build_nav_tree_execution_section_present(hub, subscribed_tracer):
     """With completed roots, _build_nav_tree returns a node labeled 'Execution <name>'."""
@@ -238,6 +245,7 @@ def test_build_nav_tree_execution_children_match_roots(hub, subscribed_tracer):
 # Group 4: _call_to_nav
 # =============================================================================
 
+
 def test_call_to_nav_basic(tracer):
     """_call_to_nav converts a CallNode to a _NavNode with correct label and times."""
     node = CallNode(name="f", type="action", start_time=5.0, end_time=8.0)
@@ -265,6 +273,7 @@ def test_call_to_nav_recursive_children(tracer):
 # Group 5: on_call_enter — inherited from Profiler
 # =============================================================================
 
+
 def test_on_call_enter_adds_root(hub, subscribed_tracer):
     """Root-level calls are added to completed_roots (inherited Profiler behavior)."""
     hub.emit(make_enter_event("my_action", "action", timestamp=0.0))
@@ -290,9 +299,15 @@ def test_on_call_enter_nested_appended_as_child(hub, subscribed_tracer):
 # Group 6: _has_type / _node_is_visible
 # =============================================================================
 
+
 def _make_nav(label, type_tag, start, end, children=None):
-    return _NavNode(label=label, type_tag=type_tag, start_abs=start, end_abs=end,
-                    children=children or [])
+    return _NavNode(
+        label=label,
+        type_tag=type_tag,
+        start_abs=start,
+        end_abs=end,
+        children=children or [],
+    )
 
 
 def test_node_is_visible_no_filters():
@@ -356,6 +371,7 @@ def test_has_type_no_match():
 # Group 7: print() with no data
 # =============================================================================
 
+
 def test_print_no_data(capsys):
     """Tracer.print() with no recorded data prints a sentinel message."""
     t = Tracer()
@@ -367,6 +383,7 @@ def test_print_no_data(capsys):
 # =============================================================================
 # Group 8: _render output
 # =============================================================================
+
 
 def _make_tracer_with_filters(time_filter=None, type_filter=None):
     t = Tracer()
@@ -443,13 +460,17 @@ def test_render_breadcrumb_shown(capsys):
 # Group 9: _interactive_session command handling
 # =============================================================================
 
+
 def _run_session(tracer: Tracer, nodes, commands: list[str], breadcrumb=None):
     """Drive _interactive_session by feeding `commands` one at a time via monkey patched input."""
     it = iter(commands)
 
-    original_input = __builtins__["input"] if isinstance(__builtins__, dict) else __builtins__.input
+    original_input = (
+        __builtins__["input"] if isinstance(__builtins__, dict) else __builtins__.input
+    )
 
     import builtins
+
     call_count = [0]
 
     def fake_input(prompt=""):
@@ -587,6 +608,7 @@ def test_interactive_session_eof_returns_true(capsys):
 # Group 2 (additions): _compute_base_time with executor phases
 # =============================================================================
 
+
 def test_compute_base_time_from_executor_phases_only(hub, subscribed_tracer):
     """When only executor phases are recorded, base_time is the earliest phase start_time."""
     hub.emit(make_executor_phase_start_event("parse_request", timestamp=4.0))
@@ -610,6 +632,7 @@ def test_compute_base_time_phases_earlier_than_roots(hub, subscribed_tracer):
 # Group 3 (additions): _build_nav_tree — "Request resolution" section
 # =============================================================================
 
+
 def test_build_nav_tree_request_resolution_section_present(hub, subscribed_tracer):
     """When executor phases are recorded, _build_nav_tree includes a 'Request resolution' node."""
     hub.emit(make_executor_phase_start_event("parse_request", timestamp=0.0))
@@ -620,7 +643,9 @@ def test_build_nav_tree_request_resolution_section_present(hub, subscribed_trace
     assert "Request resolution" in labels
 
 
-def test_build_nav_tree_request_resolution_children_labeled_by_phase(hub, subscribed_tracer):
+def test_build_nav_tree_request_resolution_children_labeled_by_phase(
+    hub, subscribed_tracer
+):
     """Each executor phase becomes a child of 'Request resolution' with label == phase name."""
     hub.emit(make_executor_phase_start_event("parse_request", timestamp=0.0))
     hub.emit(make_executor_phase_end_event("parse_request", timestamp=1.0))
@@ -636,7 +661,11 @@ def test_build_nav_tree_request_resolution_children_labeled_by_phase(hub, subscr
 
 def test_build_nav_tree_request_resolution_deliberate_in_detail(hub, subscribed_tracer):
     """A phase with a deliberate name carries 'deliberate: X' in its child detail field."""
-    hub.emit(make_executor_phase_start_event("code_deliberate", timestamp=0.0, deliberate="MyDelib"))
+    hub.emit(
+        make_executor_phase_start_event(
+            "code_deliberate", timestamp=0.0, deliberate="MyDelib"
+        )
+    )
     hub.emit(make_executor_phase_end_event("code_deliberate", timestamp=2.0))
 
     nodes = subscribed_tracer._build_nav_tree(base_time=0.0)
@@ -654,7 +683,9 @@ def test_build_nav_tree_no_request_resolution_without_phases(hub, subscribed_tra
     assert "Request resolution" not in labels
 
 
-def test_build_nav_tree_section_order_coding_resolution_execution(hub, subscribed_tracer):
+def test_build_nav_tree_section_order_coding_resolution_execution(
+    hub, subscribed_tracer
+):
     """When all three sections are present, order is: Coding → Request resolution → Execution."""
     hub.emit(make_coding_start_event("D", "deliberate", timestamp=0.0))
     hub.emit(make_coding_end_event("D", "deliberate", timestamp=1.0, attempts=1))
@@ -676,12 +707,16 @@ def test_build_nav_tree_section_order_coding_resolution_execution(hub, subscribe
 # Group 7 (addition): print() guard with executor phases only
 # =============================================================================
 
-def test_print_with_only_executor_phases_does_not_say_no_data(hub, subscribed_tracer, capsys):
+
+def test_print_with_only_executor_phases_does_not_say_no_data(
+    hub, subscribed_tracer, capsys
+):
     """Tracer.print() should not say 'No trace data' when executor phases are the only data."""
     hub.emit(make_executor_phase_start_event("parse_request", timestamp=0.0))
     hub.emit(make_executor_phase_end_event("parse_request", timestamp=1.0))
 
     import builtins
+
     original_input = builtins.input
     builtins.input = lambda _="": (_ for _ in ()).throw(EOFError)
     try:

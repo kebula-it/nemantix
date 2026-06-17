@@ -39,7 +39,11 @@ class DocumentPluginRegistry:
         for ext in plugin.get_supported_extensions():
             normalized = ext.lower().lstrip(".")
             self._plugins_by_extension[normalized] = plugin
-            logger.debug("Registered plugin '%s' for extension '.%s'", plugin.plugin_name, normalized)
+            logger.debug(
+                "Registered plugin '%s' for extension '.%s'",
+                plugin.plugin_name,
+                normalized,
+            )
 
     def get_plugin_for_format(self, doc_format: str) -> BaseDocumentPlugin:
         """
@@ -88,7 +92,9 @@ class DocumentPluginRegistry:
         return self.get_plugin_for_format(extension)
 
     @classmethod
-    def get_available_plugins(cls, package_name="nemantix.knowledge_base.document_plugins"):
+    def get_available_plugins(
+        cls, package_name="nemantix.knowledge_base.document_plugins"
+    ):
         """
         Dynamically scans the specified package for plugin classes and registers them.
 

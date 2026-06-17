@@ -57,7 +57,9 @@ class RemoteFileSystemToolset(Toolset):
                     pass
                 self._ftp_client = None
 
-        logger.debug(f"Connecting {self.protocol.upper()} to {self.host}:{self.port}...")
+        logger.debug(
+            f"Connecting {self.protocol.upper()} to {self.host}:{self.port}..."
+        )
 
         if self.protocol == "ftps":
             ftp = ftplib.FTP_TLS(timeout=self.timeout)
@@ -75,8 +77,11 @@ class RemoteFileSystemToolset(Toolset):
 
     def _get_sftp_connection(self):
         """Internal helper to manage SFTP (SSH) connections."""
-        if (self._ssh_client and self._ssh_client.get_transport()
-                and self._ssh_client.get_transport().is_active()):
+        if (
+            self._ssh_client
+            and self._ssh_client.get_transport()
+            and self._ssh_client.get_transport().is_active()
+        ):
             return self._sftp_client
 
         logger.debug(f"Connecting SFTP to {self.host}:{self.port}...")
@@ -133,13 +138,17 @@ class RemoteFileSystemToolset(Toolset):
                 if directory == ".":
                     directory = sftp.normalize(".")
                 files = sftp.listdir(directory)
-                return ("\n".join(files) if files else f"Directory '{directory}' is empty.")
+                return (
+                    "\n".join(files) if files else f"Directory '{directory}' is empty."
+                )
             else:
                 ftp = self._get_ftp_connection()
                 ftp.cwd(directory)
                 lines = []
                 ftp.retrlines("LIST", lines.append)
-                return ("\n".join(lines) if lines else f"Directory '{directory}' is empty.")
+                return (
+                    "\n".join(lines) if lines else f"Directory '{directory}' is empty."
+                )
         except Exception as e:
             self._reset_connection()
             return f"Error listing files in '{directory}': {str(e)}"

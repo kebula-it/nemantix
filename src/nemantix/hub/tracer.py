@@ -27,7 +27,11 @@ class Tracer(Profiler):
         self._type_filter: Optional[str] = None
 
     def print(self, line_size=114):
-        if not self.coding_stack and not self.executor_phases and not self.completed_roots:
+        if (
+            not self.coding_stack
+            and not self.executor_phases
+            and not self.completed_roots
+        ):
             print("No trace data recorded.")
             return
 
@@ -159,8 +163,9 @@ class Tracer(Profiler):
 
     # --------------------------------------------------------------- interact
 
-    def _interactive_session(self, nodes: List[_NavNode], breadcrumb: list,
-                             line_size: int) -> bool:
+    def _interactive_session(
+        self, nodes: List[_NavNode], breadcrumb: list, line_size: int
+    ) -> bool:
         """
         Run one level of the interactive trace viewer.
         Returns True when the user types 'q' (full quit propagates upward).
@@ -330,4 +335,3 @@ class Tracer(Profiler):
             else "  [idx] expand │ f <ms> <ms> / fc: time filter │ ft <tag> / fct: type filter │ fca: clear all │ q: quit"
         )
         print(hint)
-

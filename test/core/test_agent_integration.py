@@ -44,8 +44,12 @@ def mock_llm_proxy():
     mock_llm = MagicMock(spec=AbstractLLMProxy)
 
     def _resp(text):
-        return LLMResponse(text=text, tool_calls=[], usage=LLMUsage(input_tokens=0, output_tokens=0),
-                           proxy=mock_llm)
+        return LLMResponse(
+            text=text,
+            tool_calls=[],
+            usage=LLMUsage(input_tokens=0, output_tokens=0),
+            proxy=mock_llm,
+        )
 
     def side_effect(prompt, **__):
         # 1. Deliberate Selection Phase
@@ -54,16 +58,18 @@ def mock_llm_proxy():
 
         # 2. JSON Input Extraction Phase
         if "extract the (possible) inputs" in prompt:
-            return _resp(json.dumps(
-                [
-                    {"name": "error_code", "type": "str", "value": "500"},
-                    {
-                        "name": "description",
-                        "type": "str",
-                        "value": "Internal Server Error",
-                    },
-                ]
-            ))
+            return _resp(
+                json.dumps(
+                    [
+                        {"name": "error_code", "type": "str", "value": "500"},
+                        {
+                            "name": "description",
+                            "type": "str",
+                            "value": "Internal Server Error",
+                        },
+                    ]
+                )
+            )
 
         return _resp("")
 
@@ -73,7 +79,9 @@ def mock_llm_proxy():
 
     def invoke_structured_side_effect(prompt, schema=None, **__):
         return StructuredLLMResponse(
-            result=_SelectionSchema(name="GenerateTicket", motivation="matches error ticket creation"),
+            result=_SelectionSchema(
+                name="GenerateTicket", motivation="matches error ticket creation"
+            ),
             usage=LLMUsage(input_tokens=0, output_tokens=0),
             proxy=mock_llm,
         )
@@ -83,8 +91,9 @@ def mock_llm_proxy():
     return mock_llm
 
 
-def test_agent_run_nlp_request(nxc_file, mock_credentials,
-                               dummy_llm_proxy_config_class):
+def test_agent_run_nlp_request(
+    nxc_file, mock_credentials, dummy_llm_proxy_config_class
+):
     """
     Tests the agent using a natural language request.
     Relies on the LLM mock to route to GenerateTicket and extract inputs.

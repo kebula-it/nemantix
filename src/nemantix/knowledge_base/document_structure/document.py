@@ -9,6 +9,7 @@ class Document:
     """
     Represents a unified document within the Knowledge Base.
     """
+
     _default_plugin_registry = None
 
     def __init__(self, doc_id, doc_format, doc_type, location, physical_path=None):
@@ -43,9 +44,13 @@ class Document:
             DocumentPluginRegistry: The initialized plugin registry.
         """
         if cls._default_plugin_registry is None:
-            from nemantix.knowledge_base.document_plugins.plugin_registry import DocumentPluginRegistry
+            from nemantix.knowledge_base.document_plugins.plugin_registry import (
+                DocumentPluginRegistry,
+            )
 
-            cls._default_plugin_registry = DocumentPluginRegistry.get_available_plugins()
+            cls._default_plugin_registry = (
+                DocumentPluginRegistry.get_available_plugins()
+            )
         return cls._default_plugin_registry
 
     @classmethod

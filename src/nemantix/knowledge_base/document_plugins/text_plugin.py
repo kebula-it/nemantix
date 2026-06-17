@@ -36,7 +36,9 @@ class TextDocumentPlugin(BaseDocumentPlugin):
         """
         return [self.LINE_RANGE]
 
-    def build_coordinates(self, start_line: int, end_line: int, **kwargs) -> Coordinates:
+    def build_coordinates(
+        self, start_line: int, end_line: int, **kwargs
+    ) -> Coordinates:
         """
         Constructs a Coordinates object using start and end line numbers.
 
@@ -50,10 +52,7 @@ class TextDocumentPlugin(BaseDocumentPlugin):
         """
         return Coordinates(
             scheme=self.LINE_RANGE,
-            value={
-                "start_line": start_line,
-                "end_line": end_line
-            }
+            value={"start_line": start_line, "end_line": end_line},
         )
 
     def get_start_value(self, coordinates: Coordinates) -> int:
@@ -80,7 +79,9 @@ class TextDocumentPlugin(BaseDocumentPlugin):
         """
         return coordinates.value.get("end_line", 1)
 
-    def get_gap(self, current_cursor: int, next_node_start: int) -> Optional[Coordinates]:
+    def get_gap(
+        self, current_cursor: int, next_node_start: int
+    ) -> Optional[Coordinates]:
         """
         Determines if there are unassigned lines between the cursor and the next node.
 
@@ -94,13 +95,12 @@ class TextDocumentPlugin(BaseDocumentPlugin):
         # Se il prossimo nodo inizia DOPO il cursore, abbiamo trovato un gap!
         if next_node_start > current_cursor:
             return self.build_coordinates(
-                start_line=current_cursor,
-                end_line=next_node_start - 1
+                start_line=current_cursor, end_line=next_node_start - 1
             )
 
         return None
 
-    def get_coordinate_extraction_guidelines(self, doc_format: str = 'txt') -> dict:
+    def get_coordinate_extraction_guidelines(self, doc_format: str = "txt") -> dict:
         """
         Provides guidelines for the LLM on how to map coordinates for text documents.
 
@@ -121,10 +121,7 @@ class TextDocumentPlugin(BaseDocumentPlugin):
             "description": base_desc,
             "example": {
                 "scheme": "text.line_range",
-                "value": {
-                    "start_line": 10,
-                    "end_line": 30
-                }
+                "value": {"start_line": 10, "end_line": 30},
             },
         }
 
@@ -197,7 +194,7 @@ class TextDocumentPlugin(BaseDocumentPlugin):
         start_line = coords.get("start_line", 1)
         end_line = coords.get("end_line", len(lines))
 
-        return "\n".join(lines[start_line - 1:end_line]).strip()
+        return "\n".join(lines[start_line - 1 : end_line]).strip()
 
     def build_doc_id(self, doc_format: str, content: str) -> str:
         """
@@ -230,7 +227,7 @@ class TextDocumentPlugin(BaseDocumentPlugin):
 
         _, ext = os.path.splitext(file_path)
 
-        doc_format = ext.lower().strip('.') if ext else "txt"
+        doc_format = ext.lower().strip(".") if ext else "txt"
 
         content = self.read_content(location)
         doc_id = self.build_doc_id(doc_format, content)
@@ -294,7 +291,7 @@ class TextDocumentPlugin(BaseDocumentPlugin):
             tuple: A sorting tuple ensuring natural top-to-bottom document order.
         """
         value = coordinates.value
-        return value.get("start_line", 10 ** 12), -value.get("end_line", 0)
+        return value.get("start_line", 10**12), -value.get("end_line", 0)
 
     def can_merge_coordinates(self, coords1: Coordinates, coords2: Coordinates) -> bool:
         """
@@ -308,10 +305,12 @@ class TextDocumentPlugin(BaseDocumentPlugin):
             bool: True if the second chunk starts immediately after or during the first chunk.
         """
         end1 = coords1.value.get("end_line", 0)
-        start2 = coords2.value.get("start_line", 10 ** 12)
+        start2 = coords2.value.get("start_line", 10**12)
         return start2 <= end1 + 1
 
-    def is_out_of_scope(self, parent_coords: Coordinates, child_coords: Coordinates) -> bool:
+    def is_out_of_scope(
+        self, parent_coords: Coordinates, child_coords: Coordinates
+    ) -> bool:
         """
         Determines if a child node's text falls outside the parent's line range.
 
@@ -323,10 +322,12 @@ class TextDocumentPlugin(BaseDocumentPlugin):
             bool: True if the child starts strictly after the parent ends.
         """
         parent_end = parent_coords.value.get("end_line", 0)
-        child_start = child_coords.value.get("start_line", 10 ** 12)
+        child_start = child_coords.value.get("start_line", 10**12)
         return parent_end < child_start
 
-    def get_bounding_coordinates(self, coords1: Coordinates, coords2: Coordinates) -> Coordinates:
+    def get_bounding_coordinates(
+        self, coords1: Coordinates, coords2: Coordinates
+    ) -> Coordinates:
         """
         Creates a new boundary that fully envelops both sets of lines.
 
@@ -343,7 +344,9 @@ class TextDocumentPlugin(BaseDocumentPlugin):
         return Coordinates(
             scheme=self.LINE_RANGE,
             value={
-                "start_line": min(v1.get("start_line", 10 ** 12), v2.get("start_line", 10 ** 12)),
-                "end_line": max(v1.get("end_line", 0), v2.get("end_line", 0))
-            }
+                "start_line": min(
+                    v1.get("start_line", 10**12), v2.get("start_line", 10**12)
+                ),
+                "end_line": max(v1.get("end_line", 0), v2.get("end_line", 0)),
+            },
         )

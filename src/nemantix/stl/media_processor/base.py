@@ -54,16 +54,20 @@ class MediaToolset(Toolset):
         # Try Image
         try:
             with Image.open(file_path) as img:
-                return (f"Image Info:\nFormat: {img.format}\n"
-                        f"Size: {img.size} (WxH)\nMode: {img.mode}")
+                return (
+                    f"Image Info:\nFormat: {img.format}\n"
+                    f"Size: {img.size} (WxH)\nMode: {img.mode}"
+                )
         except IOError:
             pass
 
         # Try Video
         try:
             clip = VideoFileClip(file_path)
-            info = (f"Video Info:\nDuration: {clip.duration}s\n"
-                    f"Resolution: {clip.size}\nFPS: {clip.fps}")
+            info = (
+                f"Video Info:\nDuration: {clip.duration}s\n"
+                f"Resolution: {clip.size}\nFPS: {clip.fps}"
+            )
             clip.close()
             return info
         except Exception:
@@ -75,11 +79,11 @@ class MediaToolset(Toolset):
 
     @tool
     def resize_image(
-            self,
-            input_path: str,
-            width: int,
-            height: int,
-            output_filename: str = "resized.png",
+        self,
+        input_path: str,
+        width: int,
+        height: int,
+        output_filename: str = "resized.png",
     ) -> str:
         """
         Resizes an image to specific dimensions.
@@ -142,10 +146,9 @@ class MediaToolset(Toolset):
             return f"Error: {e}"
 
     @tool
-    def rotate_image(self,
-                     input_path: str,
-                     degrees: int = 90,
-                     output_filename: str = "rotated.png") -> str:
+    def rotate_image(
+        self, input_path: str, degrees: int = 90, output_filename: str = "rotated.png"
+    ) -> str:
         """
         Rotates an image by a specified number of degrees.
 
@@ -179,11 +182,11 @@ class MediaToolset(Toolset):
 
     @tool
     def trim_video(
-            self,
-            input_path: str,
-            start_time: float,
-            end_time: float,
-            output_filename: str = "trimmed.mp4",
+        self,
+        input_path: str,
+        start_time: float,
+        end_time: float,
+        output_filename: str = "trimmed.mp4",
     ) -> str:
         """
         Cuts a video clip from start_time to end_time.
@@ -222,13 +225,13 @@ class MediaToolset(Toolset):
 
     @tool
     def crop_video(
-            self,
-            input_path: str,
-            x1: int,
-            y1: int,
-            width: int,
-            height: int,
-            output_filename: str = "cropped.mp4",
+        self,
+        input_path: str,
+        x1: int,
+        y1: int,
+        width: int,
+        height: int,
+        output_filename: str = "cropped.mp4",
     ) -> str:
         """
         Crops a video to a specific rectangular area.
@@ -270,11 +273,11 @@ class MediaToolset(Toolset):
 
     @tool
     def resize_video(
-            self,
-            input_path: str,
-            width: int,
-            height: int,
-            output_filename: str = "resized_video.mp4",
+        self,
+        input_path: str,
+        width: int,
+        height: int,
+        output_filename: str = "resized_video.mp4",
     ) -> str:
         """
         Resizes a video to specific dimensions.
@@ -346,12 +349,12 @@ class MediaToolset(Toolset):
 
     @tool
     def extract_frames(
-            self,
-            input_path: str,
-            start_time: float | None = None,
-            end_time: float | None = None,
-            fps: float | None = None,
-            output_format: str = "files",
+        self,
+        input_path: str,
+        start_time: float | None = None,
+        end_time: float | None = None,
+        fps: float | None = None,
+        output_format: str = "files",
     ) -> str:
         """
         Decodes a video into frames. If start/end times are omitted, processes the entire video.
@@ -385,8 +388,10 @@ class MediaToolset(Toolset):
 
             # Safety Check: Warn if upsampling significantly (e.g. asking 60fps from 24fps source)
             if fps is not None and fps > clip.fps:
-                logger.warning(f"Requested FPS ({fps}) > Source FPS ({clip.fps}). "
-                               "Output will contain duplicate frames.")
+                logger.warning(
+                    f"Requested FPS ({fps}) > Source FPS ({clip.fps}). "
+                    "Output will contain duplicate frames."
+                )
 
             # Subclip (MoviePy v2.0+ uses 'subclipped')
             clip = clip.subclipped(s_time, e_time)

@@ -43,10 +43,10 @@ class OperationalEnv(Dict):
 
     def print(self, verbose=True):
         if verbose:
-            logger.debug(f'{self.__class__.__name__}:')
+            logger.debug(f"{self.__class__.__name__}:")
 
         for k, v in self.items():
-            logger.debug(f'  {k} = {v}')
+            logger.debug(f"  {k} = {v}")
 
 
 class Frames(OperationalEnv):
@@ -65,13 +65,14 @@ class Metadata(OperationalEnv):
 
 class Tools(OperationalEnv):
     """Stores all the imported tools"""
+
     pass
 
 
 class Struct(OrderedDict):
     """Nemantix structure
-        - A struct is an ordered sequence of entries;
-        -e.g.: [[struct] = (1, 2, field: value, "str", ([a], var: [b]))]
+    - A struct is an ordered sequence of entries;
+    -e.g.: [[struct] = (1, 2, field: value, "str", ([a], var: [b]))]
     """
 
     def __init__(self, *args, **kwargs):
@@ -206,12 +207,12 @@ class Struct(OrderedDict):
         if str_key is not None:
             self[str_key] = value
 
-    def append(self, value) -> 'Struct':
+    def append(self, value) -> "Struct":
         """Appends the given value and returns itself"""
         self.set(value, key=None)
         return self
 
-    def union(self, other: 'Struct') -> 'Struct':
+    def union(self, other: "Struct") -> "Struct":
         """Creates a new structure as the union of both"""
         assert isinstance(other, Struct)
         union = Struct()
@@ -260,17 +261,17 @@ class Struct(OrderedDict):
             string = str(v)
 
             if isinstance(v, Struct) and not issubclass(type(v), Struct):
-                string = string[len('Struct'):]
+                string = string[len("Struct") :]
 
             if isinstance(k, str):
-                strings.append(f'{k}: {string}')
+                strings.append(f"{k}: {string}")
             else:
                 if k not in self.idx_to_key:
                     # since str keys have also an int index;
                     # we omit the latter to avoid duplicates
                     strings.append(string)
 
-        return f'Struct({", ".join(strings)})'
+        return f"Struct({', '.join(strings)})"
 
     def __eq__(self, other) -> bool:
         if isinstance(other, Struct):
@@ -284,8 +285,8 @@ class Struct(OrderedDict):
 
 class ExternalVariables(Struct):
     """A special Struct containing externally configured variables.
-        - it's read-only;
-        - can be accessed through a special "ENV" variable from NXS/NXC.
+    - it's read-only;
+    - can be accessed through a special "ENV" variable from NXS/NXC.
     """
 
     def __init__(self, **kwargs):
@@ -300,7 +301,9 @@ class ExternalVariables(Struct):
 
         for k, v in secrets.items():
             if k in self:
-                logger.warning(f'Key "{k}" already exists in external variables. It will be overwritten!')
+                logger.warning(
+                    f'Key "{k}" already exists in external variables. It will be overwritten!'
+                )
 
             super().set(value=Secret.box(v, k), key=k)
 
@@ -324,16 +327,16 @@ class ExternalVariables(Struct):
 
     @staticmethod
     def get_names(variables: dict) -> list[str]:
-        secrets = variables.get('secrets', dict())
+        secrets = variables.get("secrets", dict())
         names = []
 
         if isinstance(secrets, dict):
             names.extend(secrets.keys())
         else:
-            names.append('secrets')
+            names.append("secrets")
 
         for k in variables.keys():
-            if k == 'secrets':
+            if k == "secrets":
                 continue
 
             names.append(k)
@@ -341,12 +344,12 @@ class ExternalVariables(Struct):
         return names
 
     def __repr__(self):
-        return f'ExternalVariables(num_vars={len(self)})'
+        return f"ExternalVariables(num_vars={len(self)})"
 
 
 class Frame:
     """Nemantix Frame: it formally defines the expected fields and meaning of a
-       structured collection (i.e., a runtime.Struct)"""
+    structured collection (i.e., a runtime.Struct)"""
 
     def __init__(self, name: str):
         assert len(name) > 0
@@ -357,13 +360,13 @@ class Frame:
     def add_slot(self, name: str, cardinality: Optional[str], types: list[dict]):
         self.slots[name.lower()] = dict(types=types, cardinality=cardinality)
 
-    def add_frame(self, frame: 'Frame'):
+    def add_frame(self, frame: "Frame"):
         self.frames[frame.name.upper()] = frame
 
     def apply_prefix(self, struct: Struct) -> None | Struct:
         """Prefix frame application:
-            - usage: {frame}(struct)
-            - returns a new struct that matches the frame
+        - usage: {frame}(struct)
+        - returns a new struct that matches the frame
         """
         validated_slots = []
         valid_struct = Struct()
@@ -417,18 +420,18 @@ class Frame:
         if slot is None:
             return None
 
-        for kind in slot['types']:
+        for kind in slot["types"]:
             assert isinstance(kind, dict)
-            if 'type' in kind and kind['type'] == nmx_nodes.SlotTypesEnum.FRAME:
-                return self.frames.get(kind['name'].upper(), None)
+            if "type" in kind and kind["type"] == nmx_nodes.SlotTypesEnum.FRAME:
+                return self.frames.get(kind["name"].upper(), None)
 
         return None
 
     def apply_postfix(self, struct: Struct) -> Struct:
         """Postfix frame application:
-            - i.e, (struct){frame}
-            - it's more loose, checking if the structure can be (even) partially viewed in terms of the frame.
-            Returns a new struct that complies with the frame, even if fields are missing.
+        - i.e, (struct){frame}
+        - it's more loose, checking if the structure can be (even) partially viewed in terms of the frame.
+        Returns a new struct that complies with the frame, even if fields are missing.
         """
         valid_struct = Struct()
         struct = self._extract_struct(struct)
@@ -464,18 +467,18 @@ class Frame:
     @staticmethod
     def _extract_struct(struct: Struct) -> Struct:
         # TODO: workaround
-        if len(struct) == 1 and '__' in struct:
+        if len(struct) == 1 and "__" in struct:
             logger.info('Extracting struct in variable in "__" field.')
-            struct = struct['__']
+            struct = struct["__"]
 
             if not isinstance(struct, Struct):
-                logger.warning('Extracted value is not a Struct!')
+                logger.warning("Extracted value is not a Struct!")
                 return Struct()
 
         return struct
 
     def _coerce(self, value, slot: dict):
-        kinds = [self._get_type(kind) for kind in slot['types']]
+        kinds = [self._get_type(kind) for kind in slot["types"]]
 
         if value is None:
             return self._get_default(slot)
@@ -519,7 +522,7 @@ class Frame:
         return self._cast(value, slot)
 
     def _cast(self, value, slot: dict):
-        kinds = [self._get_type(kind) for kind in slot['types']]
+        kinds = [self._get_type(kind) for kind in slot["types"]]
 
         for kind in kinds:
             if kind == nmx_nodes.SlotTypesEnum.INT:
@@ -551,7 +554,7 @@ class Frame:
 
             if kind == nmx_nodes.SlotTypesEnum.FRAME:
                 if isinstance(value, Struct):
-                    frame = self.frames.get(slot['name'], None)
+                    frame = self.frames.get(slot["name"], None)
                     assert frame is not None
 
                     for k, slot_ in frame.slots.items():
@@ -563,11 +566,11 @@ class Frame:
         return None
 
     def _get_default(self, slot: dict):
-        for kind in slot['types']:
+        for kind in slot["types"]:
             kind = self._get_type(kind)
 
             if kind in [nmx_nodes.SlotTypesEnum.TEXT, nmx_nodes.SlotTypesEnum.ENUM]:
-                return ''
+                return ""
 
             elif kind == nmx_nodes.SlotTypesEnum.INT:
                 return 0
@@ -582,7 +585,7 @@ class Frame:
                 return Struct()
 
             elif kind == nmx_nodes.SlotTypesEnum.FRAME:
-                frame = self.frames.get(slot['name'], None)
+                frame = self.frames.get(slot["name"], None)
                 assert frame is not None
 
                 struct = Struct()
@@ -595,11 +598,11 @@ class Frame:
 
     @staticmethod
     def _get_type(kind: dict):
-        return kind.get('type', kind['name'])
+        return kind.get("type", kind["name"])
 
     @classmethod
     def _match_type(cls, slot: dict, value) -> bool:
-        for kind in slot['types']:
+        for kind in slot["types"]:
             slot_type = cls._get_type(kind)
 
             if slot_type == nmx_nodes.SlotTypesEnum.TEXT:
@@ -633,7 +636,7 @@ class Frame:
                     return True
 
             elif slot_type == nmx_nodes.SlotTypesEnum.ENUM:
-                return value in kind['name']
+                return value in kind["name"]
             else:
                 # TODO: handle FRAME type
                 assert slot_type == nmx_nodes.SlotTypesEnum.FRAME
@@ -646,17 +649,17 @@ class Frame:
         for slot, value in self.slots.items():
             strings.append(slot)
 
-            for kind in value['types']:
+            for kind in value["types"]:
                 assert isinstance(kind, dict)
 
-                if kind.get('type', None) == nmx_nodes.SlotTypesEnum.FRAME:
-                    frame_name = kind['name']
+                if kind.get("type", None) == nmx_nodes.SlotTypesEnum.FRAME:
+                    frame_name = kind["name"]
                     strings.pop()
-                    frame_str = str(self.frames[frame_name])[len('frame'):]
-                    strings.append(f'{slot}: {frame_name}{frame_str}')
+                    frame_str = str(self.frames[frame_name])[len("frame") :]
+                    strings.append(f"{slot}: {frame_name}{frame_str}")
                     break
 
-        return f'Frame({", ".join(strings)})'
+        return f"Frame({', '.join(strings)})"
 
 
 class DocRef(Struct):
@@ -671,29 +674,31 @@ class DocRef(Struct):
         self.breadcrumbs = breadcrumbs
 
         # also set fields to be used as a normal struct
-        super().set(node_id, key='node_id')
-        super().set(score, key='score')
-        super().set(content, key='content')
-        super().set(breadcrumbs, key='breadcrumbs')
+        super().set(node_id, key="node_id")
+        super().set(score, key="score")
+        super().set(content, key="content")
+        super().set(breadcrumbs, key="breadcrumbs")
 
     def set(self, value, key: Optional[str | int] = None):
         pass
 
-    def append(self, value) -> 'DocRef':
+    def append(self, value) -> "DocRef":
         return self
 
-    def union(self, other: 'Struct | DocRef') -> 'Struct':
+    def union(self, other: "Struct | DocRef") -> "Struct":
         """Creates a new structure with a content field, having the contents
-           of both documents.
+        of both documents.
         """
         union = Struct()
-        content = f'{self.content} {other.get("content", "")}'
-        union.set(value=content, key='content')
+        content = f"{self.content} {other.get('content', '')}"
+        union.set(value=content, key="content")
         return union
 
     def __repr__(self) -> str:
-        return (f'DOC:<{self.node_id}>(content={self.content[:32]}, score={self.score:2}, '
-                f'breadcrumbs={self.breadcrumbs[:16]})')
+        return (
+            f"DOC:<{self.node_id}>(content={self.content[:32]}, score={self.score:2}, "
+            f"breadcrumbs={self.breadcrumbs[:16]})"
+        )
 
     def __eq__(self, other) -> bool:
         if isinstance(other, DocRef):
@@ -770,7 +775,7 @@ class Opaque:
         return new_struct
 
     def __repr__(self) -> str:
-        return f'Opaque(id={self.identifier})'
+        return f"Opaque(id={self.identifier})"
 
     def __eq__(self, other) -> bool:
         if isinstance(other, Opaque):
@@ -788,7 +793,7 @@ class Secret(Opaque):
         self.name = name
 
     @staticmethod
-    def box(value, name: str) -> 'Secret':
+    def box(value, name: str) -> "Secret":
         if not isinstance(value, Secret):
             return Secret(obj=value, name=name)
 
@@ -798,17 +803,18 @@ class Secret(Opaque):
         return value
 
     def __repr__(self):
-        return f'Secret(name={self.name})'
+        return f"Secret(name={self.name})"
 
 
 class Builtin:
     """Collection of builtin functions"""
-    INT_REGEX = re.compile(r'^[-+]?\d+$')
-    FLOAT_REGEX = re.compile(r'^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$')
+
+    INT_REGEX = re.compile(r"^[-+]?\d+$")
+    FLOAT_REGEX = re.compile(r"^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
 
     @staticmethod
     def print(*args, **kwargs):
-        args = ['<NONE>' if arg is None else arg for arg in args]
+        args = ["<NONE>" if arg is None else arg for arg in args]
 
         if len(kwargs) > 0:
             print(*args, kwargs)
@@ -829,32 +835,32 @@ class Builtin:
         return None
 
     @staticmethod
-    def exists(x=None, *_, **__) -> 'bool':
+    def exists(x=None, *_, **__) -> "bool":
         """Checks for nullability"""
         return x is not None
 
     @staticmethod
-    def type(x=None, *_, **__) -> 'str':
+    def type(x=None, *_, **__) -> "str":
         """Returns the type name (as string) of the given variable"""
         if x is None:
-            return 'none'
+            return "none"
 
         if isinstance(x, bool):
-            return 'bool'
+            return "bool"
 
         if isinstance(x, (int, float)):
-            return 'num'
+            return "num"
 
         if isinstance(x, str):
-            return 'str'
+            return "str"
 
         if isinstance(x, DocRef):
-            return 'doc'
+            return "doc"
 
         if isinstance(x, Struct):
-            return 'struct'
+            return "struct"
 
-        return 'opaque'
+        return "opaque"
 
     @staticmethod
     def size(*args, **__) -> int:
@@ -878,7 +884,7 @@ class Builtin:
         return 0
 
     @staticmethod
-    def substring(x=None, start=0, end: int | None = None, *_, **__) -> 'str':
+    def substring(x=None, start=0, end: int | None = None, *_, **__) -> "str":
         if x is None:
             return ""
 
@@ -910,8 +916,8 @@ class Builtin:
             if len(x) == 0:
                 return 0
 
-            if x.lower() in ['true', 'false']:
-                return int(x.lower() == 'true')
+            if x.lower() in ["true", "false"]:
+                return int(x.lower() == "true")
 
             if re.match(Builtin.INT_REGEX, x):
                 return int(x)
@@ -922,7 +928,7 @@ class Builtin:
         return 0
 
     @staticmethod
-    def to_bool(x=None, *_, **__) -> 'bool':
+    def to_bool(x=None, *_, **__) -> "bool":
         """Explicit boolean conversion"""
         if isinstance(x, bool):
             return x
@@ -934,10 +940,10 @@ class Builtin:
             if len(x) == 0:
                 return False
 
-            if x.lower() in ['true', 'false']:
-                return x.lower() == 'true'
+            if x.lower() in ["true", "false"]:
+                return x.lower() == "true"
 
-            if x.lower() == 'none':
+            if x.lower() == "none":
                 return False
 
             return bool(x)
@@ -945,7 +951,7 @@ class Builtin:
         return False
 
     @staticmethod
-    def to_str(x=None, *_, **__) -> 'str':
+    def to_str(x=None, *_, **__) -> "str":
         """Explicit string conversion"""
         if isinstance(x, bool):
             return str(x).lower()
@@ -960,7 +966,7 @@ class Builtin:
             return str(x)
 
         if x is None:
-            return 'none'
+            return "none"
 
         if isinstance(x, str):
             return x
@@ -979,7 +985,7 @@ class Builtin:
         return Builtin.to_num(x)
 
     @staticmethod
-    def bool(x=None, *_, **__) -> 'bool | None':
+    def bool(x=None, *_, **__) -> "bool | None":
         if x is None:
             return None
 
@@ -995,7 +1001,7 @@ class Builtin:
         return Builtin.to_bool(x)
 
     @staticmethod
-    def str(x=None, *_, **__) -> 'str | None':
+    def str(x=None, *_, **__) -> "str | None":
         if x is None:
             return None
 
@@ -1018,30 +1024,43 @@ class Builtin:
         return llm.invoke(prompt, **kwargs)
 
     @staticmethod
-    def retrieve(knowledge_base: NemantixKnowledgeBase,
-                 query,
-                 top_k=5,
-                 min_score=0.4,
-                 *_,
-                 doc_type: "list | str | None" = None,
-                 content_type: "list | str | None" = None,
-                 metadata: "list | str | None" = None,
-                 **__
-                 ) -> list | None:
+    def retrieve(
+        knowledge_base: NemantixKnowledgeBase,
+        query,
+        top_k=5,
+        min_score=0.4,
+        *_,
+        doc_type: "list | str | None" = None,
+        content_type: "list | str | None" = None,
+        metadata: "list | str | None" = None,
+        **__,
+    ) -> list | None:
 
-        results = knowledge_base.retrieve(query=query, k=top_k, min_score=min_score,
-                                          doc_type=doc_type, content_type=content_type,
-                                          metadata_filters=metadata)
+        results = knowledge_base.retrieve(
+            query=query,
+            k=top_k,
+            min_score=min_score,
+            doc_type=doc_type,
+            content_type=content_type,
+            metadata_filters=metadata,
+        )
         docs = []
 
         for result in results:
-            docs.append(DocRef(node_id=result['node_id'], score=result['score'],
-                               content=result['content'],
-                               breadcrumbs=result['breadcrumbs']))
+            docs.append(
+                DocRef(
+                    node_id=result["node_id"],
+                    score=result["score"],
+                    content=result["content"],
+                    breadcrumbs=result["breadcrumbs"],
+                )
+            )
         return docs
 
     @staticmethod
-    def expand(knowledge_base: NemantixKnowledgeBase, node_id: 'str | list[str]') -> list[DocRef]:
+    def expand(
+        knowledge_base: NemantixKnowledgeBase, node_id: "str | list[str]"
+    ) -> list[DocRef]:
         if not isinstance(node_id, list):
             node_id = [node_id]
 
@@ -1053,12 +1072,20 @@ class Builtin:
                 results = [results]
 
             for result in results:
-                docs.append(DocRef(node_id=result['node_id'], score=0.0,
-                                   content=result['content'], breadcrumbs=''))
+                docs.append(
+                    DocRef(
+                        node_id=result["node_id"],
+                        score=0.0,
+                        content=result["content"],
+                        breadcrumbs="",
+                    )
+                )
         return docs
 
     @staticmethod
-    def extend(knowledge_base: NemantixKnowledgeBase, node_id: 'str | list[str]') -> list[DocRef]:
+    def extend(
+        knowledge_base: NemantixKnowledgeBase, node_id: "str | list[str]"
+    ) -> list[DocRef]:
         if not isinstance(node_id, list):
             node_id = [node_id]
 
@@ -1066,21 +1093,33 @@ class Builtin:
         for id_ in set(node_id):
             results = knowledge_base.extend(node_id=id_)
 
-            for result in [results.get('previous_sibling', None),
-                           results.get('next_sibling', None)]:
+            for result in [
+                results.get("previous_sibling", None),
+                results.get("next_sibling", None),
+            ]:
                 if result is None:
                     continue
 
                 assert isinstance(result, dict)
-                docs.append(DocRef(node_id=result['node_id'], score=0.0,
-                                   content=result['content'], breadcrumbs=''))
+                docs.append(
+                    DocRef(
+                        node_id=result["node_id"],
+                        score=0.0,
+                        content=result["content"],
+                        breadcrumbs="",
+                    )
+                )
         return docs
 
     @staticmethod
-    def generalize(knowledge_base: NemantixKnowledgeBase, node_id: 'str') -> DocRef:
+    def generalize(knowledge_base: NemantixKnowledgeBase, node_id: "str") -> DocRef:
         result = knowledge_base.generalize(node_id=node_id)
-        return DocRef(node_id=result['node_id'], score=0.0,
-                      content=result['content'], breadcrumbs='')
+        return DocRef(
+            node_id=result["node_id"],
+            score=0.0,
+            content=result["content"],
+            breadcrumbs="",
+        )
 
 
 def compute_similarity(embedder, a, b, a_emb=None, b_emb=None) -> float:
@@ -1104,7 +1143,8 @@ def get_globals() -> dict[str, Any]:
         "Toolset": Toolset,
         "tool": tool,
         "Opaque": Opaque,
-        "__builtins__": _allowed_builtins()}
+        "__builtins__": _allowed_builtins(),
+    }
 
 
 # TODO: could wrap __import__ to improve security? or import commonly used libraries names (pd, np)?
@@ -1112,13 +1152,54 @@ def _allowed_builtins() -> dict:
     from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
     return {
-        "Exception": Exception, "TypeError": TypeError, "False": False, "min": min, "max": max,
-        "print": print, "bool": bool, "dict": dict, "enumerate": enumerate, "filter": filter,
-        "float": float, "frozenset": frozenset, "help": help, "int": int, "list": list,
-        "map": map, "object": object, "range": range, "reversed": reversed, "set": set,
-        "slice": slice, "str": str, "super": super, "tuple": tuple, "type": type, "zip": zip,
-        "len": len, "round": round, "isinstance": isinstance, "__build_class__": __build_class__,
-        "ValueError": ValueError, "None": None, "True": True, "Optional": Optional, "Set": Set,
-        "List": List, "Union": Union, "Dict": Dict, "Any": Any, "any": any, "Callable": Callable,
-        "Tuple": Tuple, "__name__": __name__, 'callable': callable, 'hasattr': hasattr, "all": all,
-        'getattr': getattr, 'setattr': setattr, "__import__": __import__, 'input': input}
+        "Exception": Exception,
+        "TypeError": TypeError,
+        "False": False,
+        "min": min,
+        "max": max,
+        "print": print,
+        "bool": bool,
+        "dict": dict,
+        "enumerate": enumerate,
+        "filter": filter,
+        "float": float,
+        "frozenset": frozenset,
+        "help": help,
+        "int": int,
+        "list": list,
+        "map": map,
+        "object": object,
+        "range": range,
+        "reversed": reversed,
+        "set": set,
+        "slice": slice,
+        "str": str,
+        "super": super,
+        "tuple": tuple,
+        "type": type,
+        "zip": zip,
+        "len": len,
+        "round": round,
+        "isinstance": isinstance,
+        "__build_class__": __build_class__,
+        "ValueError": ValueError,
+        "None": None,
+        "True": True,
+        "Optional": Optional,
+        "Set": Set,
+        "List": List,
+        "Union": Union,
+        "Dict": Dict,
+        "Any": Any,
+        "any": any,
+        "Callable": Callable,
+        "Tuple": Tuple,
+        "__name__": __name__,
+        "callable": callable,
+        "hasattr": hasattr,
+        "all": all,
+        "getattr": getattr,
+        "setattr": setattr,
+        "__import__": __import__,
+        "input": input,
+    }

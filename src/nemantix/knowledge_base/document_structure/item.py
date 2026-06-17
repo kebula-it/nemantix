@@ -9,33 +9,34 @@ class Item:
     This is the core object stored in vector databases and retrieved during RAG operations.
     """
 
-    def __init__(self,
-                 item_id: str,
-                 item_type: str,
-                 doc_id: str,
-                 doc_ref: str,
-                 doc_type: str,
-                 content: str,
-                 text_view: str,
-                 hierarchy_ref: str,
-                 coordinates: Coordinates,
-                 metadata: Optional[dict] = None
-                 ):
+    def __init__(
+        self,
+        item_id: str,
+        item_type: str,
+        doc_id: str,
+        doc_ref: str,
+        doc_type: str,
+        content: str,
+        text_view: str,
+        hierarchy_ref: str,
+        coordinates: Coordinates,
+        metadata: Optional[dict] = None,
+    ):
         """
-                Initializes an Item instance.
+        Initializes an Item instance.
 
-                Args:
-                    item_id (str): A unique identifier for the chunk.
-                    item_type (str): The nature of the content (e.g., 'text', 'image', 'table').
-                    doc_id (str): The ID of the parent document.
-                    doc_ref (str): A string reference pointing back to the original file/location.
-                    doc_type (str): The nature of the document type.
-                    content (str): The raw extracted content of the segment.
-                    text_view (str): The AI-generated summary or embedding-optimized view of the content.
-                    hierarchy_ref (str): The serialized lineage (e.g., "book::My Book<|>chapter::3").
-                    coordinates (Coordinates): The spatial coordinates bounding this item.
-                    metadata (dict, optional): Associated metadata (tags, entities). Defaults to None.
-                """
+        Args:
+            item_id (str): A unique identifier for the chunk.
+            item_type (str): The nature of the content (e.g., 'text', 'image', 'table').
+            doc_id (str): The ID of the parent document.
+            doc_ref (str): A string reference pointing back to the original file/location.
+            doc_type (str): The nature of the document type.
+            content (str): The raw extracted content of the segment.
+            text_view (str): The AI-generated summary or embedding-optimized view of the content.
+            hierarchy_ref (str): The serialized lineage (e.g., "book::My Book<|>chapter::3").
+            coordinates (Coordinates): The spatial coordinates bounding this item.
+            metadata (dict, optional): Associated metadata (tags, entities). Defaults to None.
+        """
         self.item_id = item_id
         self.item_type = item_type
         self.doc_id = doc_id
@@ -50,7 +51,9 @@ class Item:
 
     def __str__(self) -> str:
         """Returns a highly readable console representation of the Item for debugging."""
-        display_content = self.content[:150].replace('\n', ' ') + ('...' if len(self.content) > 150 else '')
+        display_content = self.content[:150].replace("\n", " ") + (
+            "..." if len(self.content) > 150 else ""
+        )
 
         return (
             f"ITEM [{self.item_id}]\n"

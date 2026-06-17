@@ -1,6 +1,11 @@
 import pytest
 from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
-from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException, LLMResponse, LLMUsage
+from nemantix.llm.abstract_proxy import (
+    AbstractLLMProxy,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+)
 from nemantix.llm.credentials import Credentials
 from nemantix.core import Toolset, tool
 

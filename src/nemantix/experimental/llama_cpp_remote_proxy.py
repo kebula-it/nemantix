@@ -65,8 +65,10 @@ class LlamaCppRemoteLLMProxy(OpenAICompatibleProxy):
     def invoke_grammar_based(
         self, prompt: Union[str, list], **kwargs: Any
     ) -> LLMResponse:
-        raise LLMProxyException("LARL Grammar invocation is not natively "
-                                "supported by llama.cpp's server endpoint.")
+        raise LLMProxyException(
+            "LARL Grammar invocation is not natively "
+            "supported by llama.cpp's server endpoint."
+        )
 
     def _flatten_messages(self, prompt: Union[str, list]) -> List[Dict[str, Any]]:
         """

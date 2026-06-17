@@ -35,13 +35,16 @@ extension_map = {
 }
 
 
-def _nxc_deliberate_completeness_check(deliberates: list[Deliberate], location: PathLike):
+def _nxc_deliberate_completeness_check(
+    deliberates: list[Deliberate], location: PathLike
+):
     for deliberate in deliberates:
         qual = deliberate.qualifier if deliberate.qualifier else None
         if qual and qual[1].value == "frozen" and not deliberate.get_plan():
             raise NemantixException(
                 f"The deliberate '{deliberate.name}' does not have a plan and has a '{qual[1].value}' completion level."
-                f"\nThe script '{location}' shouldn't be an nxc.")
+                f"\nThe script '{location}' shouldn't be an nxc."
+            )
 
 
 class Script:
@@ -54,17 +57,20 @@ class Script:
             self.summary = summary
 
         def to_dict(self):
-            d = {"semantics": self.semantics,
+            d = {
+                "semantics": self.semantics,
                 "ins": [str(i) for i in self.ins],
                 "outs": [str(o) for o in self.outs],
-                }
+            }
             if self.summary is not None:
                 d["summary"] = self.summary
             if self.body is not None:
                 d["body"] = str(self.body)
             return d
 
-    def __init__(self, location: PathLike, source_manager: SourceManager, content: str = None):
+    def __init__(
+        self, location: PathLike, source_manager: SourceManager, content: str = None
+    ):
         self._location = Path(location) if not isinstance(location, Path) else location
         self.source_manager = source_manager
 
@@ -73,7 +79,9 @@ class Script:
         else:
             ext = str(self._location).split(".")[-1].lower()
         if ext not in extension_map:
-            raise NemantixException(f"Script {location} must have .nxs/.nxc/.nxv extension.")
+            raise NemantixException(
+                f"Script {location} must have .nxs/.nxc/.nxv extension."
+            )
         self.type = extension_map[ext]
 
         self.content = content
@@ -92,7 +100,9 @@ class Script:
         self._nodes = None
 
         if self.type == ScriptTypeEnum.NXC:
-            _nxc_deliberate_completeness_check(list(self.deliberates.values()), self._location)
+            _nxc_deliberate_completeness_check(
+                list(self.deliberates.values()), self._location
+            )
         # self.parse()
 
     def read_as_list(self, update=False) -> list[str]:
@@ -113,7 +123,12 @@ class Script:
 
         return self.content
 
-    def write(self, content: str = None, source_manager: SourceManager = None, location: PathLike = None):
+    def write(
+        self,
+        content: str = None,
+        source_manager: SourceManager = None,
+        location: PathLike = None,
+    ):
         source_manager = source_manager or self.source_manager
         over_write = False
 
@@ -152,16 +167,21 @@ class Script:
         if not self.content:
             self.read(read_as_lines_list=False)
 
-        self._nodes = self.parser.parse(self.content or '', self._location,
-                                        verbose=bool(verbose),
-                                        enable_fixer=bool(enable_fixer))
+        self._nodes = self.parser.parse(
+            self.content or "",
+            self._location,
+            verbose=bool(verbose),
+            enable_fixer=bool(enable_fixer),
+        )
         # build structures
         for n in self._nodes:
             if isinstance(n, Deliberate):
                 self.deliberates[n.name] = n
 
                 if n.name in self.delib_semantics_map:
-                    raise NemantixException(f"Cannot instantiate two deliberates with the same name ({n.name})")
+                    raise NemantixException(
+                        f"Cannot instantiate two deliberates with the same name ({n.name})"
+                    )
 
                 semantics = n.guidelines.prompt if n.guidelines is not None else None
                 plan = n.get_plan()
@@ -179,22 +199,28 @@ class Script:
                 except NemantixException:
                     pass
                 summary = summary.value if isinstance(summary, SingleValue) else summary
-                self.delib_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs, summary=summary)
+                self.delib_semantics_map[n.name] = self.SemanticInfo(
+                    semantics, ins, outs, summary=summary
+                )
 
                 # add deliberate private actions with deliberate.name prefix
                 for private_action in n.generated_actions:
-                    key = f'{n.name}.{private_action.name}'
+                    key = f"{n.name}.{private_action.name}"
 
                     if key in self.private_actions:
-                        raise NemantixException(f'Action "{private_action.name}" already defined in'
-                                                f'deliberate "{n.name}"!')
+                        raise NemantixException(
+                            f'Action "{private_action.name}" already defined in'
+                            f'deliberate "{n.name}"!'
+                        )
                     self.private_actions[key] = private_action
 
             elif isinstance(n, ActionBlock):
                 self.actions[n.name] = n
 
                 if n.name in self.action_semantics_map:
-                    raise NemantixException(f"Cannot instantiate two actions with the same name ({n.name})")
+                    raise NemantixException(
+                        f"Cannot instantiate two actions with the same name ({n.name})"
+                    )
 
                 semantics = n.prompt.prompt
                 ins = n.input
@@ -205,8 +231,9 @@ class Script:
                 except NemantixException:
                     pass
                 summary = summary.value if isinstance(summary, SingleValue) else summary
-                self.action_semantics_map[n.name] = self.SemanticInfo(semantics, ins, outs,
-                                                                      summary=summary)
+                self.action_semantics_map[n.name] = self.SemanticInfo(
+                    semantics, ins, outs, summary=summary
+                )
             elif isinstance(n, Require):
                 self.requires.append(n)
 
@@ -222,7 +249,7 @@ class Script:
 
     def update(self, content: str | None = None, enable_fixer=False):
         """Updates the script content:
-            - if `enable_fixer=True`: the FixerTransformer is applied on the AST"""
+        - if `enable_fixer=True`: the FixerTransformer is applied on the AST"""
         if content is None:
             content = self.read(read_as_lines_list=False)
 
@@ -232,8 +259,10 @@ class Script:
         if not enable_fixer:
             return
         else:
-            logger.info(f'[EXPERIMENTAL] Applying FixerTransformer on '
-                        f'Script "{self.get_location()}"')
+            logger.info(
+                f"[EXPERIMENTAL] Applying FixerTransformer on "
+                f'Script "{self.get_location()}"'
+            )
 
         content_lines = self.read(read_as_lines_list=True)
 
@@ -275,26 +304,35 @@ class Script:
                 end_line += 1  # to account for final "__do"
 
             # Extract the old code to see if the Fixer actually changed anything
-            old_code = "\n".join(content_lines[start_line:end_line + 1])
+            old_code = "\n".join(content_lines[start_line : end_line + 1])
             new_code_stripped = do_node.to_nxs()
 
             if old_code.strip() != new_code_stripped.strip():
-                logger.info(f"Fixer applying change: '{old_code.strip()}' -> '{new_code_stripped}'")
+                logger.info(
+                    f"Fixer applying change: '{old_code.strip()}' -> '{new_code_stripped}'"
+                )
 
                 # Preserve the original indentation
-                indent_spaces = len(content_lines[start_line]) - len(content_lines[start_line].lstrip())
+                indent_spaces = len(content_lines[start_line]) - len(
+                    content_lines[start_line].lstrip()
+                )
                 indented_new_code = (" " * indent_spaces) + new_code_stripped
 
                 # Splice the new code into the content lines list
-                content_lines = (content_lines[:start_line] + [indented_new_code] +
-                                 content_lines[end_line + 1:])
+                content_lines = (
+                    content_lines[:start_line]
+                    + [indented_new_code]
+                    + content_lines[end_line + 1 :]
+                )
 
         # Save and perform a final clean parse
         self.content = "\n".join(content_lines)
         self.parse(enable_fixer=False)
 
         if self.type == ScriptTypeEnum.NXC:
-            _nxc_deliberate_completeness_check(list(self.deliberates.values()), self._location)
+            _nxc_deliberate_completeness_check(
+                list(self.deliberates.values()), self._location
+            )
 
     def get_location(self) -> str:
         return self.source_manager.location_to_str(self._location)
@@ -302,7 +340,7 @@ class Script:
     def get_location_with_extension(self, ext: str | ScriptTypeEnum):
         """Returns a new location with changed file extension"""
         if isinstance(ext, str):
-            ext_ = ext.replace('.', '').lower()
+            ext_ = ext.replace(".", "").lower()
             ext_enum = extension_map.get(ext_, None)
 
             if ext_enum is None:
@@ -310,10 +348,10 @@ class Script:
             else:
                 ext = ext_enum.value
         else:
-            assert (isinstance(ext, ScriptTypeEnum))
+            assert isinstance(ext, ScriptTypeEnum)
             ext = ext.value
 
-        return self.source_manager.change_file_extension(self._location, ext=f'.{ext}')
+        return self.source_manager.change_file_extension(self._location, ext=f".{ext}")
 
     def print_ast(self):
         logger.debug(f"--> AST of Script {str(self._location)} <--")

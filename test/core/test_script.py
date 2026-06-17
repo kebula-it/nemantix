@@ -14,6 +14,7 @@ from nemantix.core.script import Script, ScriptTypeEnum, extension_map
 # Dummy AST node types (to satisfy isinstance)
 # ==========================================
 
+
 class DummyRequire:
     pass
 
@@ -87,6 +88,7 @@ class DummyDeliberate:
 # Helpers
 # ==========================================
 
+
 @pytest.fixture
 def mock_source_manager():
     m = MagicMock()
@@ -100,6 +102,7 @@ def mock_source_manager():
 # Tests for extension/type mapping
 # ==========================================
 
+
 @pytest.mark.parametrize(
     "filename, expected",
     [
@@ -108,7 +111,9 @@ def mock_source_manager():
         ("x.nxv", ScriptTypeEnum.NXV),
     ],
 )
-def test_script_init_valid_extensions_sets_type(filename, expected, mock_source_manager):
+def test_script_init_valid_extensions_sets_type(
+    filename, expected, mock_source_manager
+):
     scr = Script(location=filename, source_manager=mock_source_manager, content="dummy")
     assert scr.type == expected
 
@@ -133,6 +138,7 @@ def test_extension_map_contains_expected_keys():
 # Tests for Script.read
 # ==========================================
 
+
 def test_read_reads_from_source_manager_when_content_missing(mock_source_manager):
     mock_source_manager.read.return_value = ["a\n", "b\n"]
     scr = Script(location="x.nxs", source_manager=mock_source_manager, content=None)
@@ -145,7 +151,9 @@ def test_read_reads_from_source_manager_when_content_missing(mock_source_manager
 
 
 def test_read_does_not_reread_if_content_present(mock_source_manager):
-    scr = Script(location="x.nxs", source_manager=mock_source_manager, content="already")
+    scr = Script(
+        location="x.nxs", source_manager=mock_source_manager, content="already"
+    )
     out = scr.read(update=False, read_as_lines_list=False)
 
     assert out == "already"
@@ -172,7 +180,9 @@ def test_read_converts_string_to_lines_when_requested(mock_source_manager):
 
 
 def test_read_converts_lines_to_string_when_requested(mock_source_manager):
-    scr = Script(location="x.nxs", source_manager=mock_source_manager, content=["a", "b"])
+    scr = Script(
+        location="x.nxs", source_manager=mock_source_manager, content=["a", "b"]
+    )
 
     out = scr.read(update=False, read_as_lines_list=False)
 
@@ -183,6 +193,7 @@ def test_read_converts_lines_to_string_when_requested(mock_source_manager):
 # Tests for Script.write
 # ==========================================
 
+
 def test_write_raises_if_no_existing_content_and_no_new_content(mock_source_manager):
     scr = Script(location="x.nxs", source_manager=mock_source_manager, content=None)
 
@@ -191,11 +202,15 @@ def test_write_raises_if_no_existing_content_and_no_new_content(mock_source_mana
 
 
 def test_write_uses_existing_self_content_when_present(mock_source_manager):
-    scr = Script(location="x.nxs", source_manager=mock_source_manager, content="SELF_CONTENT")
+    scr = Script(
+        location="x.nxs", source_manager=mock_source_manager, content="SELF_CONTENT"
+    )
 
     scr.write(content="IGNORED", location="other.nxs")
 
-    mock_source_manager.write.assert_called_once_with("other.nxs", "SELF_CONTENT", mode="w")
+    mock_source_manager.write.assert_called_once_with(
+        "other.nxs", "SELF_CONTENT", mode="w"
+    )
     assert scr.content == "SELF_CONTENT"
 
 
@@ -204,11 +219,15 @@ def test_write_uses_new_content_when_self_content_missing(mock_source_manager):
 
     scr.write(content="NEW_CONTENT", location="other.nxs")
 
-    mock_source_manager.write.assert_called_once_with("other.nxs", "NEW_CONTENT", mode="w")
+    mock_source_manager.write.assert_called_once_with(
+        "other.nxs", "NEW_CONTENT", mode="w"
+    )
     assert scr.content is None
 
 
-def test_write_overwrite_same_location_updates_content_and_triggers_parse(mock_source_manager):
+def test_write_overwrite_same_location_updates_content_and_triggers_parse(
+    mock_source_manager,
+):
     scr = Script(location="x.nxs", source_manager=mock_source_manager, content="ABC")
     scr.parse = MagicMock()
 
@@ -234,15 +253,22 @@ def test_write_different_location_does_not_trigger_parse(mock_source_manager):
 # Tests for Script.parse
 # ==========================================
 
-def test_parse_reads_content_if_missing_then_calls_parser(mock_source_manager, monkeypatch):
+
+def test_parse_reads_content_if_missing_then_calls_parser(
+    mock_source_manager, monkeypatch
+):
     import nemantix.core.script as script_module
 
     monkeypatch.setattr(script_module, "Deliberate", DummyDeliberate)
     monkeypatch.setattr(script_module, "ActionBlock", DummyAction)
     monkeypatch.setattr(script_module, "Require", DummyRequire)
-    monkeypatch.setattr(script_module, "PythonToolDeclaration", DummyPythonToolDeclaration)
+    monkeypatch.setattr(
+        script_module, "PythonToolDeclaration", DummyPythonToolDeclaration
+    )
     monkeypatch.setattr(script_module, "Frame", DummyFrame)
-    monkeypatch.setattr(script_module, "ImportToolsetStatement", DummyImportToolsetStatement)
+    monkeypatch.setattr(
+        script_module, "ImportToolsetStatement", DummyImportToolsetStatement
+    )
 
     mock_source_manager.read.return_value = "CONTENT"
 
@@ -252,8 +278,9 @@ def test_parse_reads_content_if_missing_then_calls_parser(mock_source_manager, m
     scr.parse()
 
     mock_source_manager.read.assert_called_once_with(Path("x.nxs"), False)
-    scr.parser.parse.assert_called_once_with("CONTENT", Path("x.nxs"),
-                                             verbose=False, enable_fixer=False)
+    scr.parser.parse.assert_called_once_with(
+        "CONTENT", Path("x.nxs"), verbose=False, enable_fixer=False
+    )
 
 
 def test_parse_builds_structures_and_semantics_map(mock_source_manager, monkeypatch):
@@ -262,23 +289,31 @@ def test_parse_builds_structures_and_semantics_map(mock_source_manager, monkeypa
     monkeypatch.setattr(script_module, "Deliberate", DummyDeliberate)
     monkeypatch.setattr(script_module, "ActionBlock", DummyAction)
     monkeypatch.setattr(script_module, "Require", DummyRequire)
-    monkeypatch.setattr(script_module, "PythonToolDeclaration", DummyPythonToolDeclaration)
+    monkeypatch.setattr(
+        script_module, "PythonToolDeclaration", DummyPythonToolDeclaration
+    )
     monkeypatch.setattr(script_module, "Frame", DummyFrame)
-    monkeypatch.setattr(script_module, "ImportToolsetStatement", DummyImportToolsetStatement)
+    monkeypatch.setattr(
+        script_module, "ImportToolsetStatement", DummyImportToolsetStatement
+    )
 
     actions = [
         DummyAction(name="A1", semantics="do X", ins=["i1"], outs=["o1"]),
         DummyAction(name="A2", semantics="do Y", ins=["i2"], outs=["o2"]),
     ]
 
-    delib = DummyDeliberate(name="D1", actions=actions, guidelines=DummyGuidelines("follow D1"))
+    delib = DummyDeliberate(
+        name="D1", actions=actions, guidelines=DummyGuidelines("follow D1")
+    )
     req = DummyRequire()
     tool = DummyPythonToolDeclaration()
     frame = DummyFrame()
     toolset_import = DummyImportToolsetStatement("tool_alias")
 
     scr = Script(location="x.nxs", source_manager=mock_source_manager, content="RAW")
-    scr.parser.parse = MagicMock(return_value=[*actions, delib, req, tool, frame, toolset_import])
+    scr.parser.parse = MagicMock(
+        return_value=[*actions, delib, req, tool, frame, toolset_import]
+    )
 
     scr.parse()
 
@@ -310,15 +345,21 @@ def test_parse_builds_structures_and_semantics_map(mock_source_manager, monkeypa
     assert info.to_dict() == {"semantics": "do X", "ins": ["i1"], "outs": ["o1"]}
 
 
-def test_parse_deliberate_without_guidelines_sets_none_semantics(mock_source_manager, monkeypatch):
+def test_parse_deliberate_without_guidelines_sets_none_semantics(
+    mock_source_manager, monkeypatch
+):
     import nemantix.core.script as script_module
 
     monkeypatch.setattr(script_module, "Deliberate", DummyDeliberate)
     monkeypatch.setattr(script_module, "ActionBlock", DummyAction)
     monkeypatch.setattr(script_module, "Require", DummyRequire)
-    monkeypatch.setattr(script_module, "PythonToolDeclaration", DummyPythonToolDeclaration)
+    monkeypatch.setattr(
+        script_module, "PythonToolDeclaration", DummyPythonToolDeclaration
+    )
     monkeypatch.setattr(script_module, "Frame", DummyFrame)
-    monkeypatch.setattr(script_module, "ImportToolsetStatement", DummyImportToolsetStatement)
+    monkeypatch.setattr(
+        script_module, "ImportToolsetStatement", DummyImportToolsetStatement
+    )
 
     action = DummyAction(name="A1", semantics="do X", ins=["i1"], outs=["o1"])
     delib = DummyDeliberate(name="D1", actions=[action], guidelines=None)
@@ -340,9 +381,13 @@ def test_parse_duplicate_deliberate_name_raises(mock_source_manager, monkeypatch
     monkeypatch.setattr(script_module, "Deliberate", DummyDeliberate)
     monkeypatch.setattr(script_module, "ActionBlock", DummyAction)
     monkeypatch.setattr(script_module, "Require", DummyRequire)
-    monkeypatch.setattr(script_module, "PythonToolDeclaration", DummyPythonToolDeclaration)
+    monkeypatch.setattr(
+        script_module, "PythonToolDeclaration", DummyPythonToolDeclaration
+    )
     monkeypatch.setattr(script_module, "Frame", DummyFrame)
-    monkeypatch.setattr(script_module, "ImportToolsetStatement", DummyImportToolsetStatement)
+    monkeypatch.setattr(
+        script_module, "ImportToolsetStatement", DummyImportToolsetStatement
+    )
 
     d1 = DummyDeliberate(name="DUP", actions=[DummyAction("A", "s")])
     d2 = DummyDeliberate(name="DUP", actions=[DummyAction("B", "t")])
@@ -360,9 +405,13 @@ def test_parse_duplicate_action_name_raises(mock_source_manager, monkeypatch):
     monkeypatch.setattr(script_module, "Deliberate", DummyDeliberate)
     monkeypatch.setattr(script_module, "ActionBlock", DummyAction)
     monkeypatch.setattr(script_module, "Require", DummyRequire)
-    monkeypatch.setattr(script_module, "PythonToolDeclaration", DummyPythonToolDeclaration)
+    monkeypatch.setattr(
+        script_module, "PythonToolDeclaration", DummyPythonToolDeclaration
+    )
     monkeypatch.setattr(script_module, "Frame", DummyFrame)
-    monkeypatch.setattr(script_module, "ImportToolsetStatement", DummyImportToolsetStatement)
+    monkeypatch.setattr(
+        script_module, "ImportToolsetStatement", DummyImportToolsetStatement
+    )
 
     actions = [
         DummyAction(name="A", semantics="s1"),
@@ -377,5 +426,7 @@ def test_parse_duplicate_action_name_raises(mock_source_manager, monkeypatch):
 
 
 def test_get_location_returns_string_path(mock_source_manager):
-    scr = Script(location=Path("x.nxs"), source_manager=mock_source_manager, content="RAW")
+    scr = Script(
+        location=Path("x.nxs"), source_manager=mock_source_manager, content="RAW"
+    )
     assert scr.get_location() == "x.nxs"

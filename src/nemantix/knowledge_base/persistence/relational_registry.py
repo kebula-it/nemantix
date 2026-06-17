@@ -1,7 +1,16 @@
 import datetime
 
 from typing import List, Dict
-from sqlalchemy import Column, String, DateTime, ForeignKey, Table, Boolean, Text, exists
+from sqlalchemy import (
+    Column,
+    String,
+    DateTime,
+    ForeignKey,
+    Table,
+    Boolean,
+    Text,
+    exists,
+)
 from sqlalchemy.orm import declarative_base, relationship
 
 from nemantix.common.connectors import DBConnector
@@ -13,33 +22,55 @@ logger = get_package_logger(__name__)
 Base = declarative_base()
 
 document_index_association = Table(
-    'document_indexes',
+    "document_indexes",
     Base.metadata,
-    Column('doc_id', String(255), ForeignKey('documents.doc_id', ondelete="CASCADE"), primary_key=True),
-    Column('index_name', String(255), ForeignKey('knowledge_indexes.index_name', ondelete="CASCADE"), primary_key=True)
+    Column(
+        "doc_id",
+        String(255),
+        ForeignKey("documents.doc_id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "index_name",
+        String(255),
+        ForeignKey("knowledge_indexes.index_name", ondelete="CASCADE"),
+        primary_key=True,
+    ),
 )
 
 view_document_association = Table(
-    'view_documents',
+    "view_documents",
     Base.metadata,
-    Column('view_id', String(255), ForeignKey('search_views.view_id', ondelete="CASCADE"), primary_key=True),
-    Column('doc_id', String(255), ForeignKey('documents.doc_id', ondelete="CASCADE"), primary_key=True)
+    Column(
+        "view_id",
+        String(255),
+        ForeignKey("search_views.view_id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "doc_id",
+        String(255),
+        ForeignKey("documents.doc_id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
 )
 
 
 class KnowledgeIndex(Base):
-    __tablename__ = 'knowledge_indexes'
+    __tablename__ = "knowledge_indexes"
 
     index_name = Column(String(255), primary_key=True)
     graph_path = Column(String(255), nullable=False)
 
     embedding_model = Column(String(255), nullable=False)
 
-    documents = relationship("DocumentRecord", secondary=document_index_association, back_populates="indexes")
+    documents = relationship(
+        "DocumentRecord", secondary=document_index_association, back_populates="indexes"
+    )
 
 
 class DocumentRecord(Base):
-    __tablename__ = 'documents'
+    __tablename__ = "documents"
 
     doc_id = Column(String(255), primary_key=True)
 
@@ -51,22 +82,27 @@ class DocumentRecord(Base):
     doc_type = Column(String(50))
 
     ingested_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.datetime.now(datetime.UTC)
+        DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC)
     )
 
-    indexes = relationship("KnowledgeIndex", secondary=document_index_association, back_populates="documents")
+    indexes = relationship(
+        "KnowledgeIndex",
+        secondary=document_index_association,
+        back_populates="documents",
+    )
 
 
 class SearchView(Base):
-    __tablename__ = 'search_views'
+    __tablename__ = "search_views"
 
     view_id = Column(String(255), primary_key=True)
     name = Column(String(255), nullable=False)
     description = Column(String)
     default_strategy = Column(Text, nullable=True)
 
-    documents = relationship("DocumentRecord", secondary=view_document_association, backref="views")
+    documents = relationship(
+        "DocumentRecord", secondary=view_document_association, backref="views"
+    )
 
 
 # --- MANAGER ---
@@ -89,7 +125,9 @@ class RegistryManager:
         """Creates all registered tables in the relational database."""
         self.db.create_tables(Base)
 
-    def get_or_create_index(self, index_name: str, graph_path: str, embedding_model: str) -> str:
+    def get_or_create_index(
+        self, index_name: str, graph_path: str, embedding_model: str
+    ) -> str:
         """
         Retrieves a KnowledgeIndex by name. If it doesn't exist, it creates one.
         If it exists, it validates that the embedding model matches to prevent vector space corruption.
@@ -113,7 +151,7 @@ class RegistryManager:
                 idx = KnowledgeIndex(
                     index_name=index_name,
                     graph_path=graph_path,
-                    embedding_model=embedding_model
+                    embedding_model=embedding_model,
                 )
                 session.add(idx)
                 session.commit()
@@ -130,14 +168,14 @@ class RegistryManager:
             return idx.index_name
 
     def register_document(
-            self,
-            doc_id: str,
-            index_name: str,
-            title: str,
-            source_path: str,
-            doc_format: str,
-            doc_type: str,
-            has_physical_copy: bool = False
+        self,
+        doc_id: str,
+        index_name: str,
+        title: str,
+        source_path: str,
+        doc_format: str,
+        doc_type: str,
+        has_physical_copy: bool = False,
     ):
         """
         Registers a document metadata record and associates it with a physical index.
@@ -164,13 +202,17 @@ class RegistryManager:
             doc.doc_type = doc_type
             doc.has_physical_copy = has_physical_copy
 
-            idx_obj = session.query(KnowledgeIndex).filter_by(index_name=index_name).first()
+            idx_obj = (
+                session.query(KnowledgeIndex).filter_by(index_name=index_name).first()
+            )
             if idx_obj and idx_obj not in doc.indexes:
                 doc.indexes.append(idx_obj)
 
             session.commit()
 
-    def bind_documents_to_views(self, doc_ids: List[str], target_views: List[Dict[str, str]]):
+    def bind_documents_to_views(
+        self, doc_ids: List[str], target_views: List[Dict[str, str]]
+    ):
         """
         Ensures search views exist and associates them with the specified documents.
 
@@ -192,16 +234,16 @@ class RegistryManager:
 
                 if not view:
                     logger.info("Creating new search view: %s (%s)", v_name, v_id)
-                    view = SearchView(
-                        view_id=v_id,
-                        name=v_name,
-                        description=v_desc
-                    )
+                    view = SearchView(view_id=v_id, name=v_name, description=v_desc)
                     session.add(view)
                 else:
                     pass
 
-                docs = session.query(DocumentRecord).filter(DocumentRecord.doc_id.in_(doc_ids)).all()
+                docs = (
+                    session.query(DocumentRecord)
+                    .filter(DocumentRecord.doc_id.in_(doc_ids))
+                    .all()
+                )
                 for d in docs:
                     if d not in view.documents:
                         view.documents.append(d)
@@ -220,9 +262,11 @@ class RegistryManager:
             bool: True if the association exists, False otherwise.
         """
         with self.db.get_session() as session:
-            stmt = exists().where(
-                DocumentRecord.doc_id == doc_id
-            ).where(
-                DocumentRecord.indexes.any(KnowledgeIndex.index_name == index_name)
+            stmt = (
+                exists()
+                .where(DocumentRecord.doc_id == doc_id)
+                .where(
+                    DocumentRecord.indexes.any(KnowledgeIndex.index_name == index_name)
+                )
             )
             return session.query(stmt).scalar()

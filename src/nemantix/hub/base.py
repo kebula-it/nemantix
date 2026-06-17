@@ -7,7 +7,7 @@ if TYPE_CHECKING:
 
 
 class Storable:
-    def __init__(self, connector: 'DBConnector | None' = None):
+    def __init__(self, connector: "DBConnector | None" = None):
         self.connector = connector
 
         if self.connector is not None:
@@ -27,13 +27,14 @@ class Storable:
         # Convert float timestamp to datetime
         timestamp = kwargs.pop("timestamp")
         dt_timestamp = datetime.datetime.fromtimestamp(timestamp)
-        
+
         try:
             payload = self._sanitize_payload(payload=kwargs.pop("payload", {}))
-            
+
             with self.connector.get_session() as session:
-                db_log = EventLogModel(timestamp=dt_timestamp, 
-                                       payload=payload, **kwargs)
+                db_log = EventLogModel(
+                    timestamp=dt_timestamp, payload=payload, **kwargs
+                )
                 session.add(db_log)
                 session.commit()
 
@@ -59,4 +60,3 @@ class Storable:
                 safe_payload[key] = str(value)
 
         return safe_payload
-

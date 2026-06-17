@@ -39,7 +39,7 @@ class Event:
     type: EventType
     lines: tuple[int, int]
     scope: str
-    script: 'Script | None'
+    script: "Script | None"
     statement: str
     payload: Any = None
     timestamp: float = field(default_factory=time.time)

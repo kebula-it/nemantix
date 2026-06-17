@@ -18,21 +18,22 @@ logger = get_package_logger(__name__)
 
 class DBEngineEnum(Enum):
     """Enumeration of sqlalchemy common engines"""
+
     # postgres
-    POSTGRES = 'postgresql'
-    PSYCOPG2 = 'postgresql+psycopg2'
-    PG_8000 = 'postgresql+pg8000'
+    POSTGRES = "postgresql"
+    PSYCOPG2 = "postgresql+psycopg2"
+    PG_8000 = "postgresql+pg8000"
     # mysql
-    MYSQL = 'mysql'
-    MYSQL_DB = 'mysql+mysqldb'
-    PY_MYSQL = 'mysql+pymysql'
+    MYSQL = "mysql"
+    MYSQL_DB = "mysql+mysqldb"
+    PY_MYSQL = "mysql+pymysql"
     # oracle
-    ORACLE = 'oracle+oracledb'
+    ORACLE = "oracle+oracledb"
     # MS sql server
-    PY_ODBC = 'mssql+pyodbc'
-    PY_MSSQL = 'mssql+pymssql'
+    PY_ODBC = "mssql+pyodbc"
+    PY_MSSQL = "mssql+pymssql"
     # sqlite
-    SQLITE = 'sqlite'
+    SQLITE = "sqlite"
 
 
 class Connector(ABC):
@@ -48,8 +49,15 @@ class DBConnector(Connector):
     """Class that wraps the connection to a DBMS"""
 
     # TODO: pool options
-    def __init__(self, database_url: URL | str, autoflush=False, autocommit=False,
-                 expire_on_commit=False, future=True, **kwargs):
+    def __init__(
+        self,
+        database_url: URL | str,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+        future=True,
+        **kwargs,
+    ):
         assert isinstance(database_url, (str, URL))
 
         # SQLite doesn't benefit from connection pooling; NullPool ensures connections
@@ -59,8 +67,13 @@ class DBConnector(Connector):
 
         self.engine = create_engine(database_url, future=bool(future), **kwargs)
         self.connection = None
-        self.Session = sessionmaker(self.engine, autoflush=bool(autoflush), autocommit=bool(autocommit),
-                                    expire_on_commit=bool(expire_on_commit), future=bool(future))
+        self.Session = sessionmaker(
+            self.engine,
+            autoflush=bool(autoflush),
+            autocommit=bool(autocommit),
+            expire_on_commit=bool(expire_on_commit),
+            future=bool(future),
+        )
 
     def is_service_available(self) -> bool:
         """Check if the database is available"""
@@ -80,7 +93,9 @@ class DBConnector(Connector):
     def create_tables(self, base=ORMBase):
         try:
             if not database_exists(self.engine.url):
-                logger.info(f"Database '{self.engine.url.database}' not found. Creating database...")
+                logger.info(
+                    f"Database '{self.engine.url.database}' not found. Creating database..."
+                )
                 create_database(self.engine.url)
                 logger.info("Database created successfully.")
 
@@ -96,7 +111,7 @@ class DBConnector(Connector):
             if self.connection is None:
                 self.connection = self.engine.connect()
             else:
-                print('Already connected.')
+                print("Already connected.")
 
         except Exception as e:
             raise ConnectionError(
@@ -111,17 +126,29 @@ class DBConnector(Connector):
             self.connection = None
 
     @staticmethod
-    def from_parameters(engine: str | DBEngineEnum, username: str | None = None, password: str | None = None,
-                        host: str | None = None, database: str | None = None,
-                        port: int | None = None, **kwargs) -> 'DBConnector':
+    def from_parameters(
+        engine: str | DBEngineEnum,
+        username: str | None = None,
+        password: str | None = None,
+        host: str | None = None,
+        database: str | None = None,
+        port: int | None = None,
+        **kwargs,
+    ) -> "DBConnector":
         if isinstance(engine, DBEngineEnum):
             engine = engine.value
 
-        url = URL.create(engine, username=username, password=password, host=host,
-                         database=database, port=port)
+        url = URL.create(
+            engine,
+            username=username,
+            password=password,
+            host=host,
+            database=database,
+            port=port,
+        )
         return DBConnector(url, **kwargs)
 
     @staticmethod
-    def sqlite_in_mem() -> 'DBConnector':
+    def sqlite_in_mem() -> "DBConnector":
         """Creates a SQLite connection with in-memory dataset for debugging purpose"""
-        return DBConnector.from_parameters(engine='sqlite', database=':memory:')
+        return DBConnector.from_parameters(engine="sqlite", database=":memory:")

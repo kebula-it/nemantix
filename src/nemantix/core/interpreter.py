@@ -83,9 +83,9 @@ BUILTIN_FUNCTIONS = {
 
 
 class ReturnType(Enum):
-    NONE = 0,
-    RETURN = 1,
-    BREAK = 2,
+    NONE = (0,)
+    RETURN = (1,)
+    BREAK = (2,)
     CONTINUE = 3
 
     def is_return(self) -> bool:

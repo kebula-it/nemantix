@@ -84,11 +84,11 @@ all = [
 nemantix = "nemantix.cli:main"
 
 [project.entry-points.nemantix]
-run     = "nemantix.cli.run:register"
+run = "nemantix.cli.run:register"
 code = "nemantix.cli.code:register"
-sign    = "nemantix.cli.sign:register"
-verify  = "nemantix.cli.verify:register"
-keygen  = "nemantix.cli.keygen:register"
+sign = "nemantix.cli.sign:register"
+verify = "nemantix.cli.verify:register"
+keygen = "nemantix.cli.keygen:register"
 
 [project.urls]
 Documentation = "https://github.com/kebula-it/nemantix#readme"
@@ -105,5 +105,13 @@ include = ["nemantix", "nemantix.*"]
 
 [tool.setuptools.package-data]
 nemantix = ["core/nxs_v2_grammar.lark"]
+
 [tool.ruff.lint.per-file-ignores]
 "test/stl/*" = ["F401"]
+
+[tool.ruff]
+exclude = [".git", "__pycache__", "examples", "plugins"]
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "auto"

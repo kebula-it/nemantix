@@ -17,18 +17,21 @@ class Annotation:
         self.value: Any = value
 
     def __str__(self):
-        return f'@{self.name}: {self.value}'
+        return f"@{self.name}: {self.value}"
 
 
 class Meta:
     """Base class for metadata objects."""
+
     pass
 
 
 class FileMeta(Meta):
     """File position info for a parsed element."""
 
-    def __init__(self, line: tuple[int, int], column: tuple[int, int], file: Path | None = None):
+    def __init__(
+        self, line: tuple[int, int], column: tuple[int, int], file: Path | None = None
+    ):
         self.line: tuple[int, int] = line
         self.column: tuple[int, int] = column
         self.file: Path | None = file
@@ -43,7 +46,9 @@ class FileMeta(Meta):
 class NodeMeta(Meta):
     """Metadata attached to a statement node."""
 
-    def __init__(self, annotations: list[Annotation], label: str | None, file_meta: FileMeta):
+    def __init__(
+        self, annotations: list[Annotation], label: str | None, file_meta: FileMeta
+    ):
         self.annotations: list[Annotation] = annotations
         self.label: str | None = label
         self.file_meta: FileMeta = file_meta
@@ -77,7 +82,7 @@ class LeafStatement(Statement):
 standard_intentables_map = {
     "completion": "intent.completion",
     "breakdown": "intent.breakdown",
-    "goal": "intent.goal"
+    "goal": "intent.goal",
 }
 
 
@@ -94,7 +99,9 @@ class BlockStatement(Statement):
 
     def get_annotation_value(self, name: str):
         if self.meta["node_meta"] is None:
-            raise NemantixException(f"The node \n   '{self}'\nhas no annotation named '{name}'.")
+            raise NemantixException(
+                f"The node \n   '{self}'\nhas no annotation named '{name}'."
+            )
 
         val = None
         node_meta = self.meta["node_meta"]
@@ -102,16 +109,20 @@ class BlockStatement(Statement):
 
         for annot in node_meta.annotations:
             if name == annot.name or (
-                    name in standard_intentables_map and standard_intentables_map[name] == annot.name):
+                name in standard_intentables_map
+                and standard_intentables_map[name] == annot.name
+            ):
                 val = annot.value
 
         if val is None:
-            raise NemantixException(f"The node \n   '{self}'\nhas no annotation named '{name}'.")
+            raise NemantixException(
+                f"The node \n   '{self}'\nhas no annotation named '{name}'."
+            )
 
         return val
 
     def get_qualifier(self) -> Any | list:
-        if hasattr(self, 'qualifier'):
+        if hasattr(self, "qualifier"):
             if self.qualifier is not None:
                 return self.qualifier
 
@@ -128,7 +139,7 @@ class BlockStatement(Statement):
                     qualifier = qualifier.split("->")
                 else:
                     qualifier = [qualifier]
-            
+
             if isinstance(qualifier, list | tuple):
                 # unwrap SingleValues inside lists
                 def _get_str(item):
@@ -143,10 +154,14 @@ class BlockStatement(Statement):
                     qualifier = [plan_qualifier_map[val], plan_qualifier_map[val]]
 
                 elif len(qualifier) == 2:
-                    qualifier = [plan_qualifier_map[_get_str(qualifier[0])],
-                                 plan_qualifier_map[_get_str(qualifier[1])]]
+                    qualifier = [
+                        plan_qualifier_map[_get_str(qualifier[0])],
+                        plan_qualifier_map[_get_str(qualifier[1])],
+                    ]
             else:
-                raise NemantixException(f'Received {type(qualifier)} as completion qualifier!')
+                raise NemantixException(
+                    f"Received {type(qualifier)} as completion qualifier!"
+                )
 
             return qualifier
 
@@ -154,14 +169,17 @@ class BlockStatement(Statement):
             return None
 
     def is_not_valid_qualifier(self) -> bool:
-        if hasattr(self, 'qualifier'):
-            return (self.qualifier and not plan_qualifier_ordered_map[self.qualifier[0]] <=
-                                           plan_qualifier_ordered_map[self.qualifier[1]])
+        if hasattr(self, "qualifier"):
+            return (
+                self.qualifier
+                and not plan_qualifier_ordered_map[self.qualifier[0]]
+                <= plan_qualifier_ordered_map[self.qualifier[1]]
+            )
         return True
 
     def get_intent(self):
         intent = None
-        for name in ['intent.goal', 'goal']:
+        for name in ["intent.goal", "goal"]:
             try:
                 intent = self.get_annotation_value(name)
             except NemantixException:
@@ -240,7 +258,7 @@ class MetaExpression(Expression):
 
     def __str__(self):
         # first element is the one before "@"
-        return f"MetaExpression({self.quals[0]}@{".".join(self.quals[1:])})"
+        return f"MetaExpression({self.quals[0]}@{'.'.join(self.quals[1:])})"
 
 
 class ExpressionOperand(Expression):
@@ -251,7 +269,9 @@ class ExpressionOperand(Expression):
 
 
 class Value(ExpressionOperand):
-    def __init__(self, value: Any, inferred_type: VariableTypeEnum, meta: dict[str, Meta | None]):
+    def __init__(
+        self, value: Any, inferred_type: VariableTypeEnum, meta: dict[str, Meta | None]
+    ):
         super().__init__(meta)
         self.value = value
         self.inferred_type = inferred_type
@@ -260,8 +280,11 @@ class Value(ExpressionOperand):
         return f"VALUE({self.inferred_type}: {self.value})"
 
     def to_nxs(self, **kwargs):
-        if self.inferred_type in [VariableTypeEnum.INT, VariableTypeEnum.FLOAT,
-                                  VariableTypeEnum.BOOL]:
+        if self.inferred_type in [
+            VariableTypeEnum.INT,
+            VariableTypeEnum.FLOAT,
+            VariableTypeEnum.BOOL,
+        ]:
             code = str(self.value).lower()
 
         elif self.inferred_type in [VariableTypeEnum.STRING, VariableTypeEnum.FSTRING]:
@@ -269,19 +292,21 @@ class Value(ExpressionOperand):
 
         elif self.inferred_type == VariableTypeEnum.LIST:
             content = [v.to_nxs(**kwargs) for v in self.value]
-            code = f'[{", ".join(content)}]'
+            code = f"[{', '.join(content)}]"
 
         elif self.inferred_type == VariableTypeEnum.DICT:
-            content = [f'{k}: {v.to_nxs(**kwargs)}' for k, v in self.value.items()]
-            code = f'[{", ".join(content)}]'
+            content = [f"{k}: {v.to_nxs(**kwargs)}" for k, v in self.value.items()]
+            code = f"[{', '.join(content)}]"
         else:
-            code = 'none'
+            code = "none"
 
         return code
 
 
 class SingleValue(Value):
-    def __init__(self, value: Any, inferred_type: VariableTypeEnum, meta: dict[str, Meta | None]):
+    def __init__(
+        self, value: Any, inferred_type: VariableTypeEnum, meta: dict[str, Meta | None]
+    ):
         super().__init__(value, inferred_type, meta)
 
     def to_nxs(self, **kwargs):
@@ -292,18 +317,23 @@ class SingleValue(Value):
                     content.append(v)
 
                 elif isinstance(v, Variable):
-                    content.append(f'[{v.name}]')
+                    content.append(f"[{v.name}]")
                 else:
                     content.append(str(v).lower())
 
-            return f"\"{''.join(content)}\""
+            return f'"{"".join(content)}"'
 
         return super().to_nxs(**kwargs)
 
 
 class Variable(ExpressionOperand):
-    def __init__(self, name: str | None, prompt: MicroPrompt | None, path: str | None | list[SingleValue],
-                 meta: dict[str, Meta | None]):
+    def __init__(
+        self,
+        name: str | None,
+        prompt: MicroPrompt | None,
+        path: str | None | list[SingleValue],
+        meta: dict[str, Meta | None],
+    ):
         super().__init__(meta)
         self.name = name
         self.prompt = prompt
@@ -312,28 +342,46 @@ class Variable(ExpressionOperand):
     def __eq__(self, other):
         if not isinstance(other, Variable):
             return NotImplemented
-        return (self.name, self.prompt, self.path) == (other.name, other.prompt, other.path)
+        return (self.name, self.prompt, self.path) == (
+            other.name,
+            other.prompt,
+            other.path,
+        )
 
     def __str__(self):
         prompt_str = f" prompt={self.prompt.prompt}" if self.prompt is not None else ""
-        path_str = f"{[str(p) for p in self.path] if isinstance(self.path, list) else self.path}" if self.path else ""
+        path_str = (
+            f"{[str(p) for p in self.path] if isinstance(self.path, list) else self.path}"
+            if self.path
+            else ""
+        )
         return f"Variable: {self.name}{path_str}{prompt_str}"
 
     def to_nxs(self, **kwargs) -> str:
         path_str = ""
         if self.path:
             # Handle nested paths like [user:address:city]
-            path_str = ":" + ":".join(str(p.value) if hasattr(p, 'value') else str(p) for p in self.path)
+            path_str = ":" + ":".join(
+                str(p.value) if hasattr(p, "value") else str(p) for p in self.path
+            )
         return f"[{self.name}{path_str}]"
 
 
 class Collection(Value):
-    def __init__(self, value: list[SingleValue] | dict[str, SingleValue], inferred_type: VariableTypeEnum,
-                 meta: dict[str, Meta | None]):
+    def __init__(
+        self,
+        value: list[SingleValue] | dict[str, SingleValue],
+        inferred_type: VariableTypeEnum,
+        meta: dict[str, Meta | None],
+    ):
         super().__init__(value, inferred_type, meta)
 
     def __str__(self):
-        val_str = [str(v) for v in self.value] if isinstance(self.value, list) else str(self.value)
+        val_str = (
+            [str(v) for v in self.value]
+            if isinstance(self.value, list)
+            else str(self.value)
+        )
         return f"Collection({self.inferred_type}: {val_str})"
 
     def to_nxs(self, **kwargs) -> str:
@@ -359,10 +407,10 @@ class Collection(Value):
                     buffer.append(v.to_nxs(**kwargs))
                     strip_parenthesis.append(True)
 
-                elif hasattr(v, 'to_nxs'):
+                elif hasattr(v, "to_nxs"):
                     buffer.append(v.to_nxs(**kwargs))
 
-                elif hasattr(v, 'name'):
+                elif hasattr(v, "name"):
                     buffer.append(f"[{v.name}]")
                     strip_parenthesis.append(True)
                 else:
@@ -370,7 +418,7 @@ class Collection(Value):
                     strip_parenthesis.append(True)
 
         if all(strip_parenthesis):
-            return ', '.join(buffer)
+            return ", ".join(buffer)
 
         return f"({', '.join(buffer)})"
 
@@ -381,21 +429,21 @@ class Collection(Value):
                 if len(v) == 1:
                     v = v[0]
                 else:
-                    raise NotImplementedError(f'list: {v}')
+                    raise NotImplementedError(f"list: {v}")
 
-            buf.append(f'{k}: {v.to_nxs(**kwargs)}')
+            buf.append(f"{k}: {v.to_nxs(**kwargs)}")
 
-        return ', '.join(buf)
+        return ", ".join(buf)
 
 
 class SchemedCollection(Collection):
     def __init__(
-            self,
-            value: list[SingleValue] | dict[str, SingleValue],
-            inferred_type: VariableTypeEnum,
-            dataframe: str,
-            apply_type: FrameApplyEnum,
-            meta: dict[str, Meta | None],
+        self,
+        value: list[SingleValue] | dict[str, SingleValue],
+        inferred_type: VariableTypeEnum,
+        dataframe: str,
+        apply_type: FrameApplyEnum,
+        meta: dict[str, Meta | None],
     ):
         super().__init__(value, inferred_type, meta)
         self.dataframe = dataframe
@@ -403,12 +451,18 @@ class SchemedCollection(Collection):
 
     def __str__(self):
         pos_str = self.apply_type.value
-        val_str = [str(v) for v in self.value] if isinstance(self.value, list) else str(self.value)
-        return f"SchemedCollection {"{" + self.dataframe + "}"}[{pos_str}]: {val_str})"
+        val_str = (
+            [str(v) for v in self.value]
+            if isinstance(self.value, list)
+            else str(self.value)
+        )
+        return f"SchemedCollection {'{' + self.dataframe + '}'}[{pos_str}]: {val_str})"
 
 
 class Assignment(Expression):
-    def __init__(self, var: Variable, value: Expression | None, meta: dict[str, Meta | None]):
+    def __init__(
+        self, var: Variable, value: Expression | None, meta: dict[str, Meta | None]
+    ):
         super().__init__(meta)
         self.var = var
         self.value = value
@@ -419,12 +473,12 @@ class Assignment(Expression):
     def to_nxs(self, **kwargs) -> str:
         if isinstance(self.value, list):
             values = [v.to_nxs(**kwargs) for v in self.value]
-            return f'[{self.var.name}] = ({", ".join(values)})'
+            return f"[{self.var.name}] = ({', '.join(values)})"
 
         if self.value is None:
-            return f'[{self.var.name}] = none'
+            return f"[{self.var.name}] = none"
 
-        return f'[{self.var.name}] = {self.value.to_nxs(**kwargs)}'
+        return f"[{self.var.name}] = {self.value.to_nxs(**kwargs)}"
 
 
 class BinaryOperationEnum(Enum):
@@ -494,11 +548,11 @@ class BinaryOperation(Expression):
     """Binary (or N-ary) operation: math, logic, concat, comparisons, etc."""
 
     def __init__(
-            self,
-            operation: BinaryOperationEnum,
-            first: Expression,
-            second: Expression,
-            meta: dict[str, Meta | None],
+        self,
+        operation: BinaryOperationEnum,
+        first: Expression,
+        second: Expression,
+        meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.first = first
@@ -506,21 +560,25 @@ class BinaryOperation(Expression):
         self.second = second
 
     def __str__(self):
-        op = self.operation.value if isinstance(self.operation, Enum) else self.operation
+        op = (
+            self.operation.value if isinstance(self.operation, Enum) else self.operation
+        )
         return f"BinaryOperation: [{self.first}] {op} [{self.second}]"
 
     def to_nxs(self, **kwargs) -> str:
-        return f'{self.first.to_nxs(**kwargs)} {self.operation.value} {self.second.to_nxs(**kwargs)}'
+        return f"{self.first.to_nxs(**kwargs)} {self.operation.value} {self.second.to_nxs(**kwargs)}"
 
 
 class SimilarityOperation(Expression):
     def __init__(
-            self,
-            operation: SimilarityEnum,
-            qualifier: tuple[SimilarityQualifierEnum, Value] | SimilarityQualifierEnum | None,
-            first: Expression,
-            second: Expression,
-            meta: dict[str, Meta | None],
+        self,
+        operation: SimilarityEnum,
+        qualifier: tuple[SimilarityQualifierEnum, Value]
+        | SimilarityQualifierEnum
+        | None,
+        first: Expression,
+        second: Expression,
+        meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.first = first
@@ -534,7 +592,11 @@ class SimilarityOperation(Expression):
         q = self.qualifier
 
         # Common internal representation: (SimilarityQualifierEnum, value|None)
-        if isinstance(q, tuple) and len(q) == 2 and isinstance(q[0], SimilarityQualifierEnum):
+        if (
+            isinstance(q, tuple)
+            and len(q) == 2
+            and isinstance(q[0], SimilarityQualifierEnum)
+        ):
             q_enum, q_val = q
             name = q_enum.name
             qualifier_str = f"{name}"
@@ -545,7 +607,11 @@ class SimilarityOperation(Expression):
         elif q is not None:
             qualifier_str = str(q)
 
-        op_name = self.operation.name if isinstance(self.operation, Enum) else str(self.operation)
+        op_name = (
+            self.operation.name
+            if isinstance(self.operation, Enum)
+            else str(self.operation)
+        )
         return f"SimilarityOperation: [{self.first}] {op_name} {qualifier_str} [{self.second}]"
 
 
@@ -580,8 +646,12 @@ builtin_func_map = {v.value: v for v in BuiltinFunctionEnum.__members__.values()
 
 
 class BuiltinFunction(Expression):
-    def __init__(self, function: BuiltinFunctionEnum, args: list[Expression],
-                 meta: dict[str, Meta | None]):
+    def __init__(
+        self,
+        function: BuiltinFunctionEnum,
+        args: list[Expression],
+        meta: dict[str, Meta | None],
+    ):
         super().__init__(meta)
         self.function = function
         self.args = args
@@ -592,27 +662,34 @@ class BuiltinFunction(Expression):
 
     def to_nxs(self, **kwargs) -> str:
         if isinstance(self.args, list):
-            args = ', '.join(a.to_nxs(**kwargs) for a in self.args)
+            args = ", ".join(a.to_nxs(**kwargs) for a in self.args)
         else:
             args = self.args.to_nxs(**kwargs)
 
-        return f'{self.function.name.lower()}({args})'
+        return f"{self.function.name.lower()}({args})"
 
 
 class UnaryOperation(Expression):
     """Unary '+', '-', '!'."""
 
-    def __init__(self, operation: UnaryOperationEnum, operand: Expression, meta: dict[str, Meta | None]):
+    def __init__(
+        self,
+        operation: UnaryOperationEnum,
+        operand: Expression,
+        meta: dict[str, Meta | None],
+    ):
         super().__init__(meta)
         self.operation = operation
         self.operand = operand
 
     def __str__(self):
-        op = self.operation.value if isinstance(self.operation, Enum) else self.operation
+        op = (
+            self.operation.value if isinstance(self.operation, Enum) else self.operation
+        )
         return f"UnaryOp({op}, {self.operand})"
 
     def to_nxs(self, **kwargs) -> str:
-        return f'{self.operation.value}{self.operand.to_nxs(**kwargs)}'
+        return f"{self.operation.value}{self.operand.to_nxs(**kwargs)}"
 
 
 class CallableTypeEnum(Enum):
@@ -620,20 +697,20 @@ class CallableTypeEnum(Enum):
     ACTION = "action"
 
 
-callable_type_map = {"tool": CallableTypeEnum.TOOL,
-                     "action": CallableTypeEnum.ACTION}
+callable_type_map = {"tool": CallableTypeEnum.TOOL, "action": CallableTypeEnum.ACTION}
 
 
 class DoStatement(LeafStatement):
     def __init__(
-            self,
-            name: str | None,
-            callable_type: str | None,
-            using: Expression | None,
-            prompt: MicroPrompt | None,
-            producing: Expression | None,
-            producing_schema: str | MicroPrompt | None,
-            meta: dict[str, Meta | None]):
+        self,
+        name: str | None,
+        callable_type: str | None,
+        using: Expression | None,
+        prompt: MicroPrompt | None,
+        producing: Expression | None,
+        producing_schema: str | MicroPrompt | None,
+        meta: dict[str, Meta | None],
+    ):
         super().__init__(meta)
         self.name = name
         self.callable_type = callable_type_map[callable_type] if callable_type else None
@@ -645,12 +722,14 @@ class DoStatement(LeafStatement):
     def __str__(self):
         type_str = f"{self.callable_type} " if self.callable_type is not None else ""
         name_str = self.name if self.name is not None else "_"
-        return (f"DO: {type_str}{name_str} using:{self.using}, prompt:{self.prompt}, producing:{self.producing}, "
-                f"as:{self.producing_schema}")
+        return (
+            f"DO: {type_str}{name_str} using:{self.using}, prompt:{self.prompt}, producing:{self.producing}, "
+            f"as:{self.producing_schema}"
+        )
 
     def to_nxs(self, **kwargs):
-        code = ['do']
-        lines = self.meta['file_meta'].line
+        code = ["do"]
+        lines = self.meta["file_meta"].line
         is_multiline = lines[1] - lines[0] > 0
 
         if self.callable_type is not None:
@@ -659,21 +738,21 @@ class DoStatement(LeafStatement):
         code.append(str(self.name))
 
         if is_multiline:
-            code = [' '.join(code) + ':']
-            char = '\n'
-            space = '  '
+            code = [" ".join(code) + ":"]
+            char = "\n"
+            space = "  "
         else:
-            char = ' '
-            space = ''
+            char = " "
+            space = ""
 
         if self.using is not None:
-            code.append(f'{space}using [{self.using.to_nxs(**kwargs)}]')
+            code.append(f"{space}using [{self.using.to_nxs(**kwargs)}]")
 
         if self.producing is not None:
-            code.append(f'{space}producing [{self.producing.to_nxs(**kwargs)}]')
+            code.append(f"{space}producing [{self.producing.to_nxs(**kwargs)}]")
 
         if isinstance(self.producing_schema, str):
-            code.append(f'{space}as {{{self.producing_schema}}}')
+            code.append(f"{space}as {{{self.producing_schema}}}")
 
         if is_multiline:
             if isinstance(self.prompt, MicroPrompt):
@@ -721,16 +800,16 @@ class RepeatBlock(BlockStatement):
 
 
 class RepeatEachBlock(RepeatBlock):
-    def __init__(self, each: LeafStatement, as_vars: list[str], meta: dict[str, Meta | None]):
+    def __init__(
+        self, each: LeafStatement, as_vars: list[str], meta: dict[str, Meta | None]
+    ):
         super().__init__(meta)
         self.each = each
         self.as_vars = as_vars
 
     def __str__(self):
         children_str = "\n   - ".join(str(c) for c in self.children)
-        return (
-            f"RepeatEachBlock(each={self.each}, as_vars={self.as_vars}) \n{children_str}"
-        )
+        return f"RepeatEachBlock(each={self.each}, as_vars={self.as_vars}) \n{children_str}"
 
 
 class RepeatTimesBlock(RepeatBlock):
@@ -745,7 +824,12 @@ class RepeatTimesBlock(RepeatBlock):
 
 
 class RepeatWhileBlock(RepeatBlock):
-    def __init__(self, condition: LeafStatement, max_it: Expression | int, meta: dict[str, Meta | None]):
+    def __init__(
+        self,
+        condition: LeafStatement,
+        max_it: Expression | int,
+        meta: dict[str, Meta | None],
+    ):
         super().__init__(meta)
         self.condition = condition
         self.max = max_it
@@ -756,7 +840,12 @@ class RepeatWhileBlock(RepeatBlock):
 
 
 class RepeatUntilBlock(RepeatBlock):
-    def __init__(self, condition: LeafStatement, max_it: Expression | int, meta: dict[str, Meta | None]):
+    def __init__(
+        self,
+        condition: LeafStatement,
+        max_it: Expression | int,
+        meta: dict[str, Meta | None],
+    ):
         super().__init__(meta)
         self.condition = condition
         self.max = max_it
@@ -770,7 +859,12 @@ class RepeatUntilBlock(RepeatBlock):
 # If / Elif / Else
 # =============================================================================
 class IfBlock(BlockStatement):
-    def __init__(self, condition: LeafStatement | None, body: list[Statement] | None, meta: dict[str, Meta | None]):
+    def __init__(
+        self,
+        condition: LeafStatement | None,
+        body: list[Statement] | None,
+        meta: dict[str, Meta | None],
+    ):
         super().__init__(meta)
         self.condition = condition
         if body:
@@ -782,7 +876,12 @@ class IfBlock(BlockStatement):
 
 
 class ElifBlock(BlockStatement):
-    def __init__(self, condition: LeafStatement | None, body: list[Statement] | None, meta: dict[str, Meta | None]):
+    def __init__(
+        self,
+        condition: LeafStatement | None,
+        body: list[Statement] | None,
+        meta: dict[str, Meta | None],
+    ):
         super().__init__(meta)
         self.condition = condition
         if body:
@@ -806,15 +905,15 @@ class ElseBlock(BlockStatement):
 
 class ConditionBlock(BlockStatement):
     def __init__(
-            self,
-            if_block: IfBlock,
-            elif_list: list[ElifBlock] | None,
-            else_block: ElseBlock | None,
-            meta: dict[str, Meta | None],
+        self,
+        if_block: IfBlock,
+        elif_list: list[ElifBlock] | None,
+        else_block: ElseBlock | None,
+        meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.children.append(if_block)
-        for elif_stmt in (elif_list or []):
+        for elif_stmt in elif_list or []:
             self.children.append(elif_stmt)
         if else_block:
             self.children.append(else_block)
@@ -854,13 +953,13 @@ class ActionOutput:
 
 class ActionBlock(BlockStatement):
     def __init__(
-            self,
-            name: str | None,
-            prompt: MicroPrompt,
-            action_inputs: list[ActionInput],
-            action_outputs: list[ActionOutput],
-            body: list[Statement] | None,
-            meta: dict[str, Meta],
+        self,
+        name: str | None,
+        prompt: MicroPrompt,
+        action_inputs: list[ActionInput],
+        action_outputs: list[ActionOutput],
+        body: list[Statement] | None,
+        meta: dict[str, Meta],
     ):
         super().__init__(meta)
         self.name = name
@@ -871,12 +970,17 @@ class ActionBlock(BlockStatement):
             self.children = body
         self.qualifier = None
         self.qualifier = self.get_qualifier()
-        if (self.qualifier and not plan_qualifier_ordered_map[self.qualifier[0]] <=
-                                   plan_qualifier_ordered_map[self.qualifier[1]]):
-            raise NemantixException("Action completion qualifiers must specify increasing"
-                                    " completion levels (e.g drafted->frozen). "
-                                    f"Completion '{self.qualifier[0].value}->{self.qualifier[1].value}' "
-                                    f"is not allowed.")
+        if (
+            self.qualifier
+            and not plan_qualifier_ordered_map[self.qualifier[0]]
+            <= plan_qualifier_ordered_map[self.qualifier[1]]
+        ):
+            raise NemantixException(
+                "Action completion qualifiers must specify increasing"
+                " completion levels (e.g drafted->frozen). "
+                f"Completion '{self.qualifier[0].value}->{self.qualifier[1].value}' "
+                f"is not allowed."
+            )
 
     def __str__(self):
         children_str = "\n     - ".join(str(c) for c in self.children)
@@ -896,7 +1000,14 @@ class ImportStatement(LeafStatement):
 
 
 class ImportToolsetStatement(ImportStatement):
-    def __init__(self, name: str, elements: list[str], args: Expression, alias: str, meta: dict[str, Meta | None]):
+    def __init__(
+        self,
+        name: str,
+        elements: list[str],
+        args: Expression,
+        alias: str,
+        meta: dict[str, Meta | None],
+    ):
         super().__init__(name, elements, meta)
         self.args = args
         self.alias = alias
@@ -904,7 +1015,6 @@ class ImportToolsetStatement(ImportStatement):
     def get_aliased_name(self):
         """Returns a string 'name:alias' if there's an alias, else only 'name'"""
         return f"{self.name}:{self.alias}" if self.alias else f"{self.name}"
-
 
     def __str__(self):
         alias_str = f" as {self.alias}" if self.alias else ""
@@ -923,22 +1033,25 @@ plan_qualifier_map = {
     "frozen": PlanQualifierEnum.FROZEN,
     "drafted": PlanQualifierEnum.DRAFTED,
     "undefined": PlanQualifierEnum.UNDEFINED,
-    "None": PlanQualifierEnum.NONE
+    "None": PlanQualifierEnum.NONE,
 }
 
 plan_qualifier_ordered_map = {
     PlanQualifierEnum.FROZEN: 2,
     PlanQualifierEnum.DRAFTED: 1,
     PlanQualifierEnum.UNDEFINED: 0,
-    PlanQualifierEnum.NONE: -1
+    PlanQualifierEnum.NONE: -1,
 }
 
 
 class PlanBlock(BlockStatement):
-    def __init__(self, action_inputs: list[ActionInput],
-                 action_outputs: list[ActionOutput],
-                 body: list[Statement] | None,
-                 meta: dict[str, Meta], ):
+    def __init__(
+        self,
+        action_inputs: list[ActionInput],
+        action_outputs: list[ActionOutput],
+        body: list[Statement] | None,
+        meta: dict[str, Meta],
+    ):
         super().__init__(meta)
         self.input = action_inputs
         self.output = action_outputs
@@ -950,10 +1063,12 @@ class PlanBlock(BlockStatement):
         self.qualifier = self.get_qualifier()
 
         if self.is_not_valid_qualifier():
-            raise NemantixException("Plan/deliberate completion qualifiers must specify "
-                                    "increasing completion levels (e.g drafted->frozen). "
-                                    f"Completion '{self.qualifier[0].value}->{self.qualifier[1].value}' "
-                                    f"is not allowed.")
+            raise NemantixException(
+                "Plan/deliberate completion qualifiers must specify "
+                "increasing completion levels (e.g drafted->frozen). "
+                f"Completion '{self.qualifier[0].value}->{self.qualifier[1].value}' "
+                f"is not allowed."
+            )
 
     def __str__(self):
         children_str = "\n     - ".join(str(c) for c in self.children)
@@ -963,13 +1078,13 @@ class PlanBlock(BlockStatement):
 
 class Deliberate(BlockStatement):
     def __init__(
-            self,
-            name: str,
-            when: MicroPrompt,
-            guidelines: MicroPrompt,
-            plan: PlanBlock,
-            meta: dict[str, Meta | None],
-            generated_actions: list[ActionBlock] = None
+        self,
+        name: str,
+        when: MicroPrompt,
+        guidelines: MicroPrompt,
+        plan: PlanBlock,
+        meta: dict[str, Meta | None],
+        generated_actions: list[ActionBlock] = None,
     ):
         super().__init__(meta)
         self.when = when
@@ -980,15 +1095,24 @@ class Deliberate(BlockStatement):
         self.qualifier = self.get_qualifier()
 
         if self.is_not_valid_qualifier():
-            raise NemantixException("Plan/deliberate completion qualifiers must specify increasing"
-                                    " completion levels (e.g drafted->frozen). "
-                                    f"Completion '{self.qualifier[0].value}->{self.qualifier[1].value}' "
-                                    f"is not allowed.")
+            raise NemantixException(
+                "Plan/deliberate completion qualifiers must specify increasing"
+                " completion levels (e.g drafted->frozen). "
+                f"Completion '{self.qualifier[0].value}->{self.qualifier[1].value}' "
+                f"is not allowed."
+            )
         if plan:
-            if self.qualifier is not None and plan.qualifier is not None and (
-                    plan.qualifier[0] != self.qualifier[0] or plan.qualifier[1] != self.qualifier[1]):
+            if (
+                self.qualifier is not None
+                and plan.qualifier is not None
+                and (
+                    plan.qualifier[0] != self.qualifier[0]
+                    or plan.qualifier[1] != self.qualifier[1]
+                )
+            ):
                 raise NemantixException(
-                    "Deliberate and its plan completion qualifier must be the same or you can specify only one of them.")
+                    "Deliberate and its plan completion qualifier must be the same or you can specify only one of them."
+                )
 
             if plan.qualifier is None and self.qualifier is not None:
                 plan.qualifier = self.qualifier  # copy qualifier to plan
@@ -1010,8 +1134,11 @@ class Deliberate(BlockStatement):
     def __str__(self):
         name = f"'{self.name}' " if self.name is not None else ""
         children_str = "\n     - ".join(str(c) for c in self.children)
-        actions = "actions:" + str(
-            [str(action) for action in self.generated_actions]) if self.generated_actions is not None else ""
+        actions = (
+            "actions:" + str([str(action) for action in self.generated_actions])
+            if self.generated_actions is not None
+            else ""
+        )
         return (
             f"Deliberate: {name}when={self.when}, "
             f"guidelines={self.guidelines} "
@@ -1046,12 +1173,12 @@ slot_types_map = {
 
 class Slot(LeafStatement):
     def __init__(
-            self,
-            name: str | None,
-            types: list[SlotTypesEnum] | None,
-            card: str | None,
-            prompt: MicroPrompt | None,
-            meta: dict[str, Meta | None],
+        self,
+        name: str | None,
+        types: list[SlotTypesEnum] | None,
+        card: str | None,
+        prompt: MicroPrompt | None,
+        meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.name = name
@@ -1060,8 +1187,14 @@ class Slot(LeafStatement):
         self.prompt = prompt
 
     def __str__(self):
-        types_str = f" of type {[t for t in self.types]}" if self.types is not None else ""
-        card_str = f" and cardinality {self.cardinality}" if self.cardinality is not None else ""
+        types_str = (
+            f" of type {[t for t in self.types]}" if self.types is not None else ""
+        )
+        card_str = (
+            f" and cardinality {self.cardinality}"
+            if self.cardinality is not None
+            else ""
+        )
         prompt_str = f" prompt={self.prompt}" if self.prompt is not None else ""
         return f"Slot '{self.name}'{types_str}{card_str}{prompt_str}"
 

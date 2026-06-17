@@ -34,7 +34,9 @@ class LocalFileSystemToolset(Toolset):
 
         # Check if the resulting path is still inside root_dir
         if not str(target_path).startswith(str(self.root_dir)):
-            raise PermissionError(f"Access denied: '{relative_path}' is outside the sandbox.")
+            raise PermissionError(
+                f"Access denied: '{relative_path}' is outside the sandbox."
+            )
 
         return target_path
 

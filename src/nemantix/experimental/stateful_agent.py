@@ -15,8 +15,13 @@ class StatefulAgent(Agent):
     and prepends this raw transcript to the user's current request.
     """
 
-    def __init__(self, expertise: Expertise, max_history_turns: int = 16,
-                 strings_max_size=1000, **kwargs):
+    def __init__(
+        self,
+        expertise: Expertise,
+        max_history_turns: int = 16,
+        strings_max_size=1000,
+        **kwargs,
+    ):
         super().__init__(expertise=expertise, **kwargs)
 
         self.max_history_turns = max(1, max_history_turns)
@@ -69,10 +74,10 @@ class StatefulAgent(Agent):
 
         if isinstance(output, DocRef):
             return ReActAgent._doc_to_str(doc=output)
-        
+
         if isinstance(output, Struct):
             return self._struct_to_str(content=output)
-        
+
         if isinstance(output, Opaque):
             return ReActAgent._opaque_preview(opaque=output)
 
@@ -86,10 +91,10 @@ class StatefulAgent(Agent):
 
         # Safeguard against injecting massive text dumps into the LLM context
         if len(string_output) > self.max_strings_size:
-            return string_output[:self.max_strings_size] + "... [Truncated for length]"
+            return string_output[: self.max_strings_size] + "... [Truncated for length]"
 
         return string_output
-    
+
     def _struct_to_str(self, content: Struct) -> str:
         args, kwargs = content.to_args_and_kwargs()
         string = []

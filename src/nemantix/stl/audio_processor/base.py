@@ -38,9 +38,11 @@ class AudioProcessorToolset(Toolset):
             return "Error: File not found."
         try:
             clip = AudioFileClip(file_path)
-            info = (f"Duration: {clip.duration:.2f}s\n"
-                    f"FPS (Sampling Rate): {clip.fps}Hz\n"
-                    f"Channels: {clip.nchannels}")
+            info = (
+                f"Duration: {clip.duration:.2f}s\n"
+                f"FPS (Sampling Rate): {clip.fps}Hz\n"
+                f"Channels: {clip.nchannels}"
+            )
             clip.close()
             return info
         except Exception as e:
@@ -78,11 +80,11 @@ class AudioProcessorToolset(Toolset):
 
     @tool
     def trim_audio(
-            self,
-            input_path: str,
-            start_time: float,
-            end_time: float,
-            output_filename: str = "trimmed.mp3",
+        self,
+        input_path: str,
+        start_time: float,
+        end_time: float,
+        output_filename: str = "trimmed.mp3",
     ) -> str:
         """
         Cuts a specific segment of audio.
@@ -114,10 +116,10 @@ class AudioProcessorToolset(Toolset):
 
     @tool
     def adjust_volume(
-            self,
-            input_path: str,
-            volume_factor: float,
-            output_filename: str = "volume_adjusted.mp3",
+        self,
+        input_path: str,
+        volume_factor: float,
+        output_filename: str = "volume_adjusted.mp3",
     ) -> str:
         """
         Changes volume by a factor (e.g., 2.0 = double volume, 0.5 = half volume).
@@ -147,7 +149,9 @@ class AudioProcessorToolset(Toolset):
             return f"Error adjusting volume: {e}"
 
     @tool
-    def merge_audios(self, file_paths: list[str], output_filename: str = "merged.mp3") -> str:
+    def merge_audios(
+        self, file_paths: list[str], output_filename: str = "merged.mp3"
+    ) -> str:
         """
         Concatenates multiple audio files sequentially.
 
@@ -185,11 +189,11 @@ class AudioProcessorToolset(Toolset):
 
     @tool
     def decode_audio(
-            self,
-            input_path: str,
-            start_time: float | None = None,
-            end_time: float | None = None,
-            fps: int = 44100,
+        self,
+        input_path: str,
+        start_time: float | None = None,
+        end_time: float | None = None,
+        fps: int = 44100,
     ) -> str:
         """
         Decodes audio into a NumPy array (waveform).
@@ -230,11 +234,11 @@ class AudioProcessorToolset(Toolset):
 
     @tool
     def apply_fade(
-            self,
-            input_path: str,
-            fade_type: str = "both",
-            duration: float = 1.0,
-            output_filename: str = "faded.mp3",
+        self,
+        input_path: str,
+        fade_type: str = "both",
+        duration: float = 1.0,
+        output_filename: str = "faded.mp3",
     ) -> str:
         """
         Applies a fade-in and/or fade-out effect to the audio.

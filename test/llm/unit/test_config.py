@@ -9,7 +9,9 @@ from nemantix.llm.config import LLMProxyConfig
 
 
 class DummyLLMProxy(AbstractLLMProxy):
-    def invoke_grammar_based(self, prompt: Union[str, list], **kwargs: Any) -> LLMResponse:
+    def invoke_grammar_based(
+        self, prompt: Union[str, list], **kwargs: Any
+    ) -> LLMResponse:
         pass
 
     def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
@@ -48,7 +50,7 @@ def mock_credentials():
 
 @pytest.fixture
 def mock_set_credentials_manager():
-    with patch.object(AbstractLLMProxy, 'set_credentials_manager') as mock:
+    with patch.object(AbstractLLMProxy, "set_credentials_manager") as mock:
         yield mock
 
 

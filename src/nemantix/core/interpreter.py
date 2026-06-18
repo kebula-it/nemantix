@@ -388,7 +388,7 @@ class Interpreter:
                 arguments = nmx_runtime.Opaque.unbox_in(arguments)
 
             elements = import_stmt.elements
-            if elements == "*":
+            if elements == "*" or elements == ["*"]:
                 toolset_class = None
 
                 for tool_cls in Toolset.get_registered_classes():
@@ -1762,7 +1762,20 @@ class Interpreter:
             else:
                 logger.info(f'Toolset "{toolset_decl.name}" already defined.')
 
-        self.interpret_imports(list(script.toolset_imports.values()))
+        self.interpret_imports(imports=list(script.toolset_imports.values()))
+
+        # importing declared toolset (that are not imported via an import statement)
+        for toolset_decl in script.toolsets_decl:
+            toolset_name = toolset_decl.name
+
+            if any(toolset_name in tool for tool in self.context.tools.keys()):
+                continue
+
+            # create an import statement that imports all @tool-annotated methods
+            import_stmt = nmx_nodes.ImportToolsetStatement(
+                name=toolset_name, elements=["*"], args=None, alias=None, meta=dict()
+            )
+            self.interpret_imports(imports=[import_stmt])
 
     def _get_frame_by_path(
         self, frame_path: str, statement: nmx_nodes.Statement = None

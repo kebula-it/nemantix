@@ -1756,7 +1756,11 @@ class AstTransformer(Transformer):
         return {"name": items[0].value}
 
     def slot_enum(self, items):
-        return {"ENUM_TYPE": [it.value for it in items[1:]]}
+        vals = [it.value for it in items[1:]]
+        for it in vals:
+            if it.strip()=="":
+                raise NemantixParserException("Cannot use empty string as slot enum.")
+        return {"ENUM_TYPE": vals}
 
     def slot_types(self, items):
         types_list = []

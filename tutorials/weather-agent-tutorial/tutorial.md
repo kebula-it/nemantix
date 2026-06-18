@@ -105,7 +105,7 @@ So your structure should look like this:
 project/
 ├── main.py
 ├── requirements.txt
-├── credentials.json
+├── .env
 ├── keys/
 └── nxs/
     └── meteo-deliberate.nxs
@@ -295,7 +295,6 @@ def main():
     exp = Expertise.from_local_scripts(
         paths=[current_folder / "nxs/meteo-deliberate.nxs"],
         verifier=Verifier(current_folder / "keys/publickey.crt"),
-        credentials_path=current_folder / "credentials.json",
     )
 
     agent = Agent(expertise=exp, build_on_start=True)

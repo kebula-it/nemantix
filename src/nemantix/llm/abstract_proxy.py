@@ -60,7 +60,10 @@ class AbstractLLMProxy(abc.ABC):
         This should be called once at the application's startup.
         """
         AbstractLLMProxy._credentials_manager = manager
-        # print("Credentials manager set for AbstractLLMProxy.")
+
+    @classmethod
+    def is_credential_manager_set(cls) -> bool:
+        return cls._credentials_manager is not None
 
     @staticmethod
     def _get_api_key(
@@ -87,7 +90,7 @@ class AbstractLLMProxy(abc.ABC):
         Raises:
             LLMProxyException: If the credentials manager has not been initialized.
             LLMProxyException: If `required` is True and the API key is not found
-                in kwargs, the credentials file, or environment variables.
+                in kwargs or environment variables.
         """
         if AbstractLLMProxy._credentials_manager is None:
             raise LLMProxyException(
@@ -100,13 +103,13 @@ class AbstractLLMProxy(abc.ABC):
         if not api_key:
             api_key = vendor_key_param
 
-        # 2) credentials manager (file/env)
+        # 2) credentials manager (env / .env file)
         if not api_key:
             api_key = AbstractLLMProxy._credentials_manager.get_api_key(key_name)
 
         if required and not api_key:
             raise LLMProxyException(
-                f"{key_name.replace('_', ' ').title()} is required but not found in parameters, credentials file, or environment variables."
+                f"{key_name.replace('_', ' ').title()} is required but not found in parameters or environment variables."
             )
         return api_key
 

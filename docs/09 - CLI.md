@@ -40,7 +40,6 @@ nemantix run [paths ...] [options]
 | `-u`, `--user-request` | stdin              | User request string                                         |
 | `--vendor`             | `openai`           | LLM vendor (env: `NEMANTIX_VENDOR`)                         |
 | `--model`              | `gpt-5-mini`       | LLM model name (env: `NEMANTIX_MODEL`)                      |
-| `--credentials`        | `credentials.json` | Path to credentials JSON file                               |
 | `--export-location`    | `coding_output`    | Directory for coded script output                           |
 | `--no-build`           | `false`            | Skip build-on-start                                         |
 | `--use-embedder`       | `false`            | Enable sentence-transformer embedder                        |
@@ -136,7 +135,6 @@ nemantix code [paths ...] [options]
 | `--output`      | same dir as source | Output directory for NXC files         |
 | `--vendor`      | `openai`           | LLM vendor (env: `NEMANTIX_VENDOR`)    |
 | `--model`       | `gpt-5-mini`       | LLM model name (env: `NEMANTIX_MODEL`) |
-| `--credentials` | `credentials.json` | Path to credentials JSON file          |
 
 **Example:**
 

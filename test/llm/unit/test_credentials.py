@@ -1,30 +1,33 @@
-import json
 from nemantix.llm.credentials import Credentials
 
 
-def test_load_from_file_success(tmp_path):
-    creds = {"openai_api_key": "sk-file", "google_api_key": "gk-file"}
-    p = tmp_path / "credentials.json"
-    p.write_text(json.dumps(creds), encoding="utf-8")
-
-    c = Credentials(file_path=str(p))
-    assert c.get_api_key("openai_api_key") == "sk-file"
-    assert c.get_api_key("google_api_key") == "gk-file"
-
-
-def test_env_fallback(monkeypatch, tmp_path):
-    # Invalid json file should not crash and should fall back to env
-    bad = tmp_path / "bad.json"
-    bad.write_text("{not:json}", encoding="utf-8")
+def test_get_api_key_success(monkeypatch):
+    """Test retrieving keys strictly from environment variables."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
-    c = Credentials(file_path=str(bad))
+    monkeypatch.setenv("GOOGLE_API_KEY", "gk-env")
+
+    c = Credentials()
+    assert c.get_api_key("openai_api_key") == "sk-env"
+    assert c.get_api_key("google_api_key") == "gk-env"
+
+
+def test_env_cache(monkeypatch):
+    """Test that the credentials manager caches the value after the first retrieval."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    c = Credentials()
 
     assert c.get_api_key("openai_api_key") == "sk-env"
-    # Second call must come from internal cache, not env re-read
+
+    # Modify env to ensure it reads from the internal cache, not re-reading os.getenv
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-changed")
     assert c.get_api_key("openai_api_key") == "sk-env"
 
 
-def test_missing_returns_none(tmp_path, capsys):
-    c = Credentials(file_path=str(tmp_path / "missing.json"))
+def test_missing_returns_none(monkeypatch):
+    """Test that a missing key safely returns None without raising."""
+    # Ensure the environment variable is explicitly removed for the test
+    monkeypatch.delenv("NO_SUCH_KEY", raising=False)
+
+    c = Credentials()
     val = c.get_api_key("no_such_key")
     assert val is None

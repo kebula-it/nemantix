@@ -1,7 +1,6 @@
 import os
 import pytest
 
-from conftest import CREDENTIALS_PATH
 from nemantix.llm import AbstractLLMProxy
 from nemantix.llm import Credentials
 from nemantix.llm.openai_proxy import OpenAILLMProxy
@@ -26,12 +25,10 @@ class WeatherToolset(Toolset):
 @pytest.fixture(scope="module")
 def live_openai_proxy():
     """Fixture to provide a live, configured OpenAILLMProxy instance."""
-    if not os.path.exists(CREDENTIALS_PATH):
-        pytest.skip("Credentials file 'credentials.json' not found")
+    if not os.getenv("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY environment variable not set")
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path=str(CREDENTIALS_PATH))
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
     proxy = OpenAILLMProxy(model, max_output_tokens=128)
     return proxy
 

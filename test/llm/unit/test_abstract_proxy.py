@@ -50,37 +50,46 @@ class DummyProxy(AbstractLLMProxy):
 
 
 def test_get_api_key_from_kwargs_required():
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
     p = DummyProxy()
     key = p._get_api_key("openai_api_key", api_key="sk-kwargs")
     assert key == "sk-kwargs"
 
 
-def test_get_api_key_from_credentials(tmp_path, monkeypatch):
-    creds = tmp_path / "creds.json"
-    creds.write_text('{"openai_api_key":"sk-file"}', encoding="utf-8")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path=str(creds))
-    )
+def test_get_api_key_from_credentials(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-var")
+    AbstractLLMProxy.set_credentials_manager(Credentials())
     p = DummyProxy()
     key = p._get_api_key("openai_api_key")
-    assert key == "sk-file"
+    assert key == "sk-env-var"
 
 
-def test_get_api_key_required_missing_raises():
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
+def test_get_api_key_required_missing_raises(monkeypatch):
+    # Prevent load_dotenv from reading the real .env file
+    monkeypatch.setattr(
+        "nemantix.llm.credentials.load_dotenv", lambda *args, **kwargs: None
     )
+
+    # Clear the environment variable
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    AbstractLLMProxy.set_credentials_manager(Credentials())
     p = DummyProxy()
+
     with pytest.raises(LLMProxyException):
         p._get_api_key("openai_api_key", required=True)
 
 
-def test_get_api_key_not_required_returns_none():
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
+def test_get_api_key_not_required_returns_none(monkeypatch):
+    # Prevent load_dotenv from reading the real .env file
+    monkeypatch.setattr(
+        "nemantix.llm.credentials.load_dotenv", lambda *args, **kwargs: None
     )
+
+    # Clear the environment variable
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    AbstractLLMProxy.set_credentials_manager(Credentials())
     p = DummyProxy()
+
     assert p._get_api_key("openai_api_key", required=False) is None

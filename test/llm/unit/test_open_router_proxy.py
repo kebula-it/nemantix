@@ -16,9 +16,8 @@ def open_router_llm_proxy(mock_openai_client, monkeypatch):
     # Patch the OpenAI class where the base OpenAICompatibleProxy instantiates it
     monkeypatch.setattr("nemantix.llm.openai_proxy.OpenAI", mock_openai_client)
     monkeypatch.setenv("OPENROUTER_API_KEY", "mock-api-key")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
+
     return OpenRouterLLMProxy(
         model_name="anthropic/claude-3.5-sonnet",
         site_url="https://test.com",
@@ -66,9 +65,7 @@ def test_open_router_errors_surface(monkeypatch):
 
     monkeypatch.setattr("nemantix.llm.openai_proxy.OpenAI", bad_ctor)
     monkeypatch.setenv("OPENROUTER_API_KEY", "mock-key")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
 
     with pytest.raises(
         LLMProxyException,

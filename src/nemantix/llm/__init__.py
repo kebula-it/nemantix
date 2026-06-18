@@ -1,5 +1,3 @@
-# llm/__init__.py
-
 from nemantix.llm.abstract_proxy import (
     AbstractLLMProxy,
     LLMProxyException,

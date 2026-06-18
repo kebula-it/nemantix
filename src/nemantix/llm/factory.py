@@ -39,7 +39,7 @@ class LLMProxyFactory:
             :param model_name: LLM model name.
             :param grammar_path: path to the lark grammar file.
         """
-        if AbstractLLMProxy._credentials_manager is None:
+        if not AbstractLLMProxy.is_credential_manager_set():
             raise LLMProxyException(
                 "Credentials manager not set. Call AbstractLLMProxy.set_credentials_manager() first."
             )

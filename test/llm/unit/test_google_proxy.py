@@ -1,7 +1,14 @@
 import pytest
-from nemantix.llm.google_proxy import GoogleLLMProxy
-from nemantix.llm.abstract_proxy import LLMProxyException, LLMResponse, LLMUsage
+
 from nemantix.core import Toolset, tool
+from nemantix.llm.abstract_proxy import (
+    AbstractLLMProxy,
+    Credentials,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+)
+from nemantix.llm.google_proxy import GoogleLLMProxy
 
 
 def test_google_init_and_invoke_stream_bind_unbind(google_llm_proxy):
@@ -46,6 +53,7 @@ def test_google_errors_surface(monkeypatch):
     monkeypatch.setattr("nemantix.llm.google_proxy.genai.Client", bad_ctor)
 
     monkeypatch.setenv("GOOGLE_API_KEY", "gk-env")
+    AbstractLLMProxy.set_credentials_manager(Credentials())
 
     with pytest.raises(LLMProxyException):
         GoogleLLMProxy("gemini-pro")

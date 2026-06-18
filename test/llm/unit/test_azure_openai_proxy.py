@@ -131,13 +131,12 @@ def mock_azure_openai_client(monkeypatch):
 
 
 @pytest.fixture
-def azure_proxy(mock_azure_openai_client, tmp_path):
+def azure_proxy(mock_azure_openai_client, monkeypatch):
     """
-    Initializes the AzureOpenAILLMProxy bypassing credential file errors.
+    Initializes the AzureOpenAILLMProxy using environment variables.
     """
-    cred_file = tmp_path / "credentials.json"
-    cred_file.write_text('{"azure_openai_api_key": "fake-azure-key"}')
-    AbstractLLMProxy.set_credentials_manager(Credentials.load_from_file(str(cred_file)))
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "fake-azure-key")
+    AbstractLLMProxy.set_credentials_manager(Credentials())
 
     return AzureOpenAILLMProxy(
         deployment_name="gpt-4o",
@@ -196,7 +195,7 @@ def test_azure_openai_init_and_invoke_stream_bind_unbind(azure_proxy):
     assert out3.tool_calls == []
 
 
-def test_azure_openai_errors_surface(monkeypatch, tmp_path):
+def test_azure_openai_errors_surface(monkeypatch):
     """Ensure instantiation errors are safely wrapped in LLMProxyException."""
 
     def bad_ctor(**kwargs):
@@ -205,9 +204,8 @@ def test_azure_openai_errors_surface(monkeypatch, tmp_path):
     # Patch the resolved symbol within the azure_openai_proxy module
     monkeypatch.setattr("nemantix.llm.azure_openai_proxy.AzureOpenAI", bad_ctor)
 
-    cred_file = tmp_path / "credentials.json"
-    cred_file.write_text('{"azure_openai_api_key": "fake-azure-key"}')
-    AbstractLLMProxy.set_credentials_manager(Credentials.load_from_file(str(cred_file)))
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "fake-azure-key")
+    AbstractLLMProxy.set_credentials_manager(Credentials())
 
     with pytest.raises(
         LLMProxyException, match="Failed to initialize Azure OpenAI client: boom"

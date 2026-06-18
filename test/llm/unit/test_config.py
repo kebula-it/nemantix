@@ -67,12 +67,11 @@ def test_init_sets_defaults_and_loads_credentials(
     """Test that __init__ sets the default spec correctly and loads credentials."""
     config = LLMProxyConfig()
 
-    mock_credentials.load_from_file.assert_called_once_with(
-        file_path="credentials.json"
-    )
-    mock_set_credentials_manager.assert_called_once_with(
-        mock_credentials.load_from_file.return_value
-    )
+    # Verify Credentials() was instantiated directly
+    mock_credentials.assert_called_once()
+
+    # Verify the instantiated credentials manager was passed to the proxy
+    mock_set_credentials_manager.assert_called_once_with(mock_credentials.return_value)
 
     assert config.default_spec == {"vendor": "openai", "model": "gpt-5-mini"}
 

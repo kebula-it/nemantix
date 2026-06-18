@@ -89,7 +89,8 @@ class OutputSchema(BaseModel):
 
 ## Example of Instantiating the Agent
 
-The following example shows how to instantiate and use the Agent with an NXC file and example credentials.
+The following example shows how to instantiate and use the Agent with an NXC file 
+(remember to add a `.env` file with LLM API Keys in your project root).
 
 ```python
 import json
@@ -101,8 +102,7 @@ from nemantix.security import Verifier
 
 # Create the Expertise instance
 exp = Expertise.from_local_scripts(paths=['/path/to/your/file.nxs'],
-                                   verifier=Verifier('public-key-path'),
-                                   credentials_path='credentials.json')
+                                   verifier=Verifier('public-key-path'))
 
 # Create the Agent
 agent = Agent(expertise=exp, build_on_start=True)
@@ -153,8 +153,8 @@ for the actual request (assuming no other deliberate can answer it):
 # the fallback mechanism is enabled by the Expertise
 exp = Expertise.from_local_scripts(paths=['/examples/ticket.nxs'],
                                    verifier=Verifier('public-key-path'),
-                                   allow_fallback_deliberate=True,
-                                   credentials_path='credentials.json')
+                                   allow_fallback_deliberate=True)
+
 agent = Agent(expertise=exp, build_on_start=True)
 
 # The request cannot be answered by the deliberates defined in examples/ticket.nxs

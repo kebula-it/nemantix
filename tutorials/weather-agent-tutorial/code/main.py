@@ -69,7 +69,6 @@ def main() -> None:
     exp = Expertise.from_local_scripts(
         paths=[current_folder / "nxs/meteo-deliberate.nxs"],
         verifier=Verifier(current_folder / "keys/publickey.crt"),
-        credentials_path=current_folder / "credentials.json",
     )
 
     agent = Agent(expertise=exp, build_on_start=True)

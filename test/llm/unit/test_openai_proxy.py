@@ -65,9 +65,8 @@ def test_openai_errors_surface(monkeypatch):
     monkeypatch.setattr("nemantix.llm.openai_proxy.OpenAI", bad_ctor)
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
+
     with pytest.raises(
         LLMProxyException, match="Failed to initialize compatible client: boom"
     ):

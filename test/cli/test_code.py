@@ -30,14 +30,12 @@ class TestCodeHandle:
         output: str | None = None,
         vendor: str = "openai",
         model: str = "gpt-5-mini",
-        credentials: str = "credentials.json",
     ) -> argparse.Namespace:
         return argparse.Namespace(
             paths=paths or [],
             output=output,
             vendor=vendor,
             model=model,
-            credentials=credentials,
         )
 
     def test_no_paths_returns_zero(self) -> None:

@@ -213,7 +213,7 @@ from nemantix.llm.abstract_proxy import AbstractLLMProxy
 from nemantix.llm.factory import LLMProxyFactory
 from nemantix.llm.credentials import Credentials
 
-creds = Credentials()  # optional; will fallback to env if missing
+creds = Credentials()  # loads from env vars or .env file
 AbstractLLMProxy.set_credentials_manager(creds)
 
 llm_proxy = LLMProxyFactory.create_llm_proxy(

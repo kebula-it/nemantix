@@ -28,14 +28,6 @@ def nxc_file():
     return file_path
 
 
-@pytest.fixture
-def mock_credentials(tmp_path):
-    """Creates a temporary dummy credentials file for Agent initialization."""
-    cred_file = tmp_path / "credentials.json"
-    cred_file.write_text('{"api_key": "fake"}')
-    return cred_file
-
-
 def mock_llm_proxy():
     """
     Mocks the LLM proxy for tests.
@@ -91,9 +83,7 @@ def mock_llm_proxy():
     return mock_llm
 
 
-def test_agent_run_nlp_request(
-    nxc_file, mock_credentials, dummy_llm_proxy_config_class
-):
+def test_agent_run_nlp_request(nxc_file, dummy_llm_proxy_config_class):
     """
     Tests the agent using a natural language request.
     Relies on the LLM mock to route to GenerateTicket and extract inputs.
@@ -139,7 +129,7 @@ def test_agent_run_nlp_request(
     assert payload["method"] == "POST"
 
 
-def test_agent_run_coded_request(nxc_file, mock_credentials):
+def test_agent_run_coded_request(nxc_file):
     """
     Tests the agent using an explicit coded 'do' statement (NXS syntax).
     This proves that the system bypasses the LLM completely when given executable code.

@@ -1,6 +1,17 @@
 import inspect
 import json
-from typing import TYPE_CHECKING, Any, Iterator, List, Optional, Type
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Type,
+    Union,
+    get_args,
+    get_origin,
+)
 
 from google import genai
 from google.genai import types
@@ -189,18 +200,57 @@ class GoogleLLMProxy(AbstractLLMProxy):
         return True
 
     @staticmethod
-    def _map_parameter_type(parameter: inspect.Parameter) -> "types.Type":
-        # TODO: proper type mapping, including complex Pydantic parameters
-        ann_type = parameter.annotation
-        if ann_type is str:
-            return types.Type.STRING
-        if ann_type is int:
-            return types.Type.INTEGER
-        if ann_type is bool:
-            return types.Type.BOOLEAN
-        if ann_type is float:
-            return types.Type.NUMBER
-        return types.Type.STRING
+    def _resolve_google_schema(ann_type: Any) -> "types.Schema":
+        if ann_type is inspect.Parameter.empty:
+            return types.Schema(type=types.Type.STRING)
+
+        origin = get_origin(ann_type)
+        args = get_args(ann_type)
+
+        # Handle Optional[T] and Union definitions
+        if origin is Union:
+            non_none_args = [a for a in args if a is not type(None)]
+            if non_none_args:
+                return GoogleLLMProxy._resolve_google_schema(non_none_args[0])
+            return types.Schema(type=types.Type.STRING)
+
+        # Handle Lists / Arrays
+        if origin in (list, List, set, tuple):
+            item_type = args[0] if args else str
+            return types.Schema(
+                type=types.Type.ARRAY,
+                items=GoogleLLMProxy._resolve_google_schema(item_type),
+            )
+
+        # Handle Dict / Objects
+        if origin in (dict, Dict):
+            return types.Schema(type=types.Type.OBJECT)
+
+        # Handle Complex Sub-schemas (Nested Pydantic Models)
+        if isinstance(ann_type, type) and issubclass(ann_type, BaseModel):
+            properties = {}
+            required = []
+
+            # Introspect fields configured in the nested Pydantic Model
+            for field_name, field_info in ann_type.model_fields.items():
+                properties[field_name] = GoogleLLMProxy._resolve_google_schema(
+                    field_info.annotation
+                )
+                if field_info.is_required():
+                    required.append(field_name)
+
+            return types.Schema(
+                type=types.Type.OBJECT, properties=properties, required=required
+            )
+
+        # Handle Core Primitives
+        mapping = {
+            str: types.Type.STRING,
+            int: types.Type.INTEGER,
+            float: types.Type.NUMBER,
+            bool: types.Type.BOOLEAN,
+        }
+        return types.Schema(type=mapping.get(ann_type, types.Type.STRING))
 
     def bind_tools(
         self, toolset_class: Type["Toolset"], tool_names: List[str]
@@ -221,9 +271,11 @@ class GoogleLLMProxy(AbstractLLMProxy):
                 properties = {}
                 required = []
                 for p_name, param in info["parameters"].items():
-                    properties[p_name] = types.Schema(
-                        type=self._map_parameter_type(param), description=p_name
-                    )
+                    param_schema = self._resolve_google_schema(param.annotation)
+                    param_schema.description = p_name
+
+                    properties[p_name] = param_schema
+
                     if param.default == inspect.Parameter.empty:
                         required.append(p_name)
 

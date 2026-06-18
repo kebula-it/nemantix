@@ -3,7 +3,7 @@ import json
 from json import JSONDecodeError
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from nemantix.common import get_package_logger
 from nemantix.llm.abstract_proxy import (
@@ -87,18 +87,22 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
         )
 
     @staticmethod
-    def _map_parameter_type(parameter: inspect.Parameter) -> str:
-        # TODO: proper type mapping, including complex Pydantic parameters
+    def _build_parameter_schema(parameter: inspect.Parameter) -> Dict[str, Any]:
         ann_type = parameter.annotation
-        if ann_type is str:
-            return "string"
-        if ann_type is int:
-            return "integer"
-        if ann_type is bool:
-            return "boolean"
-        if ann_type is float:
-            return "number"
-        return "string"
+        if ann_type is inspect.Parameter.empty:
+            return {"type": "string"}
+
+        try:
+            schema = TypeAdapter(ann_type).json_schema()
+
+            schema.pop("title", None)
+            if "items" in schema and isinstance(schema["items"], dict):
+                schema["items"].pop("title", None)
+
+            return schema
+        except Exception:
+            # Safe primitive fallback if reflection fails
+            return {"type": "string"}
 
     @staticmethod
     def _extract_tool_calls(choice_msg: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -386,10 +390,11 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
                 properties = {}
                 required = []
                 for p_name, param in info["parameters"].items():
-                    properties[p_name] = {
-                        "type": self._map_parameter_type(param),
-                        "description": p_name,
-                    }
+                    param_schema = self._build_parameter_schema(param)
+                    param_schema["description"] = p_name
+
+                    properties[p_name] = param_schema
+
                     if param.default == inspect.Parameter.empty:
                         required.append(p_name)
 

@@ -722,9 +722,13 @@ __deliberate
         reformulate_answer=True,
         human_approval=False,
         max_consecutive_errors=6,
+        max_steps=10,
         **kwargs,
     ) -> RunSchema:
-        assert int(max_consecutive_errors) > 0
+        assert int(max_consecutive_errors) >= 1, "'max_consecutive_errors' should be greater than one."
+        assert int(max_steps) >= 1, "'max_steps' should be greater than one."
+        max_steps = int(max_steps)
+
         system_prompt = (
             "You are an helpful agent assistant. You have access to tools "
             "(lookup [[tools]]). "
@@ -876,6 +880,11 @@ __deliberate
             self.history["outputs"].append(last_output)
             self.history["errors"].append(last_error)
             self.history["tools"].append(tool_name)
+
+            max_steps -= 1
+            if max_steps <= 0:
+                logger.warning("Exceeded the maximum number of steps, stopped!")
+                return self.RunSchema(last_output, last_output)
 
     def convert_to_str(self, content) -> str:
         if isinstance(content, nmx_runtime.DocRef):

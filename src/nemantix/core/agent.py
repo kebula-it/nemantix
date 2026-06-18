@@ -14,7 +14,11 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, ValidationError
 
-from nemantix.common.logger import get_package_logger, update_logger_levels
+from nemantix.common.logger import (
+    disable_console_logs,
+    get_package_logger,
+    update_logger_levels,
+)
 from nemantix.core import runtime as nmx_runtime
 from nemantix.core.exceptions import NemantixException, NemantixRuntimeException
 from nemantix.core.executor import Executor
@@ -55,6 +59,10 @@ class Agent:
         if log_level is not None:
             logger.info(f"Updating logger level to {logging.getLevelName(log_level)}")
             update_logger_levels(level=log_level)
+
+        elif isinstance(log_level, str) and log_level.lower() == "disable":
+            logger.info("Disabling all Nemantix's console logs")
+            disable_console_logs()
 
         if not isinstance(external_vars, dict):
             logger.warning(

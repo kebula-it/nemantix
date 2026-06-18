@@ -1,7 +1,6 @@
-import sys
 import logging
+import sys
 import threading
-
 from pathlib import Path
 
 _GLOBAL_EXCEPTION_HOOK = False
@@ -68,6 +67,27 @@ def update_logger_levels(level=logging.DEBUG, prefix="nemantix"):
     for logger_name, logger_obj in logging.root.manager.loggerDict.items():
         if isinstance(logger_obj, logging.Logger) and logger_name.startswith(prefix):
             logger_obj.setLevel(level)
+
+
+def disable_console_logs(prefix="nemantix"):
+    """
+    Finds all loggers under the given namespace prefix and removes
+    any console handlers (StreamHandlers) attached to them.
+    """
+    prefix = str(prefix or "nemantix").lower()
+
+    for logger_name, logger_obj in logging.root.manager.loggerDict.items():
+        if isinstance(logger_obj, logging.Logger) and logger_name.startswith(prefix):
+            # Identify handlers to remove.
+            handlers_to_remove = [
+                handler
+                for handler in logger_obj.handlers
+                if type(handler) is logging.StreamHandler
+            ]
+
+            # Remove the identified console handlers safely
+            for handler in handlers_to_remove:
+                logger_obj.removeHandler(handler)
 
 
 def _set_global_exception_hook(logger):

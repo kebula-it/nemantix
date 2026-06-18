@@ -354,13 +354,17 @@ class Executor:
             if self.expertise.allow_fallback_deliberate == FallbackEnum.PERSISTENT:
                 deliberate_name = self._promote_fallback(request, fallback_name)
             elif self.expertise.allow_fallback_deliberate == FallbackEnum.VOLATILE:
-                deliberate_name = self._promote_fallback(request, fallback_name, volatile=True)
+                deliberate_name = self._promote_fallback(
+                    request, fallback_name, volatile=True
+                )
 
         elif self.expertise.is_fallback(deliberate_name):
             if self.expertise.allow_fallback_deliberate == FallbackEnum.PERSISTENT:
                 deliberate_name = self._promote_fallback(request, deliberate_name)
             elif self.expertise.allow_fallback_deliberate == FallbackEnum.VOLATILE:
-                deliberate_name = self._promote_fallback(request, deliberate_name, volatile=True)
+                deliberate_name = self._promote_fallback(
+                    request, deliberate_name, volatile=True
+                )
 
         script = self.expertise.get_script_from_deliberate(deliberate_name)
         return script.deliberates[deliberate_name]
@@ -604,7 +608,9 @@ class Executor:
         )
         return collection
 
-    def _promote_fallback(self, request: str, fallback_name: str, volatile: bool = False) -> str:
+    def _promote_fallback(
+        self, request: str, fallback_name: str, volatile: bool = False
+    ) -> str:
         """Turn a fallback deliberate into a concrete, reusable deliberate.
 
         1. Ask the LLM for a new identity (name / when / guidelines) generalizing
@@ -623,7 +629,11 @@ class Executor:
         fallback_deliberate = script.deliberates[fallback_name]
 
         if volatile:
-            original_content = script.content if isinstance(script.content, str) else "\n".join(script.content)
+            original_content = (
+                script.content
+                if isinstance(script.content, str)
+                else "\n".join(script.content)
+            )
 
         # 1. generate identity
         identity = self._generate_deliberate_identity(request)

@@ -123,7 +123,7 @@ class Expertise:
         observers: list | None = None,
         export_location: PathLike = None,
         export=True,
-        allow_fallback_deliberate:FallbackEnum=FallbackEnum.NONE,
+        allow_fallback_deliberate: FallbackEnum = FallbackEnum.NONE,
         experimental_enhance_coding=False,
         experimental_enable_fixer=False,
         experimental_include_action_body_in_semantics=False,

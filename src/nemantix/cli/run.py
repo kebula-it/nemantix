@@ -77,11 +77,6 @@ def register(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
         help="LLM model name (env: NEMANTIX_MODEL)",
     )
     p.add_argument(
-        "--credentials",
-        default="credentials.json",
-        help="Path to credentials JSON file",
-    )
-    p.add_argument(
         "--export-location",
         dest="export_location",
         default="coding_output",
@@ -217,7 +212,6 @@ def handle(args: argparse.Namespace) -> int:
         verifier=verifier,
         vendor=args.vendor,
         model=args.model,
-        credentials_path=args.credentials,
         export_location=args.export_location,
         observers=observers or None,
     )

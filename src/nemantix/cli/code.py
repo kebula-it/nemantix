@@ -31,11 +31,6 @@ def register(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
         default=os.environ.get("NEMANTIX_MODEL", "gpt-5-mini"),
         help="LLM model name (env: NEMANTIX_MODEL)",
     )
-    p.add_argument(
-        "--credentials",
-        default="credentials.json",
-        help="Path to credentials JSON file",
-    )
     p.set_defaults(handler=handle)
     return p
 
@@ -51,7 +46,6 @@ def handle(args: argparse.Namespace) -> int:
             verifier=DebugVerifier(),
             vendor=args.vendor,
             model=args.model,
-            credentials_path=args.credentials,
             export_location=args.output,
         )
         expertise.build()

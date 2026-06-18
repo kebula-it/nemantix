@@ -124,18 +124,15 @@ def main() -> None:
     current_folder = Path.cwd()
 
     verifier = Verifier(current_folder / "keys/publickey.crt")
-    credentials = current_folder / "credentials.json"
 
     reader_exp = Expertise.from_local_scripts(
         paths=[current_folder / "nxs/reader.nxs"],
         verifier=verifier,
-        credentials_path=credentials,
     )
 
     writer_exp = Expertise.from_local_scripts(
         paths=[current_folder / "nxs/writer.nxs"],
         verifier=verifier,
-        credentials_path=credentials,
     )
 
     reader_agent = Agent(expertise=reader_exp, build_on_start=True)

@@ -1,5 +1,3 @@
-# test_source_manager.py
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,8 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from nemantix.core.exceptions import NemantixException
-from nemantix.core.source_manager import LocalSourceManager
-
+from nemantix.core.source_manager import LocalSourceManager, MultiSourceResolver
 
 # ==========================================
 # Tests for LocalSourceManager __init__
@@ -430,3 +427,56 @@ def test_change_file_extension_without_dot(tmp_path: Path):
     result = mgr.change_file_extension(f, "nxc")
 
     assert result == tmp_path / "file.nxc"
+
+
+# ==========================================
+# Tests for MultiSourceResolver
+# ==========================================
+
+
+def test_multi_source_resolver_finds_script_in_first_environment(tmp_path: Path):
+    env1 = tmp_path / "env1"
+    env1.mkdir()
+
+    target_script = env1 / "script.nxs"
+    target_script.touch()
+
+    mgr = LocalSourceManager()
+    resolver = MultiSourceResolver([(env1, mgr)])
+
+    result = resolver.resolve("script.nxs")
+
+    # It should resolve using the source manager's stringification method
+    assert result == mgr.location_to_str(target_script)
+
+
+def test_multi_source_resolver_falls_back_to_subsequent_environments(tmp_path: Path):
+    env1 = tmp_path / "env1"
+    env2 = tmp_path / "env2"
+    env1.mkdir()
+    env2.mkdir()
+
+    # Put the script only in the second environment
+    target_script = env2 / "fallback.nxc"
+    target_script.touch()
+
+    mgr = LocalSourceManager()
+    resolver = MultiSourceResolver([(env1, mgr), (env2, mgr)])
+
+    result = resolver.resolve("fallback.nxc")
+
+    # It should skip env1 and find it in env2
+    assert result == mgr.location_to_str(target_script)
+
+
+def test_multi_source_resolver_raises_exception_if_not_found(tmp_path: Path):
+    env1 = tmp_path / "env1"
+    env1.mkdir()
+
+    mgr = LocalSourceManager()
+    resolver = MultiSourceResolver([(env1, mgr)])
+
+    with pytest.raises(
+        NemantixException, match="Required script 'missing.nxs' not found"
+    ):
+        resolver.resolve("missing.nxs")

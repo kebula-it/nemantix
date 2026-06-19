@@ -6,12 +6,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nemantix.core.exceptions import NemantixException
+from nemantix.core.expertise import Expertise, _topo_order
 from nemantix.core.script import ScriptTypeEnum
-from nemantix.core.expertise import _topo_order, Expertise
 from nemantix.core.source_manager import LocalSourceManager
 from nemantix.security.verifier import DebugVerifier
-from nemantix.core.exceptions import NemantixException
-
 
 # ==========================================
 # Tests for _topo_order
@@ -111,7 +110,12 @@ def _mk_script(
 
 
 @patch("nemantix.core.expertise.Toolset.get_registered_classes", return_value=[])
-def test_expertise_init_parses_scripts_and_builds_maps(mock_get_tools):
+def test_expertise_init_parses_scripts_and_builds_maps(mock_get_tools, tmp_path, monkeypatch):
+    # Setup temporary files so the resolver finds them
+    monkeypatch.chdir(tmp_path)
+    Path("a.nxs").touch()
+    Path("b.nxs").touch()
+
     s1 = _mk_script(
         "a.nxs",
         ScriptTypeEnum.NXS,
@@ -150,6 +154,9 @@ def test_expertise_build_codes_nxs_to_nxc_updates_maps_and_exports(
     - export writes to ./coding_output/<name>.nxc
     """
     monkeypatch.chdir(tmp_path)
+    # Create the files so the resolver passes
+    Path("a.nxs").touch()
+    Path("b.nxs").touch()
 
     b = _mk_script(
         "b.nxs",
@@ -275,7 +282,12 @@ def test_set_external_vars_names_rejects_invalid_types(mock_get_tools):
 
 
 @patch("nemantix.core.expertise.Toolset.get_registered_classes", return_value=[])
-def test_get_visible_actions_names_includes_required_scripts_actions(mock_get_tools):
+def test_get_visible_actions_names_includes_required_scripts_actions(mock_get_tools, tmp_path, monkeypatch):
+    # Setup temporary files
+    monkeypatch.chdir(tmp_path)
+    Path("root.nxc").touch()
+    Path("dep.nxc").touch()
+
     dep = _mk_script(
         "dep.nxc",
         ScriptTypeEnum.NXC,

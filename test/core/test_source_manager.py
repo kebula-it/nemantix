@@ -483,6 +483,7 @@ def test_multi_source_resolver_raises_exception_if_not_found(tmp_path: Path):
     ):
         resolver.resolve("missing.nxs")
 
+
 # ==========================================
 # Tests for path helpers (location_to_str normalization)
 # ==========================================

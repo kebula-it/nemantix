@@ -109,7 +109,9 @@ def _mk_script(
 
 
 @patch("nemantix.core.expertise.Toolset.get_registered_classes", return_value=[])
-def test_expertise_init_parses_scripts_and_builds_maps(mock_get_tools, tmp_path, monkeypatch):
+def test_expertise_init_parses_scripts_and_builds_maps(
+    mock_get_tools, tmp_path, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     Path("a.nxs").touch()
     Path("b.nxs").touch()
@@ -272,7 +274,9 @@ def test_set_external_vars_names_rejects_invalid_types(mock_get_tools):
 
 
 @patch("nemantix.core.expertise.Toolset.get_registered_classes", return_value=[])
-def test_get_visible_actions_names_includes_required_scripts_actions(mock_get_tools, tmp_path, monkeypatch):
+def test_get_visible_actions_names_includes_required_scripts_actions(
+    mock_get_tools, tmp_path, monkeypatch
+):
     # Setup temporary files
     monkeypatch.chdir(tmp_path)
     Path("root.nxc").touch()

@@ -357,7 +357,7 @@ class Expertise:
 
         for required_script in self.get_required_scripts(script):
             actions.extend([a.name for a in required_script.actions.values()])
-        
+
         return actions
 
     def is_fully_coded(self):

@@ -201,7 +201,7 @@ class LocalSourceManager(SourceManager):
 
     def location_to_str(self, location: PathLike) -> str:
         location = Path(location) if not isinstance(location, Path) else location
-        location = location.as_posix()
+        location = location.resolve().as_posix()
         return str(location)
 
     def change_file_extension(self, location: PathLike, ext: str) -> PathLike:

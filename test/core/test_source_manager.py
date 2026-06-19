@@ -404,9 +404,11 @@ def test_is_dir_returns_false_for_file(tmp_path: Path):
 def test_location_to_str_returns_posix_string():
     mgr = LocalSourceManager()
 
-    result = mgr.location_to_str(Path("runs") / "exp" / "file.txt")
+    path = Path("runs") / "exp" / "file.txt"
+    result = mgr.location_to_str(path)
 
-    assert result == "runs/exp/file.txt"
+    expected = path.resolve().as_posix()
+    assert result == expected
 
 
 def test_change_file_extension_with_dot(tmp_path: Path):
@@ -480,3 +482,71 @@ def test_multi_source_resolver_raises_exception_if_not_found(tmp_path: Path):
         NemantixException, match="Required script 'missing.nxs' not found"
     ):
         resolver.resolve("missing.nxs")
+
+# ==========================================
+# Tests for path helpers (location_to_str normalization)
+# ==========================================
+
+
+def test_location_to_str_returns_resolved_posix_string(tmp_path: Path):
+    mgr = LocalSourceManager()
+    f = tmp_path / "runs" / "exp" / "file.txt"
+
+    expected = f.resolve().as_posix()
+    result = mgr.location_to_str(f)
+
+    assert result == expected
+
+
+def test_location_to_str_resolves_parent_directory_traversal(tmp_path: Path):
+    mgr = LocalSourceManager()
+
+    # Create a base structure: /tmp/.../base/folder
+    base = tmp_path / "base"
+    folder = base / "folder"
+
+    # Construct a path that uses '../' to step back out of 'folder'
+    traversal_path = folder / ".." / "script.nxs"
+
+    # The expected resolution should just be /tmp/.../base/script.nxs
+    expected = (base / "script.nxs").resolve().as_posix()
+    result = mgr.location_to_str(traversal_path)
+
+    assert result == expected
+
+
+def test_location_to_str_resolves_current_directory_traversal(tmp_path: Path):
+    mgr = LocalSourceManager()
+
+    base = tmp_path / "base"
+
+    # Construct a path that uses './'
+    current_path = base / "." / "script.nxs"
+
+    # The expected resolution should just ignore the './'
+    expected = (base / "script.nxs").resolve().as_posix()
+    result = mgr.location_to_str(current_path)
+
+    assert result == expected
+
+
+def test_location_to_str_consistency_across_equivalent_paths(
+    tmp_path: Path, monkeypatch
+):
+    mgr = LocalSourceManager()
+
+    # Move working directory to tmp_path so relative string paths work reliably
+    monkeypatch.chdir(tmp_path)
+    Path("subfolder").mkdir()
+
+    # Three completely different ways to express the exact same file location
+    path1 = Path("subfolder/script.nxs")
+    path2 = Path("./subfolder/../subfolder/script.nxs")
+    path3 = (tmp_path / "subfolder" / "script.nxs").resolve()
+
+    str1 = mgr.location_to_str(path1)
+    str2 = mgr.location_to_str(path2)
+    str3 = mgr.location_to_str(path3)
+
+    # If the normalization works, all three must produce the exact same dictionary key string
+    assert str1 == str2 == str3

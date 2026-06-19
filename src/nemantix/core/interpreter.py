@@ -1901,34 +1901,45 @@ class Interpreter:
         if expression is None:
             return (), {}
 
+        # Strip AST list wrappers
+        if isinstance(expression, list):
+            if len(expression) == 0:
+                return [], {}
+    
+            expression = expression[0]
+        
         if isinstance(expression, nmx_nodes.Assignment):
             return [], {
                 expression.var.name: self.interpret_expression(expression.value)
             }
 
-        if isinstance(expression, nmx_nodes.Collection) and any(
-            isinstance(stmt, nmx_nodes.Assignment) for stmt in expression.value
-        ):
+        if isinstance(expression, nmx_nodes.Collection):
             args = []
             kwargs = {}
+            keyword_seen = False
 
-            for stmt in expression.value:
+            # Safeguard against single-node values
+            expr_values = expression.value
+            if not isinstance(expr_values, list):
+                expr_values = [expr_values]
+            
+            for stmt in expr_values:
                 if isinstance(stmt, nmx_nodes.Assignment):
                     kwargs[stmt.var.name] = self.interpret_expression(stmt.value)
+                    keyword_seen = True
                 else:
+                    if keyword_seen:
+                        raise self._runtime_exception(
+                            "Positional argument follows nominal argument in 'using'",
+                            statement=do,
+                        )
+
                     args.append(self.interpret_expression(expression=stmt))
 
             return args, kwargs
 
         args = self.interpret_expression(expression)
-        if isinstance(args, nmx_runtime.Struct):
-            args, kwargs = args.to_args_and_kwargs()
-            return args, kwargs
-
-        if not isinstance(args, (list, tuple)):
-            args = [args]
-
-        return args, {}
+        return [args], {}
 
     def _apply_frame_schema(self, do: nmx_nodes.DoStatement, result, frame_name: str):
         """
@@ -2014,7 +2025,15 @@ class Interpreter:
             if var_name in actual_values and slot_name in slot_names:
                 frame_struct.set(value=actual_values[var_name], key=slot_name)
 
-        return rt_frame.apply_postfix(frame_struct)
+        validated_struct = rt_frame.apply_postfix(frame_struct)
+
+        # Map the validated values back to the producing variable names
+        # so interpret_do_statement can correctly unpack them
+        final_struct = nmx_runtime.Struct()
+        for var_name, slot_name in name_mapping.items():
+            final_struct.set(value=validated_struct.get(slot_name), key=var_name)
+
+        return final_struct
 
     def _unpack_user_inputs(self, expression: nmx_nodes.Expression | None = None):
         assert not isinstance(
@@ -2086,6 +2105,105 @@ class Interpreter:
     def _get_global_script(self) -> Script | None:
         return self.globals.get("__script", None)
 
+    # def _set_block_inputs(
+    #     self,
+    #     block: nmx_types.PlanOrActionBlock,
+    #     provided_args: Any,
+    #     callee: nmx_nodes.DoStatement | None = None,
+    # ):
+    #     pos_args = []
+    #     kw_args = {}
+    #
+    #     if isinstance(block, nmx_nodes.PlanBlock):
+    #         deliberate = self._get_global_deliberate()
+    #         assert deliberate is not None
+    #         block_name = f"plan::{deliberate.name}"
+    #     else:
+    #         block_name = f'action "{block.name}"'
+    #
+    #     # Standardize provided arguments into positional (list) and keyword (dict)
+    #     if isinstance(provided_args, tuple):
+    #         assert len(provided_args) == 2
+    #         assert isinstance(provided_args[0], (list, tuple)) and isinstance(
+    #             provided_args[1], dict
+    #         )
+    #         pos_args, kw_args = provided_args
+    #
+    #     elif isinstance(provided_args, (list, tuple)):
+    #         pos_args = provided_args
+    #
+    #     elif isinstance(provided_args, dict):
+    #         kw_args = provided_args
+    #
+    #     elif provided_args is not None:
+    #         pos_args = [provided_args]
+    #
+    #     provided_kw_keys = set(kw_args.keys())
+    #
+    #     # Use an independent index tracker for positional arguments
+    #     pos_idx = 0
+    #
+    #     # Map provided arguments to the defined action inputs
+    #     for input_arg in block.input:
+    #         arg_name = input_arg.name
+    #         arg_set = False
+    #
+    #         if not arg_name:
+    #             logger.warning(
+    #                 f'Skipping micro-prompt input "{input_arg.prompt.prompt}" '
+    #                 f'for block "{block_name}"!'
+    #             )
+    #             continue
+    #
+    #         # 1. Consume positional arguments first (Left-to-Right)
+    #         if pos_idx < len(pos_args):
+    #             arg_val = pos_args[pos_idx]
+    #             arg_set = True
+    #             pos_idx += 1
+    #
+    #             # Check for collision: User provided arg positionally AND nominally
+    #             if arg_name in kw_args:
+    #                 err_msg = (
+    #                     f'{block_name} got multiple values for argument "{arg_name}"'
+    #                 )
+    #                 raise self._runtime_exception(err_msg, statement=callee)
+    #
+    #         # 2. Consume keyword arguments
+    #         elif arg_name in kw_args:
+    #             arg_val = kw_args[arg_name]
+    #             provided_kw_keys.remove(arg_name)
+    #             arg_set = True
+    #
+    #         # 3. Fallback to default or raise missing error
+    #         else:
+    #             if input_arg.required:
+    #                 err_msg = f'Missing required argument "{arg_name}" for action "{block_name}"!'
+    #                 raise self._runtime_exception(err_msg, statement=callee)
+    #             else:
+    #                 arg_val = self.interpret_expression(input_arg.default)
+    #                 arg_set = True
+    #
+    #         # Bind argument to the operational environment
+    #         if arg_set:
+    #             self.context.env.set(var_name=arg_name, value=arg_val)
+    #
+    #     # Validate that NO extra/unknown keyword arguments were provided
+    #     if provided_kw_keys:
+    #         extra_args = ", ".join(provided_kw_keys)
+    #         err_msg = (
+    #             f"{block_name} received unexpected keyword arguments: {extra_args}"
+    #         )
+    #         raise self._runtime_exception(err_msg, statement=callee)
+    #
+    #     # Validate that NO extra positional arguments were provided
+    #     if pos_idx < len(pos_args):
+    #         expected_pos_max = len([arg for arg in block.input if arg.name])
+    #         err_msg = (
+    #             f"{block_name} expects at most {expected_pos_max} positional arguments, "
+    #             f"but {len(pos_args)} were provided ({pos_args})."
+    #         )
+    #         raise self._runtime_exception(err_msg, statement=callee)
+    
     def _set_block_inputs(
         self,
         block: nmx_types.PlanOrActionBlock,

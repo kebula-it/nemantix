@@ -1564,3 +1564,386 @@ def test_interpret_imports_direct_unknown_toolset_raises_with_original_message(
     stmt = _make_import("_GhostToolset", ["some_tool"])
     with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"_GhostToolset"):
         interpreter_instance.interpret_imports([stmt])
+
+
+# =============================================================================
+# Tests for _set_block_inputs
+# =============================================================================
+
+
+def test_set_block_inputs_mixed_args_correct_order(interpreter_instance):
+    """Test valid mixed arguments (positional followed by keyword)."""
+    action = DummyAction(
+        name="mixed_action",
+        input=[
+            DummyActionInput("pos1", True),
+            DummyActionInput("kw1", True),
+            DummyActionInput("kw2", False, default=make_value("default_val")),
+        ],
+        output=[],
+        children=[],
+        meta=make_meta(),
+    )
+    # Provided: 1 positional, 1 keyword, 1 omitted (should use default)
+    provided = ([100], {"kw1": 200})
+
+    interpreter_instance._set_block_inputs(action, provided)
+    assert interpreter_instance.context.env.get("pos1") == 100
+    assert interpreter_instance.context.env.get("kw1") == 200
+    assert interpreter_instance.context.env.get("kw2") == "default_val"
+
+
+def test_set_block_inputs_collision_raises(interpreter_instance):
+    """Test that providing the same argument positionally and nominally raises an error."""
+    action = DummyAction(
+        name="collision_action",
+        input=[DummyActionInput("foo", True), DummyActionInput("bar", True)],
+        output=[],
+        children=[],
+        meta=make_meta(),
+    )
+
+    # User tries: `do collision_action using [10, foo=20]`
+    provided = ([10], {"foo": 20})
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r'got multiple values for argument "foo"'
+    ):
+        interpreter_instance._set_block_inputs(action, provided)
+
+
+def test_set_block_inputs_skips_unnamed_microprompt(interpreter_instance):
+    """Test that unnamed inputs (microprompts) are safely skipped and don't consume positional args."""
+    action = DummyAction(
+        name="microprompt_action",
+        input=[
+            DummyActionInput(
+                "",
+                True,
+                prompt=nmx_nodes.MicroPrompt(prompt="Do a thing", meta=make_meta()),
+            ),
+            DummyActionInput("real_arg", True),
+        ],
+        output=[],
+        children=[],
+        meta=make_meta(),
+    )
+
+    # Even though there are 2 inputs in the block, only 1 is named.
+    # Passing 1 positional arg should map to 'real_arg'.
+    interpreter_instance._set_block_inputs(action, [42])
+    assert interpreter_instance.context.env.get("real_arg") == 42
+
+
+def test_set_block_inputs_too_many_positionals_with_microprompts(interpreter_instance):
+    """Test that max positional bounds check correctly ignores unnamed microprompt inputs."""
+    action = DummyAction(
+        name="microprompt_action_err",
+        input=[
+            DummyActionInput(
+                "",
+                True,
+                prompt=nmx_nodes.MicroPrompt(prompt="Do a thing", meta=make_meta()),
+            ),
+            DummyActionInput("real_arg", True),
+        ],
+        output=[],
+        children=[],
+        meta=make_meta(),
+    )
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r"expects at most 1 positional arguments"
+    ):
+        interpreter_instance._set_block_inputs(action, [42, 99])
+
+
+# =============================================================================
+# Tests for interpret_expression
+# =============================================================================
+
+
+def test_interpret_expression_list_unwrap(interpreter_instance):
+    """Test that outer list wrappers are stripped (simulating parser artifacts)."""
+    inner_val = make_value(100)
+    # The parser sometimes wraps nodes in a list: [SingleValue(100)]
+    result = interpreter_instance.interpret_expression([inner_val])
+    assert result == 100
+
+
+def test_interpret_expression_collection_to_struct(interpreter_instance):
+    """Test that a Collection of values evaluates to a Struct."""
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[
+            make_value(1),
+            make_value(2),
+            {"c": make_value(3)},
+        ],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    result = interpreter_instance.interpret_expression(collection)
+
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get(0) == 1
+    assert result.get(1) == 2
+    assert result.get("c") == 3
+
+
+def test_interpret_expression_builtin_function(interpreter_instance):
+    """Test builtin function execution within an expression."""
+    builtin_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=nmx_nodes.BuiltinFunctionEnum.SIZE,
+        args=[make_value("hello world", _STRING_TYPE)],
+        meta=make_meta(),
+    )
+    result = interpreter_instance.interpret_expression(builtin_expr)
+    assert result == 11  # len("hello world")
+
+
+def test_interpret_expression_meta_expression(interpreter_instance):
+    """Test retrieval of intentables via MetaExpression."""
+    # Setup intentable in metadata memory
+    intentable = nmx_runtime.Metadata()
+    intentable["goal"] = "Test Goal"
+    interpreter_instance.metadata["my_intent"] = intentable
+
+    meta_expr = make_node(
+        nmx_nodes.MetaExpression, quals=["my_intent", "goal"], meta=make_meta()
+    )
+    result = interpreter_instance.interpret_expression(meta_expr)
+    assert result == "Test Goal"
+
+
+def test_interpret_expression_meta_expression_missing_raises(interpreter_instance):
+    """Test missing intentable label raises exception."""
+    meta_expr = make_node(
+        nmx_nodes.MetaExpression, quals=["ghost_intent"], meta=make_meta()
+    )
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r'Intentable "ghost_intent" not defined!'
+    ):
+        interpreter_instance.interpret_expression(meta_expr)
+
+
+# =============================================================================
+# Tests for interpret_do_statement
+# =============================================================================
+
+
+def test_do_statement_action_call(interpreter_instance):
+    """Test execution of a global Action call."""
+    # Mock an action closure in context
+    called_args = None
+
+    def mock_closure(args, callee=None):
+        nonlocal called_args
+        called_args = args
+        return "action_success"
+
+    interpreter_instance.context.actions["my_global_action"] = {
+        "closure": mock_closure,
+        "is_global": True,
+        "imported_by": set(),
+    }
+
+    # Create do statement: do action my_global_action using [42] producing [out_var]
+    using_col = make_node(
+        nmx_nodes.Collection,
+        value=[make_value(42)],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="my_global_action",
+        callable_type=nmx_nodes.CallableTypeEnum.ACTION,
+        using=using_col,
+        producing=make_var("out_var"),
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    # Use make_node to safely instantiate Deliberate regardless of __init__ signature
+    dummy_delib = make_node(nmx_nodes.Deliberate, name="dummy_delib", meta=make_meta())
+    interpreter_instance._set_global_deliberate(dummy_delib)
+
+    interpreter_instance.interpret_do_statement(do_stmt)
+
+    # Assert closure was called with positional 42 and empty kwargs
+    assert called_args == ([42], {})
+    # Assert environment was updated with output
+    assert interpreter_instance.context.env.get("out_var") == "action_success"
+
+
+def test_do_statement_private_action_cross_call_raises(interpreter_instance):
+    """Test calling a private action from a deliberate that didn't import/own it."""
+    interpreter_instance.context.actions["private_act"] = {
+        "closure": lambda args, callee: None,
+        "is_global": False,
+        "imported_by": {"other_deliberate"},
+    }
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="private_act",
+        callable_type=nmx_nodes.CallableTypeEnum.ACTION,
+        using=None,
+        producing=None,
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    my_delib = make_node(nmx_nodes.Deliberate, name="my_delib", meta=make_meta())
+    interpreter_instance._set_global_deliberate(my_delib)
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r'Private action "private_act" cannot be called from deliberate "my_delib"',
+    ):
+        interpreter_instance.interpret_do_statement(do_stmt)
+
+
+def test_do_statement_tool_call_unboxes_opaques(interpreter_instance):
+    """Test Tool calls properly unbox Opaque objects and Structs before passing to Python functions."""
+    called_kwargs = None
+
+    def mock_tool(**kwargs):
+        nonlocal called_kwargs
+        called_kwargs = kwargs
+        return "tool_success"
+
+    interpreter_instance.context.tools["my_tool"] = mock_tool
+
+    # Create an Opaque object and put it directly in the operational environment
+    opaque_obj = nmx_runtime.Opaque(obj="hidden_secret_string")
+    interpreter_instance.context.env.set(var_name="secret_var", value=opaque_obj)
+
+    # Assignment: [data] = secret_var
+    using_assign = make_node(
+        nmx_nodes.Assignment,
+        var=make_var("data"),
+        value=make_var("secret_var"),  # Use a Variable node to look it up
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="my_tool",
+        callable_type=nmx_nodes.CallableTypeEnum.TOOL,
+        using=using_assign,
+        producing=None,
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    interpreter_instance.interpret_do_statement(do_stmt)
+
+    # Assert the tool received the UNBOXED string, not the Opaque wrapper
+    assert called_kwargs == {"data": "hidden_secret_string"}
+
+
+def test_do_statement_builtin_print(interpreter_instance, capsys):
+    """Test execution of builtin print."""
+    using_col = make_node(
+        nmx_nodes.Collection,
+        value=[make_value("Hello Builtin")],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="print",
+        callable_type=None,
+        using=using_col,
+        producing=None,
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    interpreter_instance.interpret_do_statement(do_stmt)
+    captured = capsys.readouterr()
+    assert "Hello Builtin\n" in captured.out
+
+
+def test_do_statement_tool_exception_wraps_in_nemantix_exception(interpreter_instance):
+    """Test that a crashing Python tool is caught and wrapped in a NemantixRuntimeException."""
+
+    def crashing_tool():
+        raise ValueError("Critical Python Error")
+
+    interpreter_instance.context.tools["crash_tool"] = crashing_tool
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="crash_tool",
+        callable_type=nmx_nodes.CallableTypeEnum.TOOL,
+        using=None,
+        producing=None,
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r'Exception in execution of "crashing_tool". Error: Critical Python Error',
+    ):
+        interpreter_instance.interpret_do_statement(do_stmt)
+
+
+def test_do_statement_multiple_outputs_with_producing_schema(interpreter_instance):
+    """
+    Test that mapping multiple producing variables through a producing_schema
+    correctly triggers the LLM schema mapping logic.
+    """
+    # 1. Setup frame in context
+    person_frame = nmx_runtime.Frame("PERSON")
+    person_frame.add_slot("name", cardinality="1", types=[{"name": SlotTypesEnum.TEXT}])
+    person_frame.add_slot("age", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
+    interpreter_instance.context.frames["PERSON"] = person_frame
+
+    # 2. Setup a tool that returns a raw list
+    interpreter_instance.context.tools["get_data"] = lambda: ["Luigi", 42]
+
+    # 3. Setup LLM to mock the schema mapping dict response
+    # The prompt asks to map producing variable names to schema slot names.
+    interpreter_instance.llm.invoke = MagicMock(
+        return_value=SimpleNamespace(
+            text="{'var_n': 'name', 'var_a': 'age'}",
+            usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            proxy=interpreter_instance.llm,
+        )
+    )
+
+    # 4. AST Nodes
+    producing_col = make_node(
+        nmx_nodes.Collection,
+        value=[make_var("var_n"), make_var("var_a")],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="get_data",
+        callable_type=nmx_nodes.CallableTypeEnum.TOOL,
+        using=None,
+        prompt=None,
+        producing=producing_col,
+        producing_schema="PERSON",
+        meta=make_meta(),
+    )
+
+    # Execute
+    interpreter_instance.interpret_do_statement(do_stmt)
+
+    # Assert variables were set in the environment correctly based on LLM mapping + Frame casting
+    assert interpreter_instance.context.env.get("var_n") == "Luigi"
+    assert interpreter_instance.context.env.get("var_a") == 42

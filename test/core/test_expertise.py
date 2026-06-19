@@ -87,10 +87,6 @@ def _mk_script(
     deliberates=None,
     actions=None,
 ):
-    """
-    Creates a lightweight "Script-like" object (MagicMock) with the attributes
-    Expertise expects.
-    """
     requires = requires or []
     deliberates = deliberates or {}
     actions = actions or {}

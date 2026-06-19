@@ -1,12 +1,11 @@
 import os
-
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from nemantix.core.exceptions import NemantixException
-from nemantix.core.custom_types import PathLike
 from nemantix.common.logger import get_package_logger
+from nemantix.core.custom_types import PathLike
+from nemantix.core.exceptions import NemantixException
 
 logger = get_package_logger(__name__)
 
@@ -224,3 +223,28 @@ class LocalSourceManager(SourceManager):
         if not isinstance(location, Path):
             location = Path(location)
         return location.is_dir()
+
+
+class MultiSourceResolver:
+    def __init__(self, search_environments: list[tuple[PathLike, SourceManager]]):
+        self.search_environments = search_environments
+
+    def resolve(self, require_string: str) -> str:
+        """Searches for the script across all environments using their respective SourceManagers."""
+        searched = []
+
+        for location, source_manager in self.search_environments:
+            candidate = source_manager.join(location, require_string)
+
+            if source_manager.exists(candidate):
+                return source_manager.location_to_str(candidate)
+
+            # Keep track of where we looked for debugging
+            searched.append(
+                f"{source_manager.__class__.__name__} at {source_manager.location_to_str(location)}"
+            )
+
+        searched_locations = "\n  - ".join(searched)
+        raise NemantixException(
+            f"Required script '{require_string}' not found. \nSearched in:\n  - {searched_locations}"
+        )

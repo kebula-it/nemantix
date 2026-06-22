@@ -115,6 +115,7 @@ class Interpreter:
             self.schemas: dict[str, type[BaseModel]] = {}
             self.tools = nmx_runtime.Tools()
             self.toolsets: set[str] = set()
+            self.toolsets_locations: dict[str, str] = {}
             self.env = nmx_runtime.OperationalEnv()
 
     class SimilaritySchema(BaseModel):
@@ -1754,7 +1755,16 @@ class Interpreter:
         self._set_global_deliberate(deliberate)
         self._set_global_script(script)
 
-        self._discover_imported_actions(script)
+        # required scripts discover
+        required_locations = self.expertise.requires_map.get(script.get_location(), [])
+        for location in required_locations:
+            required_script = self.expertise.script_by_loc[location]
+
+            self._discover_actions(script=required_script)
+            self._discover_frames(script=required_script)
+            self._discover_toolsets_and_imports(script=required_script)
+
+        # current script discover
         self._discover_actions(script, deliberate=deliberate)
         self._discover_frames(script)
         self._discover_toolsets_and_imports(script)
@@ -1768,24 +1778,41 @@ class Interpreter:
                 self.context.frames[frame_key] = frame
 
     def _discover_toolsets_and_imports(self, script: Script):
+        script_loc = script.get_location()
+
         for toolset_decl in script.toolsets_decl:
             toolset_name = toolset_decl.name
 
-            if (
-                toolset_name in Toolset._classes
-                and toolset_name not in self.context.toolsets
-            ):
+            if toolset_name in self.context.toolsets_locations:
+                previous_loc = self.context.toolsets_locations[toolset_name]
+
+                # Collision across different scripts
+                if previous_loc != script_loc:
+                    raise self._runtime_exception(
+                        f"Cross-script collision: Toolset '{toolset_name}' was already declared in "
+                        f"'{previous_loc}'. You cannot overwrite it from '{script_loc}'.",
+                        statement=toolset_decl,
+                    )
+                # Redefined in the same script
+                else:
+                    logger.warning(
+                        f"Toolset '{toolset_name}' is declared multiple times in '{script_loc}'. "
+                        f"The later definition will overwrite the earlier one."
+                    )
+
+            #  Global Process collision
+            elif toolset_name in Toolset._classes:
                 logger.warning(
-                    f"Toolset collision detected: '{toolset_name}' is already registered globally. "
+                    f"Global toolset collision detected: '{toolset_name}' is already registered globally. "
                     f"Redeclaring it will overwrite the existing definition and close active instances. "
                     f"Consider using a unique name."
                 )
 
-            if toolset_name not in self.context.toolsets:
-                self.interpret_tool_declaration(toolset_decl)
-                self.context.toolsets.add(toolset_name)
-            else:
-                logger.info(f'Toolset "{toolset_name}" already defined.')
+            self.interpret_tool_declaration(toolset_decl)
+
+            # Update both the original set and the new map
+            self.context.toolsets.add(toolset_name)
+            self.context.toolsets_locations[toolset_name] = script_loc
 
         self.interpret_imports(imports=list(script.toolset_imports.values()))
         imported_names = {imp.name for imp in script.toolset_imports.values()}
@@ -2113,13 +2140,6 @@ class Interpreter:
             return [inputs]
 
         return inputs
-
-    def _discover_imported_actions(self, script: Script):
-        required_locations = self.expertise.requires_map.get(script.get_location(), [])
-
-        for location in required_locations:
-            required_script = self.expertise.script_by_loc[location]
-            self._discover_actions(required_script)
 
     def _discover_actions(self, script: Script, deliberate: Deliberate | None = None):
         for action in script.actions.values():

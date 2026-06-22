@@ -287,7 +287,7 @@ class Coder:
         coded_frames = {}
         frame_parser = _get_frame_parser()
         content_list = script.read_as_list()
-        
+
         for frame_name, usages in frame_usages.items():
             prev_frame = None
 

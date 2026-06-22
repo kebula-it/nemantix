@@ -2048,7 +2048,7 @@ def test_eval_collection_with_nested_schemed_collection(interpreter_instance):
 
 
 # =============================================================================
-# Tests for _discover_toolsets_and_imports (Fail-Fast Logic)
+# Tests for _discover_toolsets_and_imports (Fail-Fast & Collision Logic)
 # =============================================================================
 
 
@@ -2061,8 +2061,8 @@ def test_discover_toolsets_synthesizes_import_for_no_arg_toolset(interpreter_ins
 
     Toolset._classes["NoArgTool"] = NoArgTool
 
-    # Mock script properties
     mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
     mock_decl = make_node(
         nmx_nodes.PythonToolDeclaration, name="NoArgTool", prompt=None, meta=make_meta()
     )
@@ -2070,13 +2070,9 @@ def test_discover_toolsets_synthesizes_import_for_no_arg_toolset(interpreter_ins
     mock_script.toolsets_decl = [mock_decl]
     mock_script.toolset_imports = {}
 
-    # Isolate the test: prevent the interpreter from actually trying to exec() the None prompt
     interpreter_instance.interpret_tool_declaration = MagicMock()
-
-    # Should succeed without raising exception
     interpreter_instance._discover_toolsets_and_imports(mock_script)
 
-    # Verify the tool was successfully placed in context
     assert "NoArgTool" in interpreter_instance.context.toolsets
 
 
@@ -2091,6 +2087,7 @@ def test_discover_toolsets_fail_fast_on_required_args(interpreter_instance):
     Toolset._classes["RequiredArgTool"] = RequiredArgTool
 
     mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
     mock_decl = make_node(
         nmx_nodes.PythonToolDeclaration,
         name="RequiredArgTool",
@@ -2101,7 +2098,6 @@ def test_discover_toolsets_fail_fast_on_required_args(interpreter_instance):
     mock_script.toolsets_decl = [mock_decl]
     mock_script.toolset_imports = {}
 
-    # Isolate the test
     interpreter_instance.interpret_tool_declaration = MagicMock()
 
     with pytest.raises(
@@ -2123,6 +2119,7 @@ def test_discover_toolsets_synthesizes_import_with_defaults_and_kwargs(
     Toolset._classes["ForgivingTool"] = ForgivingTool
 
     mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
     mock_decl = make_node(
         nmx_nodes.PythonToolDeclaration,
         name="ForgivingTool",
@@ -2133,11 +2130,9 @@ def test_discover_toolsets_synthesizes_import_with_defaults_and_kwargs(
     mock_script.toolsets_decl = [mock_decl]
     mock_script.toolset_imports = {}
 
-    # Isolate the test
     interpreter_instance.interpret_tool_declaration = MagicMock()
-
-    # Should succeed without raising exception
     interpreter_instance._discover_toolsets_and_imports(mock_script)
+
     assert "ForgivingTool" in interpreter_instance.context.toolsets
 
 
@@ -2147,10 +2142,10 @@ def test_discover_toolsets_warns_on_global_collision(interpreter_instance):
     class CollisionTool(Toolset):
         pass
 
-    # Pre-populate global registry to simulate another script having loaded it
     Toolset._classes["CollisionTool"] = CollisionTool
 
     mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
     mock_decl = make_node(
         nmx_nodes.PythonToolDeclaration,
         name="CollisionTool",
@@ -2161,19 +2156,98 @@ def test_discover_toolsets_warns_on_global_collision(interpreter_instance):
     mock_script.toolsets_decl = [mock_decl]
     mock_script.toolset_imports = {}
 
-    # Isolate execution
     interpreter_instance.interpret_tool_declaration = MagicMock()
 
-    # Run discovery while intercepting the logger.warning calls
     with patch("nemantix.core.interpreter.logger.warning") as mock_warning:
         interpreter_instance._discover_toolsets_and_imports(mock_script)
 
-        # Assert the warning was actually called with our expected string
         warning_emitted = any(
-            "Toolset collision detected: 'CollisionTool'" in call_args[0][0]
+            "Global toolset collision detected: 'CollisionTool'" in call_args[0][0]
             for call_args in mock_warning.call_args_list
         )
-        assert warning_emitted is True, "Expected a collision warning in the logs."
+        assert warning_emitted is True, "Expected a global collision warning."
 
-    # Verify it still gets added to the current context successfully
     assert "CollisionTool" in interpreter_instance.context.toolsets
+    assert (
+        interpreter_instance.context.toolsets_locations["CollisionTool"] == "main.nxs"
+    )
+
+
+def test_discover_toolsets_warns_on_same_script_collision(interpreter_instance):
+    """Test that declaring the same toolset twice in the same script emits a warning, but proceeds."""
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+
+    mock_decl_1 = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="RepeatTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+    mock_decl_2 = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="RepeatTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl_1, mock_decl_2]
+    mock_script.toolset_imports = {}
+
+    # SIMULATE THE COMPILER: When the interpreter processes the declaration,
+    # it normally executes Python code that places the class in Toolset._classes
+    def mock_compile_toolset(decl):
+        class RepeatToolClass(Toolset):
+            pass
+
+        Toolset._classes[decl.name] = RepeatToolClass
+
+    interpreter_instance.interpret_tool_declaration = MagicMock(
+        side_effect=mock_compile_toolset
+    )
+
+    with patch("nemantix.core.interpreter.logger.warning") as mock_warning:
+        interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+        warning_emitted = any(
+            "Toolset 'RepeatTool' is declared multiple times in 'main.nxs'"
+            in call_args[0][0]
+            for call_args in mock_warning.call_args_list
+        )
+        assert warning_emitted is True, "Expected a same-script collision warning."
+
+    assert "RepeatTool" in interpreter_instance.context.toolsets
+    assert interpreter_instance.context.toolsets_locations["RepeatTool"] == "main.nxs"
+
+    # Cleanup global state
+    Toolset._classes.pop("RepeatTool", None)
+
+
+def test_discover_toolsets_raises_on_cross_script_collision(interpreter_instance):
+    """Test that declaring a toolset already declared in an imported script raises a hard error."""
+
+    # Simulate that 'shared.nxs' was already processed and added to the context
+    interpreter_instance.context.toolsets.add("SharedTool")
+    interpreter_instance.context.toolsets_locations["SharedTool"] = "shared.nxs"
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="SharedTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Cross-script collision: Toolset 'SharedTool' was already declared in 'shared.nxs'",
+    ):
+        interpreter_instance._discover_toolsets_and_imports(mock_script)

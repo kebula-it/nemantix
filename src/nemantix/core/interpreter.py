@@ -1905,9 +1905,9 @@ class Interpreter:
         if isinstance(expression, list):
             if len(expression) == 0:
                 return [], {}
-    
+
             expression = expression[0]
-        
+
         if isinstance(expression, nmx_nodes.Assignment):
             return [], {
                 expression.var.name: self.interpret_expression(expression.value)
@@ -1922,7 +1922,7 @@ class Interpreter:
             expr_values = expression.value
             if not isinstance(expr_values, list):
                 expr_values = [expr_values]
-            
+
             for stmt in expr_values:
                 if isinstance(stmt, nmx_nodes.Assignment):
                     kwargs[stmt.var.name] = self.interpret_expression(stmt.value)

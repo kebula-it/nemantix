@@ -457,7 +457,7 @@ class SchemedCollection(Collection):
             else str(self.value)
         )
 
-        if hasattr(self.dataframe, 'value'):
+        if hasattr(self.dataframe, "value"):
             dataframe = self.dataframe.value
         else:
             dataframe = str(self.dataframe)

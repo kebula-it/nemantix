@@ -1948,3 +1948,97 @@ def test_do_statement_multiple_outputs_with_producing_schema(interpreter_instanc
     # Assert variables were set in the environment correctly based on LLM mapping + Frame casting
     assert interpreter_instance.context.env.get("var_n") == "Luigi"
     assert interpreter_instance.context.env.get("var_a") == 42
+
+
+# =============================================================================
+# SchemedCollection & AsFrame Integration Tests
+# =============================================================================
+
+
+def test_interpret_expression_schemed_collection_as_frame(interpreter_instance):
+    """
+    Tests that a SchemedCollection using an AsFrame dataframe successfully
+    routes through interpret_expression and applies real Frame typing/defaults.
+    """
+    # 1. Set up a real frame
+    point_frame = nmx_runtime.Frame("POINT")
+    point_frame.add_slot("x", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
+    point_frame.add_slot("y", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
+    interpreter_instance.context.frames["POINT"] = point_frame
+
+    # 2. Build AsFrame and SchemedCollection AST
+    # AST equivalent of: {POINT}[prefix]: [x: 10, y: 20]
+    as_frame = AsFrame(value="point", meta=make_meta())
+
+    inner_dict = {"x": make_value(10), "y": make_value(20)}
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[inner_dict],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    schemed_col = make_node(
+        nmx_nodes.SchemedCollection,
+        value=collection,
+        dataframe=as_frame,
+        apply_type=nmx_nodes.FrameApplyEnum.PRE,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    # 3. Interpret via the main expression evaluator
+    result = interpreter_instance.interpret_expression(schemed_col)
+
+    # 4. Assert it returns a Struct correctly casted by the real Frame
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("x") == 10
+    assert result.get("y") == 20
+
+
+def test_eval_collection_with_nested_schemed_collection(interpreter_instance):
+    """
+    Tests the recursive nature of eval_collection by nesting a
+    SchemedCollection inside a standard Collection.
+    """
+    # 1. Set up a real frame
+    point_frame = nmx_runtime.Frame("POINT")
+    point_frame.add_slot("x", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
+    interpreter_instance.context.frames["POINT"] = point_frame
+
+    # 2. Build nested SchemedCollection
+    # AST equivalent of: [ "some_string", {POINT}[prefix]: [x: 42] ]
+    as_frame = AsFrame(value="point", meta=make_meta())
+
+    inner_col = make_node(
+        nmx_nodes.Collection,
+        value=[{"x": make_value(42)}],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    schemed_col = make_node(
+        nmx_nodes.SchemedCollection,
+        value=inner_col,
+        dataframe=as_frame,
+        apply_type=nmx_nodes.FrameApplyEnum.PRE,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    outer_col = make_node(
+        nmx_nodes.Collection,
+        value=[make_value("some_string", _STRING_TYPE), schemed_col],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    # 3. Execute
+    result = interpreter_instance.eval_collection(outer_col)
+
+    # 4. Assert outer collection and nested SchemedCollection Struct
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get(0) == "some_string"
+
+    nested_struct = result.get(1)
+    assert isinstance(nested_struct, nmx_runtime.Struct)
+    assert nested_struct.get("x") == 42

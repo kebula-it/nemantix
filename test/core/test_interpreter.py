@@ -1020,6 +1020,7 @@ class DummyActionInput:
     name: str
     required: bool = True
     default: object = None  # Expression or None
+    prompt: object = None  # MicroPrompt or None
 
 
 @dataclass

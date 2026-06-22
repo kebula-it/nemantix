@@ -456,7 +456,13 @@ class SchemedCollection(Collection):
             if isinstance(self.value, list)
             else str(self.value)
         )
-        return f"SchemedCollection {'{' + self.dataframe + '}'}[{pos_str}]: {val_str})"
+
+        if hasattr(self.dataframe, 'value'):
+            dataframe = self.dataframe.value
+        else:
+            dataframe = str(self.dataframe)
+
+        return f"SchemedCollection {'{' + dataframe + '}'}[{pos_str}]: {val_str})"
 
 
 class Assignment(Expression):

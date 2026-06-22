@@ -25,6 +25,7 @@ from nemantix.core.node import (
     VariableTypeEnum,
 )
 from nemantix.core.parser import AsFrame
+from nemantix.core.tools import Toolset
 
 HERE = Path(__file__).parent
 
@@ -1769,7 +1770,9 @@ def test_do_statement_action_call(interpreter_instance):
     )
 
     # Use make_node to safely instantiate Deliberate regardless of __init__ signature
-    dummy_deliberate = make_node(nmx_nodes.Deliberate, name="dummy_delib", meta=make_meta())
+    dummy_deliberate = make_node(
+        nmx_nodes.Deliberate, name="dummy_delib", meta=make_meta()
+    )
     interpreter_instance._set_global_deliberate(dummy_deliberate)
 
     interpreter_instance.interpret_do_statement(do_stmt)
@@ -2042,3 +2045,97 @@ def test_eval_collection_with_nested_schemed_collection(interpreter_instance):
     nested_struct = result.get(1)
     assert isinstance(nested_struct, nmx_runtime.Struct)
     assert nested_struct.get("x") == 42
+
+
+# =============================================================================
+# Tests for _discover_toolsets_and_imports (Fail-Fast Logic)
+# =============================================================================
+
+
+def test_discover_toolsets_synthesizes_import_for_no_arg_toolset(interpreter_instance):
+    """Test that a toolset requiring no args gets an automatic import synthesized."""
+
+    class NoArgTool(Toolset):
+        def __init__(self):
+            super().__init__()
+
+    Toolset._classes["NoArgTool"] = NoArgTool
+
+    # Mock script properties
+    mock_script = MagicMock()
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration, name="NoArgTool", prompt=None, meta=make_meta()
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    # Isolate the test: prevent the interpreter from actually trying to exec() the None prompt
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    # Should succeed without raising exception
+    interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+    # Verify the tool was successfully placed in context
+    assert "NoArgTool" in interpreter_instance.context.toolsets
+
+
+def test_discover_toolsets_fail_fast_on_required_args(interpreter_instance):
+    """Test that a toolset requiring explicit args halts execution if not explicitly imported."""
+
+    class RequiredArgTool(Toolset):
+        def __init__(self, api_key):
+            super().__init__()
+            self.api_key = api_key
+
+    Toolset._classes["RequiredArgTool"] = RequiredArgTool
+
+    mock_script = MagicMock()
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="RequiredArgTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    # Isolate the test
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Declared toolset 'RequiredArgTool' requires initialization arguments",
+    ):
+        interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+
+def test_discover_toolsets_synthesizes_import_with_defaults_and_kwargs(
+    interpreter_instance,
+):
+    """Test that a toolset with defaults or *args/**kwargs is deemed safe and doesn't fail-fast."""
+
+    class ForgivingTool(Toolset):
+        def __init__(self, default_val=10, *args, **kwargs):
+            super().__init__()
+
+    Toolset._classes["ForgivingTool"] = ForgivingTool
+
+    mock_script = MagicMock()
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="ForgivingTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    # Isolate the test
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    # Should succeed without raising exception
+    interpreter_instance._discover_toolsets_and_imports(mock_script)
+    assert "ForgivingTool" in interpreter_instance.context.toolsets

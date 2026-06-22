@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import math
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Iterable, List, Optional, Type, Union
@@ -241,7 +242,14 @@ class Interpreter:
 
     def interpret_tool_declaration(self, declaration: nmx_nodes.PythonToolDeclaration):
         self.interpret_intentable(metadata=declaration.meta, stmt=declaration)
-        code = declaration.prompt.prompt.strip()
+
+        if isinstance(declaration.prompt, nmx_nodes.MicroPrompt):
+            code = declaration.prompt.prompt.strip()
+        else:
+            logger.warning(
+                f'Toolset declaration "{declaration.name}": prompt is "{type(declaration.prompt)}"'
+            )
+            code = ""
 
         if code.find("class ") == -1:
             err_msg = f"Malformed tool declaration (generation failed completely): {declaration.name}"
@@ -1768,13 +1776,42 @@ class Interpreter:
                 logger.info(f'Toolset "{toolset_decl.name}" already defined.')
 
         self.interpret_imports(imports=list(script.toolset_imports.values()))
+        imported_names = {imp.name for imp in script.toolset_imports.values()}
 
         # importing declared toolset (that are not imported via an import statement)
         for toolset_decl in script.toolsets_decl:
             toolset_name = toolset_decl.name
 
-            if any(toolset_name in tool for tool in self.context.tools.keys()):
+            if toolset_name in imported_names:
                 continue
+
+            # Introspect the compiled class to see if it requires __init__ args
+            target_class = Toolset._classes.get(toolset_name)
+            if target_class is not None:
+                try:
+                    sig = inspect.signature(target_class)
+                    requires_args = False
+
+                    for param in sig.parameters.values():
+                        if param.kind in (
+                            inspect.Parameter.VAR_POSITIONAL,
+                            inspect.Parameter.VAR_KEYWORD,
+                        ):
+                            continue
+
+                        if param.default == inspect.Parameter.empty:
+                            requires_args = True
+                            break
+
+                    if requires_args:
+                        raise self._runtime_exception(
+                            f"Declared toolset '{toolset_name}' requires initialization arguments. "
+                            f"You must explicitly import it using: 'from toolset {toolset_name} as ... with [...] use *'",
+                            statement=toolset_decl,
+                        )
+                except ValueError:
+                    # Ignore if the signature cannot be introspected (e.g., certain C-bindings or builtins)
+                    pass
 
             # create an import statement that imports all @tool-annotated methods
             import_stmt = nmx_nodes.ImportToolsetStatement(

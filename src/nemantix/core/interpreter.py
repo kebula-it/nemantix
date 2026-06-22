@@ -381,11 +381,15 @@ class Interpreter:
 
             if import_stmt.args is not None:
                 arguments = [self.interpret_expression(expression=import_stmt.args)]
+                kw_arguments = {}
 
                 if len(arguments) == 1 and isinstance(arguments[0], nmx_runtime.Struct):
-                    arguments, _ = arguments[0].to_args_and_kwargs()
+                    arguments, kw_arguments = arguments[0].to_args_and_kwargs()
 
                 arguments = nmx_runtime.Opaque.unbox_in(arguments)
+                kw_arguments = nmx_runtime.Opaque.unbox_in(kw_arguments)
+            else:
+                arguments, kw_arguments = [], {}
 
             elements = import_stmt.elements
             if elements == "*" or elements == ["*"]:
@@ -427,6 +431,7 @@ class Interpreter:
                             tool_name,
                             instance_alias=tool_alias,
                             instance_args=arguments,
+                            instance_kwargs=kw_arguments,
                         )
                     else:
                         logger.info(f'Tool "{tool_name}" already imported!')

@@ -246,3 +246,266 @@ class TestToolsetRegistry:
     def test_load_unregistered_raises(self):
         with pytest.raises(NemantixException, match="UnknownToolset"):
             Toolset.load("UnknownToolset")
+
+
+# ---------------------------------------------------------------------------
+# Instance caching and Lifecycle: get_instance()
+# ---------------------------------------------------------------------------
+
+
+class TestToolsetGetInstance:
+    def setup_method(self):
+        # Clear the cache before each test to ensure isolation
+        Toolset._instances.clear()
+        Toolset._named_instances.clear()
+
+    def teardown_method(self):
+        # Clean up after each test
+        Toolset._instances.clear()
+        Toolset._named_instances.clear()
+
+    def test_no_alias_returns_global_singleton(self):
+        """Rule 1: Calling without an alias or args returns a shared singleton."""
+
+        class StatelessTool(Toolset):
+            pass
+
+        instance1 = Toolset.get_instance(StatelessTool)
+        instance2 = Toolset.get_instance(StatelessTool)
+
+        assert instance1 is instance2
+
+    def test_no_alias_with_args_raises_exception(self):
+        """Rule 1 (Violation): Calling without an alias but passing args must fail."""
+
+        class StatefulTool(Toolset):
+            def __init__(self, env):
+                super().__init__()
+                self.env = env
+
+        with pytest.raises(NemantixException, match="without an alias"):
+            Toolset.get_instance(StatefulTool, args=["production"])
+
+    def test_alias_caches_and_reuses_instance(self):
+        """Rule 2: Calling with an alias and args creates and reuses the instance."""
+
+        class DBTool(Toolset):
+            def __init__(self, connection_string):
+                super().__init__()
+                self.conn = connection_string
+
+        instance1 = Toolset.get_instance(DBTool, alias="DB", args=["localhost:5432"])
+        instance2 = Toolset.get_instance(DBTool, alias="DB", args=["localhost:5432"])
+
+        assert instance1 is instance2
+        assert instance1.conn == "localhost:5432"
+
+    def test_alias_conflict_different_args_raises_exception(self):
+        """Rule 2 (Conflict): Same alias, same class, but different args must fail."""
+
+        class DBTool(Toolset):
+            def __init__(self, connection_string):
+                super().__init__()
+
+        Toolset.get_instance(DBTool, alias="DB", args=["localhost:5432"])
+
+        with pytest.raises(
+            NemantixException, match="already instantiated with different configuration"
+        ):
+            Toolset.get_instance(DBTool, alias="DB", args=["remote:5432"])
+
+    def test_alias_conflict_different_class_raises_exception(self):
+        """Rule 2 (Conflict): Same alias used for entirely different classes must fail."""
+
+        class PostgresTool(Toolset):
+            pass
+
+        class MongoTool(Toolset):
+            pass
+
+        Toolset.get_instance(PostgresTool, alias="Database")
+
+        with pytest.raises(
+            NemantixException, match="already assigned to Toolset 'PostgresTool'"
+        ):
+            Toolset.get_instance(MongoTool, alias="Database")
+
+    def test_different_aliases_same_args_create_distinct_instances(self):
+        """Edge Case: Two different aliases for the same class/args create distinct instances."""
+
+        class CacheTool(Toolset):
+            def __init__(self, host):
+                super().__init__()
+
+        instance1 = Toolset.get_instance(CacheTool, alias="CacheA", args=["127.0.0.1"])
+        instance2 = Toolset.get_instance(CacheTool, alias="CacheB", args=["127.0.0.1"])
+
+        assert instance1 is not instance2
+
+    def test_none_args_normalized_to_empty_list(self):
+        """Edge Case: `args=None` and `args=[]` should be evaluated as equivalent."""
+
+        class SimpleTool(Toolset):
+            pass
+
+        instance1 = Toolset.get_instance(SimpleTool, alias="Simple", args=None)
+        instance2 = Toolset.get_instance(SimpleTool, alias="Simple", args=[])
+
+        assert instance1 is instance2
+
+
+# ---------------------------------------------------------------------------
+# Instance caching, kwargs, and Signature Binding: get_instance()
+# ---------------------------------------------------------------------------
+
+
+class TestToolsetGetInstanceSignatureBinding:
+    def setup_method(self):
+        # Clear the cache before each test to ensure isolation
+        Toolset._instances.clear()
+        Toolset._named_instances.clear()
+
+    def teardown_method(self):
+        # Clean up after each test
+        Toolset._instances.clear()
+        Toolset._named_instances.clear()
+
+    def test_no_alias_returns_global_singleton(self):
+        """Rule 1: Calling without an alias or args/kwargs returns a shared singleton."""
+
+        class StatelessTool(Toolset):
+            pass
+
+        instance1 = Toolset.get_instance(StatelessTool)
+        instance2 = Toolset.get_instance(StatelessTool)
+
+        assert instance1 is instance2
+
+    def test_no_alias_with_args_or_kwargs_raises(self):
+        """Rule 1 (Violation): Calling without an alias but passing args/kwargs must fail."""
+
+        class StatefulTool(Toolset):
+            def __init__(self, env):
+                super().__init__()
+                self.env = env
+
+        with pytest.raises(NemantixException, match="without an alias"):
+            Toolset.get_instance(StatefulTool, args=["production"])
+
+        with pytest.raises(NemantixException, match="without an alias"):
+            Toolset.get_instance(StatefulTool, kwargs={"env": "production"})
+
+    def test_signature_binding_resolves_args_kwargs_overlap(self):
+        """Semantic Match: Mix of args and kwargs resolving to the same signature."""
+
+        class DBTool(Toolset):
+            def __init__(self, host, port):
+                super().__init__()
+                self.host = host
+                self.port = port
+
+        # Script A imports with positional + keyword
+        instance1 = Toolset.get_instance(
+            DBTool, alias="DB", args=["localhost"], kwargs={"port": 5432}
+        )
+
+        # Script B imports with pure keyword
+        instance2 = Toolset.get_instance(
+            DBTool, alias="DB", args=[], kwargs={"host": "localhost", "port": 5432}
+        )
+
+        # They should resolve to the exact same cached instance without a conflict error
+        assert instance1 is instance2
+        assert instance1.host == "localhost"
+        assert instance1.port == 5432
+
+    def test_signature_binding_applies_defaults_to_avoid_conflict(self):
+        """Semantic Match: Explicitly passing a default value matches the implicit default."""
+
+        class APITool(Toolset):
+            def __init__(self, api_key, timeout=30):
+                super().__init__()
+                self.api_key = api_key
+                self.timeout = timeout
+
+        # Script A relies on the default timeout
+        instance1 = Toolset.get_instance(
+            APITool, alias="API", kwargs={"api_key": "123"}
+        )
+
+        # Script B explicitly provides the default timeout
+        instance2 = Toolset.get_instance(
+            APITool, alias="API", kwargs={"api_key": "123", "timeout": 30}
+        )
+
+        # They should resolve to the exact same instance
+        assert instance1 is instance2
+
+    def test_alias_conflict_different_normalized_args_raises(self):
+        """Rule 2 (Conflict): Same alias, same class, but semantically different arguments."""
+
+        class DBTool(Toolset):
+            def __init__(self, host):
+                super().__init__()
+
+        Toolset.get_instance(DBTool, alias="DB", kwargs={"host": "localhost"})
+
+        with pytest.raises(
+            NemantixException, match="already instantiated with different configuration"
+        ):
+            Toolset.get_instance(DBTool, alias="DB", kwargs={"host": "remote_host"})
+
+    def test_alias_conflict_different_class_raises(self):
+        """Rule 2 (Conflict): Same alias used for entirely different classes."""
+
+        class PostgresTool(Toolset):
+            def __init__(self, host="localhost"):
+                pass
+
+        class MongoTool(Toolset):
+            def __init__(self, host="localhost"):
+                pass
+
+        Toolset.get_instance(PostgresTool, alias="Database")
+
+        with pytest.raises(
+            NemantixException, match="already assigned to Toolset 'PostgresTool'"
+        ):
+            Toolset.get_instance(MongoTool, alias="Database")
+
+    def test_invalid_signature_binding_raises_early(self):
+        """Validation: Providing kwargs that don't exist in the __init__ signature."""
+
+        class SimpleTool(Toolset):
+            def __init__(self, target):
+                super().__init__()
+
+        # User accidentally passes 'url' instead of 'target'
+        with pytest.raises(
+            NemantixException, match="Failed to bind arguments for 'SimpleTool'"
+        ):
+            Toolset.get_instance(SimpleTool, alias="ST", kwargs={"url": "http://test"})
+
+    def test_variadic_args_kwargs_strict_comparison(self):
+        """Edge Case: Variadic signatures fallback to exact tuple/dict comparison."""
+
+        class DynamicTool(Toolset):
+            def __init__(self, *args, **kwargs):
+                super().__init__()
+
+        # Should succeed (exact match)
+        inst1 = Toolset.get_instance(
+            DynamicTool, alias="Dyn", args=[1, 2], kwargs={"a": "b"}
+        )
+        inst2 = Toolset.get_instance(
+            DynamicTool, alias="Dyn", args=[1, 2], kwargs={"a": "b"}
+        )
+        assert inst1 is inst2
+
+        # Should fail (different args)
+        with pytest.raises(
+            NemantixException, match="already instantiated with different configuration"
+        ):
+            Toolset.get_instance(
+                DynamicTool, alias="Dyn", args=[1, 3], kwargs={"a": "b"}
+            )

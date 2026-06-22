@@ -1769,8 +1769,8 @@ def test_do_statement_action_call(interpreter_instance):
     )
 
     # Use make_node to safely instantiate Deliberate regardless of __init__ signature
-    dummy_delib = make_node(nmx_nodes.Deliberate, name="dummy_delib", meta=make_meta())
-    interpreter_instance._set_global_deliberate(dummy_delib)
+    dummy_deliberate = make_node(nmx_nodes.Deliberate, name="dummy_delib", meta=make_meta())
+    interpreter_instance._set_global_deliberate(dummy_deliberate)
 
     interpreter_instance.interpret_do_statement(do_stmt)
 
@@ -1799,8 +1799,8 @@ def test_do_statement_private_action_cross_call_raises(interpreter_instance):
         meta=make_meta(),
     )
 
-    my_delib = make_node(nmx_nodes.Deliberate, name="my_delib", meta=make_meta())
-    interpreter_instance._set_global_deliberate(my_delib)
+    my_deliberate = make_node(nmx_nodes.Deliberate, name="my_delib", meta=make_meta())
+    interpreter_instance._set_global_deliberate(my_deliberate)
 
     with pytest.raises(
         nmx_ex.NemantixRuntimeException,
@@ -1910,7 +1910,7 @@ def test_do_statement_multiple_outputs_with_producing_schema(interpreter_instanc
     person_frame.add_slot("age", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
     interpreter_instance.context.frames["PERSON"] = person_frame
 
-    # 2. Setup a tool that returns a raw list
+    # 2. Set up a tool that returns a raw list
     interpreter_instance.context.tools["get_data"] = lambda: ["Luigi", 42]
 
     # 3. Setup LLM to mock the schema mapping dict response
@@ -1966,7 +1966,7 @@ def test_interpret_expression_schemed_collection_as_frame(interpreter_instance):
     point_frame.add_slot("y", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
     interpreter_instance.context.frames["POINT"] = point_frame
 
-    # 2. Build AsFrame and SchemedCollection AST
+    # 2. Build AsFrame and SchemedCollection
     # AST equivalent of: {POINT}[prefix]: [x: 10, y: 20]
     as_frame = AsFrame(value="point", meta=make_meta())
 
@@ -1990,7 +1990,7 @@ def test_interpret_expression_schemed_collection_as_frame(interpreter_instance):
     # 3. Interpret via the main expression evaluator
     result = interpreter_instance.interpret_expression(schemed_col)
 
-    # 4. Assert it returns a Struct correctly casted by the real Frame
+    # 4. Assert it returns a Struct correctly cast by the real Frame
     assert isinstance(result, nmx_runtime.Struct)
     assert result.get("x") == 10
     assert result.get("y") == 20

@@ -241,38 +241,83 @@ class Toolset:
         return tool_names
 
     @classmethod
-    def get_instance(cls, target_class, alias: str | None = None, args=None):
-        """Returns an existing instance from cache or creates a new one."""
+    def get_instance(
+        cls, target_class, alias: str | None = None, args=None, kwargs=None
+    ):
+        args = args or []
+        kwargs = kwargs or {}
+
+        # Normalize arguments using the target class's signature
+        try:
+            sig = inspect.signature(target_class)
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            normalized_args = dict(bound_args.arguments)
+        except TypeError as e:
+            raise NemantixException(
+                f"Failed to bind arguments for '{target_class.__name__}'. "
+                f"Provided args: {args}, kwargs: {kwargs}. Error: {e}"
+            )
+
         if alias is not None:
             if alias not in cls._named_instances:
                 logger.debug(
                     f"Instantiating {target_class.__name__} with alias: {alias} ..."
                 )
 
-                if args is not None:
-                    instance = target_class(*args)
-                else:
-                    instance = target_class()
+                try:
+                    instance = target_class(*args, **kwargs)
+                except TypeError as e:
+                    raise NemantixException(
+                        f"Failed to initialize '{target_class.__name__}': {e}"
+                    )
 
-                cls._named_instances[alias] = instance
+                cls._named_instances[alias] = {
+                    "instance": instance,
+                    "normalized_args": normalized_args,
+                    "class": target_class,
+                }
+                return instance
             else:
-                return cls._named_instances[alias]
+                cached = cls._named_instances[alias]
 
-        elif target_class not in cls._instances:
-            logger.debug(f"Instantiating new {target_class.__name__} object ...")
-            if args is None:
-                instance = target_class()
-            else:
-                instance = target_class(*args)
+                if cached["class"] != target_class:
+                    raise NemantixException(
+                        f"Alias '{alias}' is already assigned to Toolset '{cached['class'].__name__}'. "
+                        f"Cannot reuse it for '{target_class.__name__}'."
+                    )
 
-            cls._instances[target_class] = instance
+                if cached["normalized_args"] != normalized_args:
+                    raise NemantixException(
+                        f"Toolset alias '{alias}' was already instantiated with different configuration. "
+                        f"Original parameters: {cached['normalized_args']}. "
+                        f"New parameters: {normalized_args}."
+                    )
+
+                return cached["instance"]
         else:
-            instance = cls._instances[target_class]
+            if args or kwargs:
+                raise NemantixException(
+                    f"Arguments were provided for Toolset '{target_class.__name__}' without an alias. "
+                    "Use the 'as <alias>' syntax to instantiate toolsets with arguments."
+                )
 
-        return instance
+            if target_class not in cls._instances:
+                logger.debug(f"Instantiating new {target_class.__name__} object ...")
+                instance = target_class()
+                cls._instances[target_class] = instance
+            else:
+                instance = cls._instances[target_class]
+
+            return instance
 
     @staticmethod
-    def get_tool(tool_name: str, instance_alias: str | None = None, instance_args=None):
+    def get_tool(
+        tool_name: str,
+        instance_alias: str | None = None,
+        instance_args=None,
+        instance_kwargs=None,
+    ):
         """Retrieves a tool by name"""
         assert tool_name in Toolset.REGISTRY
 
@@ -281,7 +326,10 @@ class Toolset:
         func = tool_["fn"]
 
         instance = Toolset.get_instance(
-            target_class, alias=instance_alias, args=instance_args
+            target_class,
+            alias=instance_alias,
+            args=instance_args,
+            kwargs=instance_kwargs,
         )
 
         return lambda *args, **kwargs: func(instance, *args, **kwargs)

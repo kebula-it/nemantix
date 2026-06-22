@@ -4,7 +4,7 @@ import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -2139,3 +2139,41 @@ def test_discover_toolsets_synthesizes_import_with_defaults_and_kwargs(
     # Should succeed without raising exception
     interpreter_instance._discover_toolsets_and_imports(mock_script)
     assert "ForgivingTool" in interpreter_instance.context.toolsets
+
+
+def test_discover_toolsets_warns_on_global_collision(interpreter_instance):
+    """Test that redeclaring an existing global toolset emits a warning."""
+
+    class CollisionTool(Toolset):
+        pass
+
+    # Pre-populate global registry to simulate another script having loaded it
+    Toolset._classes["CollisionTool"] = CollisionTool
+
+    mock_script = MagicMock()
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="CollisionTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    # Isolate execution
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    # Run discovery while intercepting the logger.warning calls
+    with patch("nemantix.core.interpreter.logger.warning") as mock_warning:
+        interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+        # Assert the warning was actually called with our expected string
+        warning_emitted = any(
+            "Toolset collision detected: 'CollisionTool'" in call_args[0][0]
+            for call_args in mock_warning.call_args_list
+        )
+        assert warning_emitted is True, "Expected a collision warning in the logs."
+
+    # Verify it still gets added to the current context successfully
+    assert "CollisionTool" in interpreter_instance.context.toolsets

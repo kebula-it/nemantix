@@ -509,3 +509,86 @@ class TestToolsetGetInstanceSignatureBinding:
             Toolset.get_instance(
                 DynamicTool, alias="Dyn", args=[1, 3], kwargs={"a": "b"}
             )
+
+
+class TestToolsetLifecycleAndClose:
+    def setup_method(self):
+        # Snapshot the global state before the test
+        self.old_instances = dict(Toolset._instances)
+        self.old_named = dict(Toolset._named_instances)
+        self.old_classes = dict(Toolset._classes)
+        self.old_registry = dict(Toolset.REGISTRY)
+
+        # Clear the caches so THIS test runs in complete isolation
+        Toolset._instances.clear()
+        Toolset._named_instances.clear()
+        Toolset._classes.clear()
+        Toolset.REGISTRY.clear()
+
+    def teardown_method(self):
+        # Restore the global state after the test so STL toolsets aren't lost
+        Toolset._instances.clear()
+        Toolset._instances.update(self.old_instances)
+
+        Toolset._named_instances.clear()
+        Toolset._named_instances.update(self.old_named)
+
+        Toolset._classes.clear()
+        Toolset._classes.update(self.old_classes)
+
+        Toolset.REGISTRY.clear()
+        Toolset.REGISTRY.update(self.old_registry)
+
+    def test_unregister_calls_close_on_all_instances(self):
+        class ConnectionTool(Toolset):
+            def __init__(self, host):
+                super().__init__()
+                self.is_closed = False
+                self.host = host
+
+            def close(self):
+                self.is_closed = True
+
+        # Register the class manually to mock __init_subclass__ behavior
+        registry_key = "ConnectionTool"
+        Toolset._classes[registry_key] = ConnectionTool
+
+        # Create multiple instances
+        inst1 = Toolset.get_instance(
+            ConnectionTool, alias="DB1", kwargs={"host": "local"}
+        )
+        inst2 = Toolset.get_instance(
+            ConnectionTool, alias="DB2", kwargs={"host": "remote"}
+        )
+
+        # Unregister the toolset
+        Toolset.unregister(registry_key)
+
+        # Verify close() was called on both
+        assert inst1.is_closed is True
+        assert inst2.is_closed is True
+
+        # Verify caches are empty
+        assert len(Toolset._named_instances) == 0
+        assert len(Toolset._classes) == 0
+
+    def test_unregister_survives_close_exceptions(self):
+        class CrashingCloseTool(Toolset):
+            def close(self):
+                raise RuntimeError("Failed to disconnect!")
+
+        registry_key = "CrashingCloseTool"
+        Toolset._classes[registry_key] = CrashingCloseTool
+
+        # Instantiate
+        Toolset.get_instance(CrashingCloseTool, alias="CrashDB")
+
+        # Unregister should complete successfully despite the exception
+        try:
+            Toolset.unregister(registry_key)
+        except RuntimeError:
+            pytest.fail("unregister() did not swallow the close() exception.")
+
+        # Verify caches are still successfully purged
+        assert len(Toolset._named_instances) == 0
+        assert registry_key not in Toolset._classes

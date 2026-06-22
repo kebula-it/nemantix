@@ -50,15 +50,22 @@ class Toolset:
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        class_name = cls.__name__
+
+        # If redefining an existing toolset, clean up the old one first.
+        if class_name in cls._classes:
+            logger.warning(
+                f"Toolset '{class_name}' is being redefined. Purging old registration and closing instances."
+            )
+            cls.unregister(class_name)
 
         for attr_name, attr_value in cls.__dict__.items():
             original_func = getattr(attr_value, "__wrapped__", attr_value)
 
             if getattr(original_func, "__is_tool", False):
-                tool_name = f"{cls.__name__}.{attr_name}"
+                tool_name = f"{class_name}.{attr_name}"
                 logger.debug(f"Registering tool: {tool_name}")
 
-                # Extract parameters, ignoring 'self'
                 sig = inspect.signature(original_func)
                 parameters = {
                     name: param
@@ -68,18 +75,14 @@ class Toolset:
 
                 cls.REGISTRY[tool_name] = dict(
                     cls=cls,
-                    cls_name=cls.__name__,
+                    cls_name=class_name,
                     fn_name=attr_name,
                     fn=original_func,
                     docstring=attr_value.__doc__,
                     parameters=parameters,
                 )
 
-        cls._classes[cls.__name__] = cls
-
-    # ------------------------------------------------------------------
-    # Lazy toolset resolution
-    # ------------------------------------------------------------------
+        cls._classes[class_name] = cls
 
     @staticmethod
     def _find_class_in(path: str, class_name: str) -> "type[Toolset] | None":
@@ -127,6 +130,52 @@ class Toolset:
             cls._module_paths[class_name] = import_path
 
     @classmethod
+    def unregister(cls, registry_key: str):
+        """Purges a class and its registered tools from all global caches,
+        and closes active instances.
+        """
+        if registry_key in cls._classes:
+            target_cls = cls._classes.pop(registry_key)
+
+            # Purge from REGISTRY (tools)
+            keys_to_delete = [
+                k for k, v in cls.REGISTRY.items() if v["cls"] == target_cls
+            ]
+            for k in keys_to_delete:
+                del cls.REGISTRY[k]
+
+            # Track unique instances to avoid calling close() multiple times on the same object
+            instances_to_close = set()
+
+            # Purge from global singletons
+            if target_cls in cls._instances:
+                instances_to_close.add(cls._instances[target_cls])
+                del cls._instances[target_cls]
+
+            # Purge from named/aliased instances
+            aliases_to_delete = [
+                k for k, v in cls._named_instances.items() if v["class"] == target_cls
+            ]
+            for k in aliases_to_delete:
+                instances_to_close.add(cls._named_instances[k]["instance"])
+                del cls._named_instances[k]
+
+            # close all collected instances
+            for instance in instances_to_close:
+                try:
+                    if hasattr(instance, "close") and callable(instance.close):
+                        instance.close()
+                except Exception as e:
+                    logger.error(
+                        f"Error closing toolset instance of {target_cls.__name__}: {e}",
+                        exc_info=True,
+                    )
+
+            logger.debug(
+                f"Unregistered toolset '{registry_key}' and closed {len(instances_to_close)} instances."
+            )
+
+    @classmethod
     def load(cls, class_name: str) -> "Toolset":
         """Instantiate a toolset by class name, importing its module lazily.
 
@@ -172,6 +221,13 @@ class Toolset:
 
     def reset_state(self):
         self.state.clear()
+
+    def close(self):
+        """
+        Releases external resources (e.g., database connections, file handles)
+        when the toolset is unregistered.
+        """
+        pass
 
     @classmethod
     def register_alias(cls, tool_class: str, tool_name: str, alias: str) -> bool:

@@ -1769,11 +1769,23 @@ class Interpreter:
 
     def _discover_toolsets_and_imports(self, script: Script):
         for toolset_decl in script.toolsets_decl:
-            if toolset_decl.name not in self.context.toolsets:
+            toolset_name = toolset_decl.name
+
+            if (
+                toolset_name in Toolset._classes
+                and toolset_name not in self.context.toolsets
+            ):
+                logger.warning(
+                    f"Toolset collision detected: '{toolset_name}' is already registered globally. "
+                    f"Redeclaring it will overwrite the existing definition and close active instances. "
+                    f"Consider using a unique name."
+                )
+
+            if toolset_name not in self.context.toolsets:
                 self.interpret_tool_declaration(toolset_decl)
-                self.context.toolsets.add(toolset_decl.name)
+                self.context.toolsets.add(toolset_name)
             else:
-                logger.info(f'Toolset "{toolset_decl.name}" already defined.')
+                logger.info(f'Toolset "{toolset_name}" already defined.')
 
         self.interpret_imports(imports=list(script.toolset_imports.values()))
         imported_names = {imp.name for imp in script.toolset_imports.values()}

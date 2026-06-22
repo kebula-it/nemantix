@@ -1,6 +1,5 @@
 from collections import defaultdict, deque
 from enum import Enum
-from pathlib import Path
 
 from nemantix.common import context
 from nemantix.common.logger import get_package_logger
@@ -9,7 +8,11 @@ from nemantix.core.custom_types import PathLike
 from nemantix.core.exceptions import NemantixException
 from nemantix.core.node import ActionBlock, BlockStatement, FileMeta
 from nemantix.core.script import Script, ScriptTypeEnum
-from nemantix.core.source_manager import LocalSourceManager
+from nemantix.core.source_manager import (
+    LocalSourceManager,
+    MultiSourceResolver,
+    SourceManager,
+)
 from nemantix.core.tools import Toolset
 from nemantix.hub import Event, EventHub, EventType
 from nemantix.hub.event_hub import Observable
@@ -127,8 +130,14 @@ class Expertise:
         experimental_enhance_coding=False,
         experimental_enable_fixer=False,
         experimental_include_action_body_in_semantics=False,
+        search_environments: list[tuple[PathLike, SourceManager]] | None = None,
     ):
         assert isinstance(verifier, BaseVerifier)
+
+        if search_environments is None:
+            search_environments = [(".", LocalSourceManager())]
+
+        self.resolver = MultiSourceResolver(search_environments)
 
         self.toolset_classes = Toolset.get_registered_classes()
         self.script_by_loc: dict[str, Script] = {}
@@ -173,10 +182,18 @@ class Expertise:
                 self._inject_fallback_into_script(script)
 
             script.parse()
+
             self.script_by_loc[script.get_location()] = script
-            self.requires_map[script.get_location()] = [
-                r.file_path for r in script.requires
-            ]
+
+        # build requires map
+        for loc, script in self.script_by_loc.items():
+            resolved_requires = []
+
+            for require_node in script.requires:
+                resolved_path = self.resolver.resolve(require_node.file_path)
+                resolved_requires.append(resolved_path)
+
+            self.requires_map[loc] = resolved_requires
 
         self.source_ordered_list = []  # coding order basing on imports
         self.deliberate_to_script_loc = {}  # delib_name:script_loc
@@ -337,9 +354,10 @@ class Expertise:
 
     def get_visible_actions_names(self, script) -> list[str]:
         actions = [a.name for a in script.actions.values()]
-        for require in script.requires:
-            req_scr = self.script_by_loc[require.file_path]
-            actions.extend([a.name for a in req_scr.actions.values()])
+
+        for required_script in self.get_required_scripts(script):
+            actions.extend([a.name for a in required_script.actions.values()])
+
         return actions
 
     def is_fully_coded(self):
@@ -448,6 +466,7 @@ class Expertise:
         export_location: PathLike = None,
         export=True,
         create_summary=False,
+        search_paths: list[PathLike] | None = None,
         **kwargs,
     ) -> "Expertise":
         """Instantiates an Expertise assuming local source files or Script list."""
@@ -458,6 +477,12 @@ class Expertise:
             ]
         else:
             scripts = paths
+
+        if search_paths is None:
+            search_paths = [
+                ".",
+                export_location or LocalSourceManager().get_default_export_location(),
+            ]
 
         observers = kwargs.pop("observers", None)
         enable_fixer = kwargs.pop("experimental_enable_fixer", False)
@@ -491,6 +516,7 @@ class Expertise:
             experimental_enhance_coding=enhance_coding,
             experimental_enable_fixer=enable_fixer,
             experimental_include_action_body_in_semantics=include_body_semantics,
+            search_environments=[(path, LocalSourceManager()) for path in search_paths],
         )
 
     @staticmethod

@@ -195,16 +195,11 @@ class Executor:
 
             # Phase 2: code the deliberate
             with self.PhaseEvent(self, phase="code_deliberate", deliberate=deliberate):
-                required_scripts = [
-                    self.expertise.script_by_loc[s]
-                    for s in self.expertise.requires_map[script.get_location()]
-                ]
-
                 new_content = self.expertise.coder.code_deliberate(
                     coding_level=CodeOperationEnum.COMPLETE,
                     deliberate_name=deliberate.name,
                     script=script,
-                    required_scripts=required_scripts,
+                    required_scripts=self.expertise.get_required_scripts(script),
                     user_request=user_request,
                 )
                 # update script in expertise (with coded deliberate)
@@ -304,10 +299,9 @@ class Executor:
                             f"runtime coding using request..."
                         )
 
-                        required_scripts = [
-                            self.expertise.script_by_loc[require.file_path]
-                            for require in action_script.requires
-                        ]
+                        required_scripts = self.expertise.get_required_scripts(
+                            action_script
+                        )
 
                         assert isinstance(action_name, str)
                         res = self.expertise.coder.code_action(

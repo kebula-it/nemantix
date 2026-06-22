@@ -725,7 +725,9 @@ __deliberate
         max_steps=10,
         **kwargs,
     ) -> RunSchema:
-        assert int(max_consecutive_errors) >= 1, "'max_consecutive_errors' should be greater than one."
+        assert int(max_consecutive_errors) >= 1, (
+            "'max_consecutive_errors' should be greater than one."
+        )
         assert int(max_steps) >= 1, "'max_steps' should be greater than one."
         max_steps = int(max_steps)
 

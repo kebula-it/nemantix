@@ -113,6 +113,37 @@ err, out = agent.run(user_request="Assemble a castle ladder")
 print("Error:", err)
 print("Output:", out)
 ```
+#### Import of scripts
+Suppose you have scripts (say `script_a.nxs`, and `script_b.nxs`) that import a common script
+ (`common.nxc`) with the `require` keyword. For example:
+```
+# both script_a.nxs and script_b.nxs
+
+require common.nxc
+# ...
+```
+
+To correctly execute the agent, the `Expertise` need to know the full paths of the scripts:
+```python
+from nemantix.core import Expertise
+
+script_paths = [
+  'path/to/script_a.nxs',
+  'path/to/script_b.nxs',
+  'another/path/to/common.nxc'
+]
+
+# assume the scripts are stored on local filesystem
+exp = Expertise.from_local_scripts(paths=script_paths,
+                                   verifier=...,
+                                   search_paths=['path/to/', 'another/path/to/'])
+# agent creation [...]
+```
+Notice the `search_paths`: this argument specifies paths to look up the imported scripts.
+
+> If you provide the `seach_paths` as 'another/path/to/', you can import the common
+> script with "require common.nxc", otherwise if you provide just 'another', you
+> need to import it via "require path/to/common.nxc".
 
 ### Coded request
 

@@ -268,7 +268,7 @@ profiler = Profiler()
 
 # Attaching the event-hub to the expertise enables 
 # automatic debugging on breakpoints and raised errors
-# NOTE: insert "do breakpoint" in your script at relevant lines
+# NOTE: annotate relevant lines with @breakpoint
 exp = Expertise.from_local_scripts(paths=['examples/ticket.nxs'],
                                    verifier=DebugVerifier(),
                                    observers=[debugger, profiler])

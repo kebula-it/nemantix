@@ -284,10 +284,10 @@ class Coder:
         """Code all frames in a Script"""
         defined_frames = {frame.name: frame for frame in script.frames}
         frame_usages = self._extract_do_schema(script)
-        coded_frames = []
+        coded_frames = {}
         frame_parser = _get_frame_parser()
         content_list = script.read_as_list()
-
+        
         for frame_name, usages in frame_usages.items():
             prev_frame = None
 
@@ -301,7 +301,7 @@ class Coder:
 
             elif frame_name in defined_frames:
                 # skip as already coded or defined
-                coded_frames.append(defined_frames[frame_name])
+                coded_frames[frame_name] = defined_frames[frame_name]
                 continue
 
             # code frame
@@ -338,14 +338,26 @@ class Coder:
             self._emit_coding_end(
                 script, scope=frame_name, kind="frame", attempts=attempt + 1
             )
-            coded_frames.append(frame)
+            coded_frames[frame] = frame
+
+        # make sure frames without usages are also copied
+        all_frames = []
+        seen_frames = set()
+
+        for frame_name, frame in coded_frames.items():
+            all_frames.append(frame)
+            seen_frames.add(frame_name)
+
+        for frame in defined_frames.values():
+            if frame.name not in seen_frames:
+                all_frames.append(frame)
 
         # copy all the nodes in the right order
         node_list = (
             script.requires
             + list(script.toolset_imports.values())
             + script.toolsets_decl
-            + coded_frames
+            + all_frames
             + list(script.actions.values())
             + list(script.deliberates.values())
         )

@@ -1927,6 +1927,13 @@ class Interpreter:
                 if isinstance(stmt, nmx_nodes.Assignment):
                     kwargs[stmt.var.name] = self.interpret_expression(stmt.value)
                     keyword_seen = True
+
+                elif isinstance(stmt, dict):
+                    # Handle struct nominal fields
+                    for k, v in stmt.items():
+                        kwargs[k] = self.interpret_expression(v)
+
+                    keyword_seen = True
                 else:
                     if keyword_seen:
                         raise self._runtime_exception(

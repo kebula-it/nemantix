@@ -1578,12 +1578,12 @@ class Coder:
     def _extract_toolset_docs_map(
         self,
         import_stmt_list: list[ImportToolsetStatement],
-        toolset_declarations: list[PythonToolDeclaration],
+        toolset_declarations: list[PythonToolDeclaration] | None = None,
     ):
         toolset_map = {}
         toolset_classes = Toolset.get_registered_classes()
 
-        if len(toolset_classes) == 0:
+        if len(toolset_classes) == 0 and not toolset_declarations:
             return toolset_map
 
         for import_stmt in import_stmt_list:
@@ -1600,7 +1600,7 @@ class Coder:
                     # lookup in toolset declarations
                     toolset_class = None
 
-                    for i, toolset_decl in enumerate(toolset_declarations):
+                    for i, toolset_decl in enumerate(toolset_declarations or []):
                         if toolset_decl.name == toolset:
                             toolset_class = self._exec_toolset_declaration(toolset_decl)
 

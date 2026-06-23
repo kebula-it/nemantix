@@ -179,8 +179,9 @@ def test_extract_toolset_docs_map_import_all(monkeypatch):
         Toolset, "get_registered_classes", classmethod(lambda cls: [MyToolset])
     )
 
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[]))
     stmt = ImportToolsetStmt(name="MyToolset", elements="*")
-    out = Coder._extract_toolset_docs_map([stmt])
+    out = coder._extract_toolset_docs_map([stmt])
 
     assert out == {
         "MyToolset": {
@@ -195,8 +196,9 @@ def test_extract_toolset_docs_map_import_subset_list(monkeypatch):
         Toolset, "get_registered_classes", classmethod(lambda cls: [MyToolset])
     )
 
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[]))
     stmt = ImportToolsetStmt(name="MyToolset", elements=["fake_tool2"])
-    out = Coder._extract_toolset_docs_map([stmt])
+    out = coder._extract_toolset_docs_map([stmt])
 
     assert out == {"MyToolset": {"fake_tool2": "prints arrivederci"}}
 
@@ -206,11 +208,59 @@ def test_extract_toolset_docs_map_raises_if_toolset_not_available(monkeypatch):
         Toolset, "get_registered_classes", classmethod(lambda cls: [MyToolset])
     )
 
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[]))
     stmt = ImportToolsetStmt(name="MissingToolset", elements="*")
     with pytest.raises(
         NemantixException, match=r"non-available toolset 'MissingToolset'"
     ):
-        Coder._extract_toolset_docs_map([stmt])
+        coder._extract_toolset_docs_map([stmt])
+
+
+def test_extract_toolset_docs_map_lookup_in_declarations(monkeypatch):
+    """Test that a toolset class is correctly extracted from inline declarations if not registered."""
+    monkeypatch.setattr(Toolset, "get_registered_classes", classmethod(lambda cls: []))
+
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[]))
+
+    # Mock the internal exec call to return our MyToolset mock when it finds the specific declaration
+    def mock_exec_decl(decl):
+        if decl.name == "DeclaredToolset":
+            return MyToolset
+        return None
+
+    monkeypatch.setattr(coder, "_exec_toolset_declaration", mock_exec_decl)
+
+    stmt = ImportToolsetStmt(name="DeclaredToolset", elements="*")
+    decl = make_toolset_decl(
+        "DeclaredToolset", "class DeclaredToolset(Toolset): pass", 1, 3
+    )
+
+    out = coder._extract_toolset_docs_map([stmt], toolset_declarations=[decl])
+
+    assert out == {
+        "DeclaredToolset": {
+            "fake_tool": "prints ciao",
+            "fake_tool2": "prints arrivederci",
+        }
+    }
+
+
+def test_extract_toolset_docs_map_lookup_in_declarations_fails(monkeypatch):
+    """Test that it correctly raises an exception if the inline declaration fails to execute/return a valid class."""
+    monkeypatch.setattr(Toolset, "get_registered_classes", classmethod(lambda cls: []))
+
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[]))
+
+    # Mock the internal exec call to simulate a failed extraction (returns None)
+    monkeypatch.setattr(coder, "_exec_toolset_declaration", lambda decl: None)
+
+    stmt = ImportToolsetStmt(name="DeclaredToolset", elements="*")
+    decl = make_toolset_decl("DeclaredToolset", "invalid python code", 1, 3)
+
+    with pytest.raises(
+        NemantixException, match=r"non-available toolset 'DeclaredToolset'"
+    ):
+        coder._extract_toolset_docs_map([stmt], toolset_declarations=[decl])
 
 
 def test_extract_actions_semantics_merges_required_scripts():

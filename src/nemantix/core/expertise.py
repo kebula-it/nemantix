@@ -154,7 +154,7 @@ class Expertise:
         self.external_vars_names = None
         self.do_export = export
 
-        self.enhance_conding = bool(experimental_enhance_coding)
+        self.enhance_coding = bool(experimental_enhance_coding)
         self.knowledge_base = None
 
         if observers:
@@ -215,7 +215,7 @@ class Expertise:
             NemantixKnowledgeBase,
         )
 
-        if self.enhance_conding and isinstance(knowledge_base, NemantixKnowledgeBase):
+        if self.enhance_coding and isinstance(knowledge_base, NemantixKnowledgeBase):
             logger.info(
                 "[EXPERIMENTAL] Using the Knowledge-base to enhance the coding."
             )
@@ -487,7 +487,7 @@ class Expertise:
         observers = kwargs.pop("observers", None)
         enable_fixer = kwargs.pop("experimental_enable_fixer", False)
         allow_fallback = kwargs.pop("allow_fallback_deliberate", FallbackEnum.NONE)
-        enhance_coding = kwargs.pop("experimental_enhance_coding", False)
+        enhance_coding = kwargs.pop("experimental_enhance_coding", False) or kwargs.pop("enhance_coding", False)
         include_body_semantics = kwargs.pop(
             "experimental_include_action_body_in_semantics", False
         )

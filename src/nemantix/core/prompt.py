@@ -445,6 +445,14 @@ KNOWLEDGE_BASE CONTEXT
 {knowledge_base}
 """
 )
+
+CODING_ACTION_ADDITIONAL_INFO = (
+    CODING_ADDITIONAL_INFO
+    + """
+KNOWLEDGE_BASE CONTEXT
+{knowledge_base}
+"""
+)
 ##############################################################
 ################ DELIBERATE WITH BREAKDOWN ###################
 COMPILATION_DELIBERATE_BREAKDOWN = """

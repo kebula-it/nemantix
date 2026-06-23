@@ -27,7 +27,7 @@ from nemantix.core.node import (
 from nemantix.core.parser import _get_frame_parser
 from nemantix.core.prompt import (
     CODE_SUMMARY_PROMPT,
-    CODING_ADDITIONAL_INFO,
+    CODING_ACTION_ADDITIONAL_INFO,
     CODING_DELIBERATE_ADDITIONAL_INFO,
     CODING_SYSTEM_PROMPT,
     COMPILATION_ACTION,
@@ -1286,11 +1286,12 @@ class Coder:
             frames_nxs += "\n"
 
         ## Aggregate
-        task += CODING_ADDITIONAL_INFO.format(
+        task += CODING_ACTION_ADDITIONAL_INFO.format(
             tools=str(available_tools),
             actions=str(available_actions),
             frames=frames_nxs,
             ENV_vars=self.external_vars_names,
+            knowledge_base=self.query_knowledge_base(action),
         )
         task += user_req_prompt
         messages = [
@@ -1414,7 +1415,7 @@ class Coder:
 
         return messages
 
-    def query_knowledge_base(self, deliberate: Deliberate) -> str:
+    def query_knowledge_base(self, node: Deliberate | ActionBlock) -> str:
         from nemantix.core.runtime import Builtin
         from nemantix.knowledge_base.core.nemantix_knowledge_base import (
             NemantixKnowledgeBase,
@@ -1423,7 +1424,12 @@ class Coder:
         if not isinstance(self.knowledge_base, NemantixKnowledgeBase):
             return ""
 
-        guidelines = deliberate.guidelines.prompt
+        if isinstance(node, Deliberate):
+            guidelines = node.guidelines.prompt if node.guidelines else ""
+        elif isinstance(node, ActionBlock):
+            guidelines = node.prompt.prompt if node.prompt else ""
+        else:
+            return ""
         kb_prompt = (
             "You have access to a knowledge base. You must determine a suitable query"
             " to retrieve chunks that should help implement the following guidelines:\n"

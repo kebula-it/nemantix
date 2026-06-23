@@ -2,6 +2,7 @@ import json
 import textwrap
 import traceback
 from enum import Enum
+from typing import Type
 
 from lark import LarkError
 
@@ -22,6 +23,7 @@ from nemantix.core.node import (
     Frame,
     ImportToolsetStatement,
     MicroPrompt,
+    PythonToolDeclaration,
     Statement,
 )
 from nemantix.core.parser import _get_frame_parser
@@ -1278,7 +1280,9 @@ class Coder:
         ## Add imported tools and actions ##
         # Tools
         imported_tools = list(script.toolset_imports.values())
-        toolset_info_map = self._extract_toolset_docs_map(imported_tools)
+        toolset_info_map = self._extract_toolset_docs_map(
+            imported_tools, script.toolsets_decl
+        )
         available_tools = json.dumps(toolset_info_map, indent=2, ensure_ascii=False)
 
         # Actions
@@ -1571,8 +1575,11 @@ class Coder:
                     "All deliberates must have a plan block."
                 )
 
-    @staticmethod
-    def _extract_toolset_docs_map(import_stmt_list: list[ImportToolsetStatement]):
+    def _extract_toolset_docs_map(
+        self,
+        import_stmt_list: list[ImportToolsetStatement],
+        toolset_declarations: list[PythonToolDeclaration],
+    ):
         toolset_map = {}
         toolset_classes = Toolset.get_registered_classes()
 
@@ -1585,9 +1592,28 @@ class Coder:
 
             # get class to use class methods to extract docstring
             try:
-                cls: Toolset = [
+                classes: list[Toolset] = [
                     cls for cls in toolset_classes if cls.__name__ == toolset
-                ][0]
+                ]
+
+                if len(classes) == 0:
+                    # lookup in toolset declarations
+                    toolset_class = None
+
+                    for i, toolset_decl in enumerate(toolset_declarations):
+                        if toolset_decl.name == toolset:
+                            toolset_class = self._exec_toolset_declaration(toolset_decl)
+
+                            if toolset_class is not None:
+                                break
+
+                    if toolset_class is None:
+                        raise IndexError
+                    else:
+                        cls = toolset_class
+                else:
+                    cls = classes[0]
+
             except IndexError:
                 raise NemantixException(
                     f"Trying to import a non-available toolset '{toolset}' in nxs. Please, "
@@ -1609,6 +1635,36 @@ class Coder:
                 toolset_map[name] = tools_info
 
         return toolset_map
+
+    def _exec_toolset_declaration(
+        self, toolset_declaration: PythonToolDeclaration
+    ) -> Type[Toolset] | None:
+        prompt = toolset_declaration.prompt.prompt
+
+        index = prompt.find("class ")
+        if index < 0:
+            return None
+
+        import_index = prompt.find("import ")
+        from_index = prompt.find("from ")
+
+        if import_index > -1:
+            index = min(index, import_index)
+
+        if from_index > -1:
+            index = min(index, from_index)
+
+        code = prompt[index:]
+        logger.debug(f'Exec on "\n{code}\n"')
+        locals_var = self.runtime_globals
+
+        try:
+            exec(code, self.runtime_globals, locals_var)
+
+        except RuntimeError:
+            pass
+
+        return locals_var.get(toolset_declaration.name, None)
 
     def _extract_actions_semantics(
         self, script: Script, required_scripts: list[Script]

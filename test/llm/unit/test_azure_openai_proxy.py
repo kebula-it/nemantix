@@ -8,6 +8,7 @@ from nemantix.llm.abstract_proxy import (
     LLMProxyException,
     LLMResponse,
     LLMUsage,
+    StructuredLLMResponse,
 )
 from nemantix.llm.azure_openai_proxy import AzureOpenAILLMProxy
 from nemantix.llm.credentials import Credentials
@@ -86,6 +87,13 @@ def mock_azure_openai_client(monkeypatch):
                     choices=[MockChoice(delta=MockDelta("Mock stream response."))]
                 )
                 return MockStreamContextManager([chunk])
+
+            # Structured output mode
+            if kwargs.get("response_format"):
+                return MagicMock(
+                    choices=[MockChoice(message=MockMessage('{"result": "mocked"}'))],
+                    usage=MockUsage(),
+                )
 
             # Tool use mode
             if kwargs.get("tools"):
@@ -215,6 +223,23 @@ def test_azure_openai_errors_surface(monkeypatch):
             api_version="2024-02-15-preview",
             azure_endpoint="https://fake.endpoint",
         )
+
+
+def test_azure_stream_accepts_list_prompt(azure_proxy):
+    messages = [{"role": "user", "content": "abc"}]
+    chunks = list(azure_proxy.stream(messages))
+    assert "".join(chunks) == "Mock stream response."
+
+
+def test_azure_invoke_structured_accepts_list_prompt(azure_proxy):
+    from pydantic import BaseModel
+
+    class Reply(BaseModel):
+        result: str = ""
+
+    messages = [{"role": "user", "content": "hello"}]
+    result = azure_proxy.invoke_structured(messages, schema=Reply)
+    assert isinstance(result, StructuredLLMResponse)
 
 
 def test_azure_openai_grammar_based_unsupported_model(azure_proxy):

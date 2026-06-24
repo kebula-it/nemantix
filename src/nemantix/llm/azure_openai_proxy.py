@@ -53,7 +53,7 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
     ):
         self._deployment_name = deployment_name
         self._bound_tools: List[ToolSpec] = []
-        self._toolset_class: Type["Toolset"] = None
+        self._toolset_class: Type["Toolset"] | None = None
         self._grammar: Optional[str] = None
         self._reasoning_effort = reasoning_effort
 
@@ -104,6 +104,12 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
                 self._grammar = f.read()
 
     # ----------------------------- helpers -----------------------------
+    @staticmethod
+    def _normalize_messages(prompt: str | list) -> list:
+        return (
+            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        )
+
     def _build_usage(self, u) -> "LLMUsage":
         cached = 0
         if u and getattr(u, "prompt_tokens_details", None):
@@ -158,12 +164,7 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
         self, prompt: str | list, tool_choice="auto", **kwargs: Any
     ) -> "LLMResponse":
         try:
-            # if 1 message -> convert to user message. If list of messages->pass it (for context)            message = [{"role": "user", "content": prompt}] if type(prompt) is str else prompt
-            message = (
-                [{"role": "user", "content": prompt}]
-                if isinstance(prompt, str)
-                else prompt
-            )
+            message = self._normalize_messages(prompt)
 
             req: Dict[str, Any] = {
                 "model": self._deployment_name,
@@ -212,7 +213,11 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             ) from e
 
     def invoke_structured(
-        self, prompt: str, schema: Type[BaseModel], tool_choice="auto", **kwargs: Any
+        self,
+        prompt: str | list,
+        schema: Type[BaseModel],
+        tool_choice="auto",
+        **kwargs: Any,
     ) -> "StructuredLLMResponse":
         """
         Uses Azure OpenAI Structured Outputs (json_schema) to enforce responses
@@ -228,9 +233,7 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             },
         }
 
-        messages = (
-            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
-        )
+        messages = self._normalize_messages(prompt)
 
         try:
             req = {
@@ -359,11 +362,11 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
         except Exception as e:
             raise LLMProxyException(f"Error invoking Azure OpenAI LLM: {e}") from e
 
-    def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
+    def stream(self, prompt: str | list, **kwargs: Any) -> Iterator[str]:
         try:
             req: Dict[str, Any] = {
                 "model": kwargs.pop("azure_deployment", self._deployment_name),
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": self._normalize_messages(prompt),
                 "stream": True,
             }
             if self._bound_tools:
@@ -395,7 +398,7 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
         return True
 
     def bind_tools(
-        self, toolset_class: Type["Toolset"], tool_names: List[str] = None
+        self, toolset_class: Type["Toolset"], tool_names: List[str] | None = None
     ) -> "AzureOpenAILLMProxy":
         try:
             bound_tools = []

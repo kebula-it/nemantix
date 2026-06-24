@@ -167,6 +167,11 @@ def mock_openai_client():
         prompt = kwargs.get("messages", [{}])[0].get("content", "")
         tools = kwargs.get("tools")
 
+        # Structured output: return valid JSON so json.loads() succeeds
+        if kwargs.get("response_format"):
+            message = MockMessage(content='{"result": "mocked"}', tool_calls=[])
+            return MockResponse(choices=[MockChoice(message=message)])
+
         # Check for tool call trigger
         if tools and ("weather" in prompt.lower() or "stock" in prompt.lower()):
             tool_call = Namespace(

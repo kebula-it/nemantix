@@ -76,6 +76,12 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
 
     # ----------------------------- helpers -----------------------------
     @staticmethod
+    def _normalize_messages(prompt: str | list) -> list:
+        return (
+            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        )
+
+    @staticmethod
     def _build_usage(u) -> LLMUsage:
         cached = 0
         if u and u.prompt_tokens_details:
@@ -133,12 +139,7 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
         self, prompt: str | list, tool_choice="auto", **kwargs: Any
     ) -> LLMResponse:
         try:
-            # if 1 message -> convert to user message. If list of messages->pass it (for context)
-            message = (
-                [{"role": "user", "content": prompt}]
-                if isinstance(prompt, str)
-                else prompt
-            )
+            message = self._normalize_messages(prompt)
 
             req: Dict[str, Any] = {
                 "model": self.model_name,
@@ -182,7 +183,11 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             raise LLMProxyException(f"Error invoking OpenAI LLM: {e}") from e
 
     def invoke_structured(
-        self, prompt: str, schema: Type[BaseModel], tool_choice="auto"
+        self,
+        prompt: str | list,
+        schema: Type[BaseModel],
+        tool_choice="auto",
+        **kwargs: Any,
     ) -> StructuredLLMResponse:
         """
         Uses OpenAI Structured Outputs (response_format: json_schema) to force the
@@ -200,9 +205,7 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             },
         }
 
-        messages = (
-            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
-        )
+        messages = self._normalize_messages(prompt)
 
         try:
             req = {
@@ -335,11 +338,11 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
         except Exception as e:
             raise LLMProxyException(f"Error invoking OpenAI LLM: {e}") from e
 
-    def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
+    def stream(self, prompt: str | list, **kwargs: Any) -> Iterator[str]:
         try:
             req: Dict[str, Any] = {
                 "model": self.model_name,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": self._normalize_messages(prompt),
                 "stream": True,
             }
             if self._bound_tools:
@@ -370,7 +373,7 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
         return True
 
     def bind_tools(
-        self, toolset_class: Type["Toolset"], tool_names: List[str] = None
+        self, toolset_class: Type["Toolset"], tool_names: List[str] | None = None
     ) -> "OpenAICompatibleProxy":
         try:
             bound_tools = []

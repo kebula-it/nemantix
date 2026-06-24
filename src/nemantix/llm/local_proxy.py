@@ -5,7 +5,12 @@ from pydantic import BaseModel
 
 from nemantix.common.logger import get_package_logger
 from nemantix.core.custom_types import PathLike
-from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException
+from nemantix.llm.abstract_proxy import (
+    AbstractLLMProxy,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+)
 
 if TYPE_CHECKING:
     from nemantix.core.tools import Toolset
@@ -13,7 +18,6 @@ if TYPE_CHECKING:
 logger = get_package_logger(__name__)
 
 
-# TODO: LLMRespose refactor
 class LocalLLMProxy(AbstractLLMProxy):
     """An LLM proxy for local language models (llama.cpp backend)"""
 
@@ -61,7 +65,7 @@ class LocalLLMProxy(AbstractLLMProxy):
     ) -> list[dict]:
         raise NotImplementedError("Not supported.")
 
-    def invoke(self, prompt: str | list, **kwargs: Any) -> dict:
+    def invoke(self, prompt: str | list, **kwargs: Any) -> LLMResponse:
         if isinstance(prompt, list):
             prompt = self._convert_messages_to_string(messages=prompt)
 
@@ -70,15 +74,22 @@ class LocalLLMProxy(AbstractLLMProxy):
         else:
             text = self.llm(prompt, sampling_params=self.params)
 
-        return {"text": text, "tool_calls": []}
+        return LLMResponse(
+            text=text,
+            tool_calls=[],
+            proxy=self,
+            usage=LLMUsage(input_tokens=0, output_tokens=0),
+        )
 
-    def invoke_grammar_based(self, prompt: Union[str, list], **kwargs: Any) -> dict:
+    def invoke_grammar_based(
+        self, prompt: Union[str, list], **kwargs: Any
+    ) -> LLMResponse:
         raise LLMProxyException("Not supported")
 
     def invoke_structured(self, prompt: str | list, schema: Type[BaseModel], **kwargs):
         raise LLMProxyException("Not supported")
 
-    def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
+    def stream(self, prompt: str | list, **kwargs: Any) -> Iterator[str]:
         raise LLMProxyException("Not supported")
 
     def supports_tool_use(self) -> bool:
@@ -87,10 +98,10 @@ class LocalLLMProxy(AbstractLLMProxy):
     def bind_tools(
         self, toolset_class: Type["Toolset"], tool_names: List[str]
     ) -> "AbstractLLMProxy":
-        pass
+        raise LLMProxyException("Not supported")
 
     def unbind_tools(self) -> "AbstractLLMProxy":
-        pass
+        raise LLMProxyException("Not supported")
 
     def _convert_messages_to_string(self, messages: list) -> str:
         prompt = ""

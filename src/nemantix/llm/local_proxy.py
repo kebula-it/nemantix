@@ -89,7 +89,7 @@ class LocalLLMProxy(AbstractLLMProxy):
     def invoke_structured(self, prompt: str | list, schema: Type[BaseModel], **kwargs):
         raise LLMProxyException("Not supported")
 
-    def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
+    def stream(self, prompt: str | list, **kwargs: Any) -> Iterator[str]:
         raise LLMProxyException("Not supported")
 
     def supports_tool_use(self) -> bool:

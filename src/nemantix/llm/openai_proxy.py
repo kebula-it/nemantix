@@ -76,6 +76,12 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
 
     # ----------------------------- helpers -----------------------------
     @staticmethod
+    def _normalize_messages(prompt: str | list) -> list:
+        return (
+            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        )
+
+    @staticmethod
     def _build_usage(u) -> LLMUsage:
         cached = 0
         if u and u.prompt_tokens_details:
@@ -133,12 +139,7 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
         self, prompt: str | list, tool_choice="auto", **kwargs: Any
     ) -> LLMResponse:
         try:
-            # if 1 message -> convert to user message. If list of messages->pass it (for context)
-            message = (
-                [{"role": "user", "content": prompt}]
-                if isinstance(prompt, str)
-                else prompt
-            )
+            message = self._normalize_messages(prompt)
 
             req: Dict[str, Any] = {
                 "model": self.model_name,
@@ -204,9 +205,7 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             },
         }
 
-        messages = (
-            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
-        )
+        messages = self._normalize_messages(prompt)
 
         try:
             req = {
@@ -339,11 +338,11 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
         except Exception as e:
             raise LLMProxyException(f"Error invoking OpenAI LLM: {e}") from e
 
-    def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
+    def stream(self, prompt: str | list, **kwargs: Any) -> Iterator[str]:
         try:
             req: Dict[str, Any] = {
                 "model": self.model_name,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": self._normalize_messages(prompt),
                 "stream": True,
             }
             if self._bound_tools:

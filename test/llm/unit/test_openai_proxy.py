@@ -68,6 +68,12 @@ def test_openai_init_and_invoke_stream_bind_unbind(openai_llm_proxy):
     assert out3.tool_calls == []
 
 
+def test_stream_accepts_list_prompt(openai_llm_proxy):
+    messages = [{"role": "user", "content": "abc"}]
+    chunks = list(openai_llm_proxy.stream(messages))
+    assert "".join(chunks) == "Mock stream response."
+
+
 def test_invoke_structured_accepts_list_prompt(openai_llm_proxy):
     class Reply(BaseModel):
         result: str = ""

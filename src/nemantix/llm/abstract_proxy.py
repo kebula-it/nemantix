@@ -169,7 +169,7 @@ class AbstractLLMProxy(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
+    def stream(self, prompt: str | list, **kwargs: Any) -> Iterator[str]:
         """
         Streams the LLM's response token by token.
         This method is primarily for text-only streaming.

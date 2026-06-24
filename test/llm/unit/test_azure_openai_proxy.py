@@ -225,6 +225,12 @@ def test_azure_openai_errors_surface(monkeypatch):
         )
 
 
+def test_azure_stream_accepts_list_prompt(azure_proxy):
+    messages = [{"role": "user", "content": "abc"}]
+    chunks = list(azure_proxy.stream(messages))
+    assert "".join(chunks) == "Mock stream response."
+
+
 def test_azure_invoke_structured_accepts_list_prompt(azure_proxy):
     from pydantic import BaseModel
 

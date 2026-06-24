@@ -8,6 +8,7 @@ from nemantix.llm.abstract_proxy import (
     AbstractLLMProxy,
     LLMProxyException,
     LLMResponse,
+    StructuredLLMResponse,
 )
 from nemantix.llm.credentials import Credentials
 from nemantix.llm.openai_proxy import OpenAILLMProxy
@@ -65,6 +66,15 @@ def test_openai_init_and_invoke_stream_bind_unbind(openai_llm_proxy):
     proxy3 = proxy.unbind_tools()
     out3 = proxy3.invoke("What's the weather? And stock?")
     assert out3.tool_calls == []
+
+
+def test_invoke_structured_accepts_list_prompt(openai_llm_proxy):
+    class Reply(BaseModel):
+        result: str = ""
+
+    messages = [{"role": "user", "content": "hello"}]
+    result = openai_llm_proxy.invoke_structured(messages, schema=Reply)
+    assert isinstance(result, StructuredLLMResponse)
 
 
 def test_openai_errors_surface(monkeypatch):

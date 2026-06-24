@@ -53,7 +53,7 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
     ):
         self._deployment_name = deployment_name
         self._bound_tools: List[ToolSpec] = []
-        self._toolset_class: Type["Toolset"] = None
+        self._toolset_class: Type["Toolset"] | None = None
         self._grammar: Optional[str] = None
         self._reasoning_effort = reasoning_effort
 
@@ -212,7 +212,7 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             ) from e
 
     def invoke_structured(
-        self, prompt: str, schema: Type[BaseModel], tool_choice="auto", **kwargs: Any
+        self, prompt: str | list, schema: Type[BaseModel], tool_choice="auto", **kwargs: Any
     ) -> "StructuredLLMResponse":
         """
         Uses Azure OpenAI Structured Outputs (json_schema) to enforce responses
@@ -395,7 +395,7 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
         return True
 
     def bind_tools(
-        self, toolset_class: Type["Toolset"], tool_names: List[str] = None
+        self, toolset_class: Type["Toolset"], tool_names: List[str] | None = None
     ) -> "AzureOpenAILLMProxy":
         try:
             bound_tools = []

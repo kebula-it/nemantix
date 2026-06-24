@@ -182,7 +182,7 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             raise LLMProxyException(f"Error invoking OpenAI LLM: {e}") from e
 
     def invoke_structured(
-        self, prompt: str, schema: Type[BaseModel], tool_choice="auto"
+        self, prompt: str | list, schema: Type[BaseModel], tool_choice="auto", **kwargs: Any
     ) -> StructuredLLMResponse:
         """
         Uses OpenAI Structured Outputs (response_format: json_schema) to force the
@@ -370,7 +370,7 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
         return True
 
     def bind_tools(
-        self, toolset_class: Type["Toolset"], tool_names: List[str] = None
+        self, toolset_class: Type["Toolset"], tool_names: List[str] | None = None
     ) -> "OpenAICompatibleProxy":
         try:
             bound_tools = []

@@ -212,7 +212,11 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
             ) from e
 
     def invoke_structured(
-        self, prompt: str | list, schema: Type[BaseModel], tool_choice="auto", **kwargs: Any
+        self,
+        prompt: str | list,
+        schema: Type[BaseModel],
+        tool_choice="auto",
+        **kwargs: Any,
     ) -> "StructuredLLMResponse":
         """
         Uses Azure OpenAI Structured Outputs (json_schema) to enforce responses

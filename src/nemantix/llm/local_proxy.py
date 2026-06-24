@@ -5,7 +5,12 @@ from pydantic import BaseModel
 
 from nemantix.common.logger import get_package_logger
 from nemantix.core.custom_types import PathLike
-from nemantix.llm.abstract_proxy import AbstractLLMProxy, LLMProxyException, LLMResponse, LLMUsage
+from nemantix.llm.abstract_proxy import (
+    AbstractLLMProxy,
+    LLMProxyException,
+    LLMResponse,
+    LLMUsage,
+)
 
 if TYPE_CHECKING:
     from nemantix.core.tools import Toolset
@@ -76,7 +81,9 @@ class LocalLLMProxy(AbstractLLMProxy):
             usage=LLMUsage(input_tokens=0, output_tokens=0),
         )
 
-    def invoke_grammar_based(self, prompt: Union[str, list], **kwargs: Any) -> LLMResponse:
+    def invoke_grammar_based(
+        self, prompt: Union[str, list], **kwargs: Any
+    ) -> LLMResponse:
         raise LLMProxyException("Not supported")
 
     def invoke_structured(self, prompt: str | list, schema: Type[BaseModel], **kwargs):

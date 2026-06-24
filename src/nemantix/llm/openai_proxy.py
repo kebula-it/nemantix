@@ -182,7 +182,11 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             raise LLMProxyException(f"Error invoking OpenAI LLM: {e}") from e
 
     def invoke_structured(
-        self, prompt: str | list, schema: Type[BaseModel], tool_choice="auto", **kwargs: Any
+        self,
+        prompt: str | list,
+        schema: Type[BaseModel],
+        tool_choice="auto",
+        **kwargs: Any,
     ) -> StructuredLLMResponse:
         """
         Uses OpenAI Structured Outputs (response_format: json_schema) to force the

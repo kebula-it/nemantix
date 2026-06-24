@@ -24,6 +24,7 @@ from nemantix.core.node import (
     ImportToolsetStatement,
     MicroPrompt,
     PythonToolDeclaration,
+    SingleValue,
     Statement,
 )
 from nemantix.core.parser import _get_frame_parser
@@ -1441,14 +1442,34 @@ class Coder:
             return ""
 
         try:
-            query = node.get_annotation_value("retrieve").value
-        except:
+            annotation = node.get_annotation_value("retrieve")
+
+            if isinstance(annotation, MicroPrompt):
+                query = annotation.prompt
+            elif isinstance(annotation, SingleValue):
+                query = annotation.value
+
+                if not isinstance(query, str):
+                    raise NemantixException(
+                        f"@retrieve should be either a string or micro-prompt "
+                        f'not "{type(query)}"!'
+                    )
+            else:
+                raise NemantixException(
+                    f"malformed @retrieve annotation: expected to be a SingleValue or micro-prompt "
+                    f'not "{type(annotation)}"!'
+                )
+
+        except NemantixException as e:
+            logger.warning(f'Extracting retrieve query from guidelines because: "{e}"')
+
             if isinstance(node, Deliberate):
                 guidelines = node.guidelines.prompt if node.guidelines else ""
             elif isinstance(node, ActionBlock):
                 guidelines = node.prompt.prompt if node.prompt else ""
             else:
                 return ""
+
             kb_prompt = (
                 "You have access to a knowledge base. You must determine a suitable query"
                 " to retrieve chunks that should help implement the following guidelines:\n"
@@ -1458,7 +1479,8 @@ class Coder:
             response = self.llm_proxy.invoke(kb_prompt)
             self._emit_llm(scope="coder-knowledge_base", usage=response.usage)
             query = response.text
-        chunks = Builtin.retrieve(self.knowledge_base, query)
+
+        chunks = Builtin.retrieve(self.knowledge_base, query) or []
         if len(chunks) == 0:
             return ""
 

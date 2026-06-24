@@ -487,7 +487,9 @@ class Expertise:
         observers = kwargs.pop("observers", None)
         enable_fixer = kwargs.pop("experimental_enable_fixer", False)
         allow_fallback = kwargs.pop("allow_fallback_deliberate", FallbackEnum.NONE)
-        enhance_coding = kwargs.pop("experimental_enhance_coding", False) or kwargs.pop("enhance_coding", False)
+        enhance_coding = kwargs.pop("experimental_enhance_coding", False) or kwargs.pop(
+            "enhance_coding", False
+        )
         include_body_semantics = kwargs.pop(
             "experimental_include_action_body_in_semantics", False
         )

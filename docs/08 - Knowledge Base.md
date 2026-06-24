@@ -311,6 +311,10 @@ exp = Expertise.from_local_scripts(paths=[...],
                                    # if true, will use the KB assigned to Agent
                                    experimental_enhance_coding=True)
 ```
-If enabled, additional context is retrieved during the coding of a `deliberate` according to its guidelines.
+If enabled, additional context is retrieved during the coding of `deliberate` and `action` according to its guidelines,
+or a user-specified query. 
+
+To specify a query just annotate the relevant `deliberate` and/or `action` with `@retrieve`: it expects either a 
+string, e.g., `@retrieve: "my query"`, or a micro-prompt, e.g., `@retrieve: >>> my query <<<`.
 
 Next: [Welcome to Nemantix](./00%20-%20Welcome%20to%20Nemantix.md)

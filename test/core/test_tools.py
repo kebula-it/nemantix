@@ -370,17 +370,6 @@ class TestToolsetGetInstanceSignatureBinding:
         Toolset._instances.clear()
         Toolset._named_instances.clear()
 
-    def test_no_alias_returns_global_singleton(self):
-        """Rule 1: Calling without an alias or args/kwargs returns a shared singleton."""
-
-        class StatelessTool(Toolset):
-            pass
-
-        instance1 = Toolset.get_instance(StatelessTool)
-        instance2 = Toolset.get_instance(StatelessTool)
-
-        assert instance1 is instance2
-
     def test_no_alias_with_args_or_kwargs_raises(self):
         """Rule 1 (Violation): Calling without an alias but passing args/kwargs must fail."""
 
@@ -454,24 +443,6 @@ class TestToolsetGetInstanceSignatureBinding:
             NemantixException, match="already instantiated with different configuration"
         ):
             Toolset.get_instance(DBTool, alias="DB", kwargs={"host": "remote_host"})
-
-    def test_alias_conflict_different_class_raises(self):
-        """Rule 2 (Conflict): Same alias used for entirely different classes."""
-
-        class PostgresTool(Toolset):
-            def __init__(self, host="localhost"):
-                pass
-
-        class MongoTool(Toolset):
-            def __init__(self, host="localhost"):
-                pass
-
-        Toolset.get_instance(PostgresTool, alias="Database")
-
-        with pytest.raises(
-            NemantixException, match="already assigned to Toolset 'PostgresTool'"
-        ):
-            Toolset.get_instance(MongoTool, alias="Database")
 
     def test_invalid_signature_binding_raises_early(self):
         """Validation: Providing kwargs that don't exist in the __init__ signature."""

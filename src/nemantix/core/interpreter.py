@@ -1848,9 +1848,9 @@ class Interpreter:
                             f"You must explicitly import it using: 'from toolset {toolset_name} as ... with [...] use *'",
                             statement=toolset_decl,
                         )
-                except ValueError:
+                except ValueError as e:
                     # Ignore if the signature cannot be introspected (e.g., certain C-bindings or builtins)
-                    pass
+                    logger.warning(f"The signature cannot be introspected: {e}")
 
             # create an import statement that imports all @tool-annotated methods
             import_stmt = nmx_nodes.ImportToolsetStatement(

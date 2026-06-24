@@ -1424,23 +1424,24 @@ class Coder:
         if not isinstance(self.knowledge_base, NemantixKnowledgeBase):
             return ""
 
-        if isinstance(node, Deliberate):
-            guidelines = node.guidelines.prompt if node.guidelines else ""
-        elif isinstance(node, ActionBlock):
-            guidelines = node.prompt.prompt if node.prompt else ""
-        else:
-            return ""
-        kb_prompt = (
-            "You have access to a knowledge base. You must determine a suitable query"
-            " to retrieve chunks that should help implement the following guidelines:\n"
-            f"[guidelines]\n{guidelines}\nOnly output the query, without any commentary,"
-            f"next steps, opinions, suggestions, etc."
-        )
-
-        response = self.llm_proxy.invoke(kb_prompt)
-        self._emit_llm(scope="coder-knowledge_base", usage=response.usage)
-        query = response.text
-
+        try:
+            query = node.get_annotation_value("retrieve").value
+        except:
+            if isinstance(node, Deliberate):
+                guidelines = node.guidelines.prompt if node.guidelines else ""
+            elif isinstance(node, ActionBlock):
+                guidelines = node.prompt.prompt if node.prompt else ""
+            else:
+                return ""
+            kb_prompt = (
+                "You have access to a knowledge base. You must determine a suitable query"
+                " to retrieve chunks that should help implement the following guidelines:\n"
+                f"[guidelines]\n{guidelines}\nOnly output the query, without any commentary,"
+                f"next steps, opinions, suggestions, etc."
+            )
+            response = self.llm_proxy.invoke(kb_prompt)
+            self._emit_llm(scope="coder-knowledge_base", usage=response.usage)
+            query = response.text
         chunks = Builtin.retrieve(self.knowledge_base, query)
         if len(chunks) == 0:
             return ""

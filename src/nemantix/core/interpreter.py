@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import math
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Iterable, List, Optional, Type, Union
@@ -114,6 +115,7 @@ class Interpreter:
             self.schemas: dict[str, type[BaseModel]] = {}
             self.tools = nmx_runtime.Tools()
             self.toolsets: set[str] = set()
+            self.toolsets_locations: dict[str, str] = {}
             self.env = nmx_runtime.OperationalEnv()
 
     class SimilaritySchema(BaseModel):
@@ -241,7 +243,14 @@ class Interpreter:
 
     def interpret_tool_declaration(self, declaration: nmx_nodes.PythonToolDeclaration):
         self.interpret_intentable(metadata=declaration.meta, stmt=declaration)
-        code = declaration.prompt.prompt.strip()
+
+        if isinstance(declaration.prompt, nmx_nodes.MicroPrompt):
+            code = declaration.prompt.prompt.strip()
+        else:
+            logger.warning(
+                f'Toolset declaration "{declaration.name}": prompt is "{type(declaration.prompt)}"'
+            )
+            code = ""
 
         if code.find("class ") == -1:
             err_msg = f"Malformed tool declaration (generation failed completely): {declaration.name}"
@@ -381,11 +390,15 @@ class Interpreter:
 
             if import_stmt.args is not None:
                 arguments = [self.interpret_expression(expression=import_stmt.args)]
+                kw_arguments = {}
 
                 if len(arguments) == 1 and isinstance(arguments[0], nmx_runtime.Struct):
-                    arguments, _ = arguments[0].to_args_and_kwargs()
+                    arguments, kw_arguments = arguments[0].to_args_and_kwargs()
 
                 arguments = nmx_runtime.Opaque.unbox_in(arguments)
+                kw_arguments = nmx_runtime.Opaque.unbox_in(kw_arguments)
+            else:
+                arguments, kw_arguments = [], {}
 
             elements = import_stmt.elements
             if elements == "*" or elements == ["*"]:
@@ -427,6 +440,7 @@ class Interpreter:
                             tool_name,
                             instance_alias=tool_alias,
                             instance_args=arguments,
+                            instance_kwargs=kw_arguments,
                         )
                     else:
                         logger.info(f'Tool "{tool_name}" already imported!')
@@ -1741,7 +1755,16 @@ class Interpreter:
         self._set_global_deliberate(deliberate)
         self._set_global_script(script)
 
-        self._discover_imported_actions(script)
+        # required scripts discover
+        required_locations = self.expertise.requires_map.get(script.get_location(), [])
+        for location in required_locations:
+            required_script = self.expertise.script_by_loc[location]
+
+            self._discover_actions(script=required_script)
+            self._discover_frames(script=required_script)
+            self._discover_toolsets_and_imports(script=required_script)
+
+        # current script discover
         self._discover_actions(script, deliberate=deliberate)
         self._discover_frames(script)
         self._discover_toolsets_and_imports(script)
@@ -1755,21 +1778,79 @@ class Interpreter:
                 self.context.frames[frame_key] = frame
 
     def _discover_toolsets_and_imports(self, script: Script):
+        script_loc = script.get_location()
+
         for toolset_decl in script.toolsets_decl:
-            if toolset_decl.name not in self.context.toolsets:
-                self.interpret_tool_declaration(toolset_decl)
-                self.context.toolsets.add(toolset_decl.name)
-            else:
-                logger.info(f'Toolset "{toolset_decl.name}" already defined.')
+            toolset_name = toolset_decl.name
+
+            if toolset_name in self.context.toolsets_locations:
+                previous_loc = self.context.toolsets_locations[toolset_name]
+
+                # Collision across different scripts
+                if previous_loc != script_loc:
+                    raise self._runtime_exception(
+                        f"Cross-script collision: Toolset '{toolset_name}' was already declared in "
+                        f"'{previous_loc}'. You cannot overwrite it from '{script_loc}'.",
+                        statement=toolset_decl,
+                    )
+                # Redefined in the same script
+                else:
+                    logger.warning(
+                        f"Toolset '{toolset_name}' is declared multiple times in '{script_loc}'. "
+                        f"The later definition will overwrite the earlier one."
+                    )
+
+            #  Global Process collision
+            elif toolset_name in Toolset._classes:
+                logger.warning(
+                    f"Global toolset collision detected: '{toolset_name}' is already registered globally. "
+                    f"Redeclaring it will overwrite the existing definition and close active instances. "
+                    f"Consider using a unique name."
+                )
+
+            self.interpret_tool_declaration(toolset_decl)
+
+            # Update both the original set and the new map
+            self.context.toolsets.add(toolset_name)
+            self.context.toolsets_locations[toolset_name] = script_loc
 
         self.interpret_imports(imports=list(script.toolset_imports.values()))
+        imported_names = {imp.name for imp in script.toolset_imports.values()}
 
         # importing declared toolset (that are not imported via an import statement)
         for toolset_decl in script.toolsets_decl:
             toolset_name = toolset_decl.name
 
-            if any(toolset_name in tool for tool in self.context.tools.keys()):
+            if toolset_name in imported_names:
                 continue
+
+            # Introspect the compiled class to see if it requires __init__ args
+            target_class = Toolset._classes.get(toolset_name)
+            if target_class is not None:
+                try:
+                    sig = inspect.signature(target_class)
+                    requires_args = False
+
+                    for param in sig.parameters.values():
+                        if param.kind in (
+                            inspect.Parameter.VAR_POSITIONAL,
+                            inspect.Parameter.VAR_KEYWORD,
+                        ):
+                            continue
+
+                        if param.default == inspect.Parameter.empty:
+                            requires_args = True
+                            break
+
+                    if requires_args:
+                        raise self._runtime_exception(
+                            f"Declared toolset '{toolset_name}' requires initialization arguments. "
+                            f"You must explicitly import it using: 'from toolset {toolset_name} as ... with [...] use *'",
+                            statement=toolset_decl,
+                        )
+                except ValueError as e:
+                    # Ignore if the signature cannot be introspected (e.g., certain C-bindings or builtins)
+                    logger.warning(f"The signature cannot be introspected: {e}")
 
             # create an import statement that imports all @tool-annotated methods
             import_stmt = nmx_nodes.ImportToolsetStatement(
@@ -2059,13 +2140,6 @@ class Interpreter:
             return [inputs]
 
         return inputs
-
-    def _discover_imported_actions(self, script: Script):
-        required_locations = self.expertise.requires_map.get(script.get_location(), [])
-
-        for location in required_locations:
-            required_script = self.expertise.script_by_loc[location]
-            self._discover_actions(required_script)
 
     def _discover_actions(self, script: Script, deliberate: Deliberate | None = None):
         for action in script.actions.values():

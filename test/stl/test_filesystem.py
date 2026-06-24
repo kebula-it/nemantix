@@ -1,7 +1,9 @@
 import os
 import shutil
 from pathlib import Path
+
 import pytest
+
 from nemantix.core import Toolset
 from nemantix.stl.local_filesystem.base import LocalFileSystemToolset
 
@@ -38,7 +40,9 @@ class TestFileSystemToolkit:
     def test_sandbox_enforcement(self):
         """Test that accessing files outside the root is blocked."""
         ts = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.read_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.read_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
 
         # Attempt to access a file outside the sandbox using '..'
@@ -54,10 +58,14 @@ class TestFileSystemToolkit:
         content = "Hello, World!"
 
         ts_write = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.write_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.write_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
         ts_read = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.read_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.read_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
 
         # 1. Write the file
@@ -76,7 +84,9 @@ class TestFileSystemToolkit:
         """Test that write_file automatically creates missing parent directories."""
         filepath = "deeply/nested/folder/note.txt"
         ts_write = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.write_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.write_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
 
         ts_write(filepath, "content")
@@ -86,7 +96,9 @@ class TestFileSystemToolkit:
     def test_read_non_existent_file(self):
         """Test reading a file that does not exist."""
         ts_read = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.read_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.read_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
 
         result = ts_read("ghost.txt")
@@ -97,14 +109,19 @@ class TestFileSystemToolkit:
     def test_list_files(self):
         """Test listing files in a directory."""
         ts_write = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.write_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.write_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
         ts_create_dir = Toolset.get_tool(
             tool_name="LocalFileSystemToolset.create_directory",
+            instance_alias="LocalFileSystemToolset",
             instance_args=(TEST_DIR,),
         )
         ts_list = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.list_files", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.list_files",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
 
         ts_write("a.txt", "A")
@@ -119,10 +136,14 @@ class TestFileSystemToolkit:
         """Test retrieving file metadata."""
         content = "12345"  # 5 bytes
         ts_write = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.write_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.write_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
         ts_info = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.get_file_info", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.get_file_info",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
 
         ts_write("data.bin", content)
@@ -135,10 +156,14 @@ class TestFileSystemToolkit:
     def test_move_file(self):
         """Test moving/renaming a file."""
         ts_write = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.write_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.write_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
         ts_move = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.move_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.move_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
 
         ts_write("old.txt", "data")
@@ -152,10 +177,14 @@ class TestFileSystemToolkit:
     def test_replace_file(self):
         """Test atomic replacement of a file."""
         ts_write = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.write_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.write_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
         ts_replace = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.replace_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.replace_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
 
         ts_write("target.json", "Old Config")
@@ -173,10 +202,14 @@ class TestFileSystemToolkit:
     def test_delete_file(self):
         """Test deleting a specific file."""
         ts_write = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.write_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.write_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
         ts_delete = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.delete_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.delete_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
 
         ts_write("trash.txt", "junk")
@@ -188,10 +221,13 @@ class TestFileSystemToolkit:
     def test_delete_directory_recursive(self):
         """Test recursive deletion of a directory."""
         ts_write = Toolset.get_tool(
-            tool_name="LocalFileSystemToolset.write_file", instance_args=(TEST_DIR,)
+            tool_name="LocalFileSystemToolset.write_file",
+            instance_alias="LocalFileSystemToolset",
+            instance_args=(TEST_DIR,),
         )
         ts_delete_dir = Toolset.get_tool(
             tool_name="LocalFileSystemToolset.delete_directory",
+            instance_alias="LocalFileSystemToolset",
             instance_args=(TEST_DIR,),
         )
 
@@ -205,6 +241,7 @@ class TestFileSystemToolkit:
         """Test that the toolkit prevents deleting the root sandbox itself."""
         ts_delete_dir = Toolset.get_tool(
             tool_name="LocalFileSystemToolset.delete_directory",
+            instance_alias="LocalFileSystemToolset",
             instance_args=(TEST_DIR,),
         )
 

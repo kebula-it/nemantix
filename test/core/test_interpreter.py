@@ -4,7 +4,7 @@ import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -25,6 +25,7 @@ from nemantix.core.node import (
     VariableTypeEnum,
 )
 from nemantix.core.parser import AsFrame
+from nemantix.core.tools import Toolset
 
 HERE = Path(__file__).parent
 
@@ -1769,8 +1770,10 @@ def test_do_statement_action_call(interpreter_instance):
     )
 
     # Use make_node to safely instantiate Deliberate regardless of __init__ signature
-    dummy_delib = make_node(nmx_nodes.Deliberate, name="dummy_delib", meta=make_meta())
-    interpreter_instance._set_global_deliberate(dummy_delib)
+    dummy_deliberate = make_node(
+        nmx_nodes.Deliberate, name="dummy_delib", meta=make_meta()
+    )
+    interpreter_instance._set_global_deliberate(dummy_deliberate)
 
     interpreter_instance.interpret_do_statement(do_stmt)
 
@@ -1799,8 +1802,8 @@ def test_do_statement_private_action_cross_call_raises(interpreter_instance):
         meta=make_meta(),
     )
 
-    my_delib = make_node(nmx_nodes.Deliberate, name="my_delib", meta=make_meta())
-    interpreter_instance._set_global_deliberate(my_delib)
+    my_deliberate = make_node(nmx_nodes.Deliberate, name="my_delib", meta=make_meta())
+    interpreter_instance._set_global_deliberate(my_deliberate)
 
     with pytest.raises(
         nmx_ex.NemantixRuntimeException,
@@ -1910,7 +1913,7 @@ def test_do_statement_multiple_outputs_with_producing_schema(interpreter_instanc
     person_frame.add_slot("age", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
     interpreter_instance.context.frames["PERSON"] = person_frame
 
-    # 2. Setup a tool that returns a raw list
+    # 2. Set up a tool that returns a raw list
     interpreter_instance.context.tools["get_data"] = lambda: ["Luigi", 42]
 
     # 3. Setup LLM to mock the schema mapping dict response
@@ -1966,7 +1969,7 @@ def test_interpret_expression_schemed_collection_as_frame(interpreter_instance):
     point_frame.add_slot("y", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
     interpreter_instance.context.frames["POINT"] = point_frame
 
-    # 2. Build AsFrame and SchemedCollection AST
+    # 2. Build AsFrame and SchemedCollection
     # AST equivalent of: {POINT}[prefix]: [x: 10, y: 20]
     as_frame = AsFrame(value="point", meta=make_meta())
 
@@ -1990,7 +1993,7 @@ def test_interpret_expression_schemed_collection_as_frame(interpreter_instance):
     # 3. Interpret via the main expression evaluator
     result = interpreter_instance.interpret_expression(schemed_col)
 
-    # 4. Assert it returns a Struct correctly casted by the real Frame
+    # 4. Assert it returns a Struct correctly cast by the real Frame
     assert isinstance(result, nmx_runtime.Struct)
     assert result.get("x") == 10
     assert result.get("y") == 20
@@ -2042,3 +2045,209 @@ def test_eval_collection_with_nested_schemed_collection(interpreter_instance):
     nested_struct = result.get(1)
     assert isinstance(nested_struct, nmx_runtime.Struct)
     assert nested_struct.get("x") == 42
+
+
+# =============================================================================
+# Tests for _discover_toolsets_and_imports (Fail-Fast & Collision Logic)
+# =============================================================================
+
+
+def test_discover_toolsets_synthesizes_import_for_no_arg_toolset(interpreter_instance):
+    """Test that a toolset requiring no args gets an automatic import synthesized."""
+
+    class NoArgTool(Toolset):
+        def __init__(self):
+            super().__init__()
+
+    Toolset._classes["NoArgTool"] = NoArgTool
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration, name="NoArgTool", prompt=None, meta=make_meta()
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+    interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+    assert "NoArgTool" in interpreter_instance.context.toolsets
+
+
+def test_discover_toolsets_fail_fast_on_required_args(interpreter_instance):
+    """Test that a toolset requiring explicit args halts execution if not explicitly imported."""
+
+    class RequiredArgTool(Toolset):
+        def __init__(self, api_key):
+            super().__init__()
+            self.api_key = api_key
+
+    Toolset._classes["RequiredArgTool"] = RequiredArgTool
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="RequiredArgTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Declared toolset 'RequiredArgTool' requires initialization arguments",
+    ):
+        interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+
+def test_discover_toolsets_synthesizes_import_with_defaults_and_kwargs(
+    interpreter_instance,
+):
+    """Test that a toolset with defaults or *args/**kwargs is deemed safe and doesn't fail-fast."""
+
+    class ForgivingTool(Toolset):
+        def __init__(self, default_val=10, *args, **kwargs):
+            super().__init__()
+
+    Toolset._classes["ForgivingTool"] = ForgivingTool
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="ForgivingTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+    interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+    assert "ForgivingTool" in interpreter_instance.context.toolsets
+
+
+def test_discover_toolsets_warns_on_global_collision(interpreter_instance):
+    """Test that redeclaring an existing global toolset emits a warning."""
+
+    class CollisionTool(Toolset):
+        pass
+
+    Toolset._classes["CollisionTool"] = CollisionTool
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="CollisionTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    with patch("nemantix.core.interpreter.logger.warning") as mock_warning:
+        interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+        warning_emitted = any(
+            "Global toolset collision detected: 'CollisionTool'" in call_args[0][0]
+            for call_args in mock_warning.call_args_list
+        )
+        assert warning_emitted is True, "Expected a global collision warning."
+
+    assert "CollisionTool" in interpreter_instance.context.toolsets
+    assert (
+        interpreter_instance.context.toolsets_locations["CollisionTool"] == "main.nxs"
+    )
+
+
+def test_discover_toolsets_warns_on_same_script_collision(interpreter_instance):
+    """Test that declaring the same toolset twice in the same script emits a warning, but proceeds."""
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+
+    mock_decl_1 = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="RepeatTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+    mock_decl_2 = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="RepeatTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl_1, mock_decl_2]
+    mock_script.toolset_imports = {}
+
+    # SIMULATE THE COMPILER: When the interpreter processes the declaration,
+    # it normally executes Python code that places the class in Toolset._classes
+    def mock_compile_toolset(decl):
+        class RepeatToolClass(Toolset):
+            pass
+
+        Toolset._classes[decl.name] = RepeatToolClass
+
+    interpreter_instance.interpret_tool_declaration = MagicMock(
+        side_effect=mock_compile_toolset
+    )
+
+    with patch("nemantix.core.interpreter.logger.warning") as mock_warning:
+        interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+        warning_emitted = any(
+            "Toolset 'RepeatTool' is declared multiple times in 'main.nxs'"
+            in call_args[0][0]
+            for call_args in mock_warning.call_args_list
+        )
+        assert warning_emitted is True, "Expected a same-script collision warning."
+
+    assert "RepeatTool" in interpreter_instance.context.toolsets
+    assert interpreter_instance.context.toolsets_locations["RepeatTool"] == "main.nxs"
+
+    # Cleanup global state
+    Toolset._classes.pop("RepeatTool", None)
+
+
+def test_discover_toolsets_raises_on_cross_script_collision(interpreter_instance):
+    """Test that declaring a toolset already declared in an imported script raises a hard error."""
+
+    # Simulate that 'shared.nxs' was already processed and added to the context
+    interpreter_instance.context.toolsets.add("SharedTool")
+    interpreter_instance.context.toolsets_locations["SharedTool"] = "shared.nxs"
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="SharedTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Cross-script collision: Toolset 'SharedTool' was already declared in 'shared.nxs'",
+    ):
+        interpreter_instance._discover_toolsets_and_imports(mock_script)

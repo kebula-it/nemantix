@@ -1,14 +1,15 @@
 import os
 import shutil
-import pytest
+
 import numpy as np
+import pytest
 from PIL import Image
 
 # Import MoviePy (handles both v1.x and v2.x directory structures)
 try:
-    from moviepy.editor import ColorClip, AudioClip
+    from moviepy.editor import AudioClip, ColorClip
 except ImportError:
-    from moviepy import ColorClip, AudioClip
+    from moviepy import AudioClip, ColorClip
 
 from nemantix.core import Toolset
 from nemantix.stl.media_processor.base import MediaToolset
@@ -94,7 +95,9 @@ class TestMediaToolset:
     def test_get_file_info_image(self):
         """Test retrieving metadata for a real image."""
         ts_info = Toolset.get_tool(
-            tool_name="MediaToolset.get_file_info", instance_args=(OUTPUT_DIR,)
+            tool_name="MediaToolset.get_file_info",
+            instance_alias="MediaToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         result = ts_info(REAL_JPG)
@@ -106,7 +109,9 @@ class TestMediaToolset:
     def test_resize_image(self):
         """Test actual image resizing logic."""
         ts_resize = Toolset.get_tool(
-            tool_name="MediaToolset.resize_image", instance_args=(OUTPUT_DIR,)
+            tool_name="MediaToolset.resize_image",
+            instance_alias="MediaToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         result = ts_resize(REAL_JPG, width=800, height=600)
@@ -122,7 +127,9 @@ class TestMediaToolset:
     def test_grayscale_image(self):
         """Test physical grayscale conversion."""
         ts_gray = Toolset.get_tool(
-            tool_name="MediaToolset.grayscale_image", instance_args=(OUTPUT_DIR,)
+            tool_name="MediaToolset.grayscale_image",
+            instance_alias="MediaToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         result = ts_gray(REAL_JPG)
@@ -140,7 +147,9 @@ class TestMediaToolset:
     def test_get_file_info_video(self):
         """Test retrieving metadata for a real video."""
         ts_info = Toolset.get_tool(
-            tool_name="MediaToolset.get_file_info", instance_args=(OUTPUT_DIR,)
+            tool_name="MediaToolset.get_file_info",
+            instance_alias="MediaToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         result = ts_info(REAL_MP4)
@@ -152,7 +161,9 @@ class TestMediaToolset:
     def test_trim_video(self):
         """Test actual video trimming logic."""
         ts_trim = Toolset.get_tool(
-            tool_name="MediaToolset.trim_video", instance_args=(OUTPUT_DIR,)
+            tool_name="MediaToolset.trim_video",
+            instance_alias="MediaToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         # Trim the 1-second video down to half a second
@@ -165,7 +176,9 @@ class TestMediaToolset:
     def test_extract_audio_success(self):
         """Test physically extracting an audio track from a video."""
         ts_extract = Toolset.get_tool(
-            tool_name="MediaToolset.extract_audio", instance_args=(OUTPUT_DIR,)
+            tool_name="MediaToolset.extract_audio",
+            instance_alias="MediaToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         result = ts_extract(REAL_MP4)
@@ -182,7 +195,9 @@ class TestMediaToolset:
     def test_extract_audio_no_track(self):
         """Test error handling when a video physically lacks an audio track."""
         ts_extract = Toolset.get_tool(
-            tool_name="MediaToolset.extract_audio", instance_args=(OUTPUT_DIR,)
+            tool_name="MediaToolset.extract_audio",
+            instance_alias="MediaToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         result = ts_extract(SILENT_MP4)
@@ -193,7 +208,9 @@ class TestMediaToolset:
     def test_file_not_found(self):
         """Test that missing files return an error immediately."""
         ts_resize = Toolset.get_tool(
-            tool_name="MediaToolset.resize_image", instance_args=(OUTPUT_DIR,)
+            tool_name="MediaToolset.resize_image",
+            instance_alias="MediaToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         missing_file = os.path.join(INPUT_DIR, "ghost_file.jpg")
@@ -204,7 +221,9 @@ class TestMediaToolset:
     def test_processing_exception(self):
         """Test that internal library errors are caught and reported when fed bad data."""
         ts_resize = Toolset.get_tool(
-            tool_name="MediaToolset.resize_image", instance_args=(OUTPUT_DIR,)
+            tool_name="MediaToolset.resize_image",
+            instance_alias="MediaToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         # Handing a plain text file to Pillow should trigger an exception

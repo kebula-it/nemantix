@@ -324,6 +324,52 @@ def test_builtin_math():
     assert Builtin.sqrt(4) == 2.0
 
 
+def test_builtin_to_str_scalar():
+    """Test standard scalar conversions."""
+    assert Builtin.to_str(True) == "true"
+    assert Builtin.to_str(False) == "false"
+    assert Builtin.to_str(12) == "12"
+    assert Builtin.to_str(12.5) == "12.5"
+    assert Builtin.to_str(None) == "none"
+    assert Builtin.to_str("hello") == "hello"
+
+
+def test_builtin_to_str_struct_positional():
+    """
+    Test that a Struct with positional fields is stringified correctly,
+    proving the hack is no longer needed.
+    """
+    s = Struct()
+    s.set(1)
+    s.set("apple")
+    s.set(False)
+
+    result = Builtin.to_str(s)
+    # The output should be the literal representation of the Struct
+    assert result == "Struct(1, apple, False)"
+
+
+def test_builtin_to_str_struct_nominal():
+    """Test that a Struct with nominal (keyword) fields is stringified correctly."""
+    s = Struct()
+    s.set(10, key="x")
+    s.set(20, key="y")
+
+    result = Builtin.to_str(s)
+    assert result == "Struct(x: 10, y: 20)"
+
+
+def test_builtin_to_str_struct_mixed():
+    """Test that a Struct with mixed positional and nominal fields stringifies correctly."""
+    s = Struct()
+    s.set("first")
+    s.set(99, key="code")
+    s.set("last")
+
+    result = Builtin.to_str(s)
+    assert result == "Struct(first, code: 99, last)"
+
+
 # =============================================================================
 # Helper/Utility Tests
 # =============================================================================

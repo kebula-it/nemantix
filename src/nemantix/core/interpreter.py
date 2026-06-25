@@ -875,7 +875,7 @@ class Interpreter:
             kind = "builtin"
 
         outputs = do.producing
-        args, kwargs = self._parse_do_using(do=do)
+        args, kwargs = self._extract_args_and_kwargs(expression=do.using, statement=do)
 
         with self.CallEvent(
             self, stmt=do, name=fn_name, kind=kind, args=args, kwargs=kwargs
@@ -1181,10 +1181,9 @@ class Interpreter:
             else:
                 function = BUILTIN_FUNCTIONS[expression.function]
 
-            args = [
-                self.interpret_expression(expression=arg) for arg in expression.args
-            ]
-
+            args, kwargs = self._extract_args_and_kwargs(
+                expression=expression.args, statement=expression
+            )
             try:
                 _builtin_name = expression.function.name.lower()
                 _builtin_prompt = (
@@ -1201,25 +1200,7 @@ class Interpreter:
                     callable_prompt=_builtin_prompt,
                 )
 
-                if len(args) == 0:
-                    return __call_builtin(function)
-
-                if len(args) == 1:
-                    args = args[0]
-
-                    # TODO: should always to args and kwargs on single struct as input?
-                    if (
-                        isinstance(args, nmx_runtime.Struct)
-                        and args.can_be_seen_as_list()
-                    ):
-                        args, _ = args.to_args_and_kwargs()
-                        # TODO: when calling builtins the number of arguments should match,
-                        #  because args may not always be unpacked
-                        return __call_builtin(lambda: function(*args))
-                    else:
-                        return __call_builtin(lambda: function(args))
-
-                return __call_builtin(lambda: function(*args))
+                return __call_builtin(lambda: function(*args, **kwargs))
 
             except Exception as e:
                 fn_name = expression.function.name
@@ -1976,9 +1957,11 @@ class Interpreter:
 
         return pydantic_model
 
-    def _parse_do_using(self, do: nmx_nodes.DoStatement) -> tuple[list | Any, dict]:
-        expression = do.using
-
+    def _extract_args_and_kwargs(
+        self,
+        expression: list[Expression] | Expression | None,
+        statement: nmx_nodes.Statement,
+    ) -> tuple[list | Any, dict]:
         if expression is None:
             return (), {}
 
@@ -2019,7 +2002,7 @@ class Interpreter:
                     if keyword_seen:
                         raise self._runtime_exception(
                             "Positional argument follows nominal argument in 'using'",
-                            statement=do,
+                            statement=statement,
                         )
 
                     args.append(self.interpret_expression(expression=stmt))

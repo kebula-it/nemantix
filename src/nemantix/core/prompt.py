@@ -236,24 +236,24 @@ deliberate DemoMain when >>> Run this deliberate when the user asks for a two-ac
 __deliberate
 ```
 BUILT-IN FUNCTIONS LIST:
-- print: Wrapper around Python print, passing through arguments (and kwargs if provided).
-- coalesce: Returns the first argument that is not None; otherwise returns None.
-- exists: Checks whether x is not None.
-- size: Returns a “size” depending on type (e.g., len for strings/Struct; 0/1 for Opaque; 1/0 for DocRef leaf/non-leaf; otherwise 0).
-- type: Returns a string describing the type of the input variable. Possible types are: none; num (for integers and floats); 
+- print(*args, **kwargs): Wrapper around Python print, passing through arguments (and kwargs if provided).
+- coalesce(*args, **kwargs): Returns the first argument that is not None; otherwise returns None.
+- exists(x): Checks whether x is not None.
+- size(*args): Returns a “size” depending on type (e.g., len for strings/Struct; 0/1 for Opaque; 1/0 for DocRef leaf/non-leaf; otherwise 0).
+- type(x): Returns a string describing the type of the input variable. Possible types are: none; num (for integers and floats); 
 str (strings); bool (booleans); struct (for Nemantix structures, i.e., the ones within "(...)"); doc (for Nemantix Docref objects);
 and opaque (for Nemantix Opaque objects).
-- substring: Converts x to string and returns the slice [start:end] (safe defaults if inputs are invalid).
-- to_num: Explicit numeric conversion (handles numbers, booleans, numeric strings); returns 0 on failure.
-- to_bool: Explicit boolean conversion (handles booleans, numbers, strings like "true"/"false"/"none"); defaults to False.
-- to_str: Explicit string conversion (ALWAYS use it when you use concatenations with non-string objects).
-- num: Soft numeric conversion: returns None for None or complex/container-like types; otherwise uses to_num.
-- bool: Soft boolean conversion: returns None for None, uses type-specific rules for Struct/DocRef/Opaque, otherwise to_bool.
-- str: Soft string conversion: returns None for None, otherwise uses to_str.
-- sin: Computes sine of x after converting it to a number.
-- cos: Computes cosine of x after converting it to a number.
-- sqrt: Computes square root of x after converting it to a number.
-- llm: Calls llm.invoke(prompt, **kwargs) and returns the response text as a Python string.
+- substring(x, start=0, end: int): Converts x to string and returns the slice [start:end] (safe defaults if inputs are invalid).
+- to_num(x): Explicit numeric conversion (handles numbers, booleans, numeric strings); returns 0 on failure.
+- to_bool(x): Explicit boolean conversion (handles booleans, numbers, strings like "true"/"false"/"none"); defaults to False.
+- to_str(x): Explicit string conversion (ALWAYS use it when you use concatenations with non-string objects).
+- num(x): Soft numeric conversion: returns None for None or complex/container-like types; otherwise uses to_num.
+- bool(x): Soft boolean conversion: returns None for None, uses type-specific rules for Struct/DocRef/Opaque, otherwise to_bool.
+- str(x): Soft string conversion: returns None for None, otherwise uses to_str.
+- sin(x): Computes sine of x after converting it to a number.
+- cos(x): Computes cosine of x after converting it to a number.
+- sqrt(x): Computes square root of x after converting it to a number.
+- llm(prompt, **kwargs): Calls llm.invoke(prompt, **kwargs) and returns the response text as a Python string.
 - retrieve: Used to retrieve information from the knowledge base. Calls retrieve(query: str, top_k: int = 5, min_score: float = 0.6, 
 doc_types: list | str | None, content_types: list | str | None, metadata: list | str | None).
 doc_types, content_types, metadata are filters.

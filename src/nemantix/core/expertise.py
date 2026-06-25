@@ -3,7 +3,7 @@ from enum import Enum
 
 from nemantix.common import context
 from nemantix.common.logger import get_package_logger
-from nemantix.core.coder import Coder
+from nemantix.core.coder import Coder, Judge
 from nemantix.core.custom_types import PathLike
 from nemantix.core.exceptions import NemantixException
 from nemantix.core.node import ActionBlock, BlockStatement, FileMeta
@@ -493,6 +493,9 @@ class Expertise:
         include_body_semantics = kwargs.pop(
             "experimental_include_action_body_in_semantics", False
         )
+        experimental_llm_judge = kwargs.pop(
+            "experimental_llm_judge", False
+        )
 
         logger.debug(f"Allow fallback value = {allow_fallback} ")
 
@@ -505,7 +508,8 @@ class Expertise:
             llm = cls.get_default_llm(**kwargs)
 
         assert isinstance(llm, AbstractLLMProxy)
-        coder = Coder(llm_proxy=llm, create_summary=create_summary)
+        judge = Judge.LLM if experimental_llm_judge else None
+        coder = Coder(llm_proxy=llm, create_summary=create_summary, judge=judge)
 
         return Expertise(
             script_list=scripts,

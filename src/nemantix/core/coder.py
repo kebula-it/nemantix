@@ -49,7 +49,7 @@ from nemantix.core.prompt import (
     FIX_GENERATION,
     GEN_FRAME_PROMPT,
     GEN_TOOLSET_PROMPT,
-    USER_REQUEST,
+    USER_REQUEST, LLM_JUDGE_PROMPT, JUDGE_CORRECTION_PROMPT,
 )
 from nemantix.core.runtime import get_globals
 from nemantix.core.script import Script
@@ -60,6 +60,7 @@ from nemantix.llm.abstract_proxy import LLMUsage
 
 logger = get_package_logger(__name__)
 
+JUDGE_THRESHOLD =  0.7
 
 class CodingModeEnum(Enum):
     DELIBERATE_LEVEL = 1
@@ -93,6 +94,9 @@ qualifier_coding_map = {
     "frozen->frozen": CodeOperationEnum.SKIP,
 }
 
+class Judge(Enum):
+    LLM=0,
+    HUMAN=1
 
 class Coder:
     def __init__(
@@ -101,6 +105,7 @@ class Coder:
         create_summary: bool = False,
         summarizer_proxy: AbstractLLMProxy | None = None,
         summarizer_model="phi4-mini",
+        judge: Judge|None = None,
     ):
         self.llm_proxy = llm_proxy
         self.action_semantics_map: dict[
@@ -112,6 +117,7 @@ class Coder:
         self.enable_fixer = False
         self.create_summary = bool(create_summary)
         self.include_action_body_in_semantics = False
+        self.judge = judge
 
         if self.create_summary:
             if summarizer_proxy is None:
@@ -774,6 +780,7 @@ class Coder:
         else:
             action = script.private_actions[action_name]
 
+        qualifier = action.qualifier
         script_content_list = script.read_as_list()
         messages = self._build_action_coding_prompt(
             script_content_list,
@@ -802,6 +809,25 @@ class Coder:
         res, attempts = self._check_and_fix_generated_code(
             messages, resp, relative_start, relative_end, orig_code, scope=action_name
         )
+
+        #judge
+        if self.judge == Judge.LLM:
+            judge_prompt = LLM_JUDGE_PROMPT.format(original_nxs="\n".join(orig_code), coded_nxs=res, request=user_request)
+            vote = self.llm_proxy.invoke(judge_prompt).text
+            vote = json.loads(vote)
+            if vote["value"] < JUDGE_THRESHOLD:
+                rewrite_prompt = CODING_SYSTEM_PROMPT + JUDGE_CORRECTION_PROMPT.format(nxs_code=res, judge_reason=vote["reason"])
+                response = self.llm_proxy.invoke_grammar_based(rewrite_prompt).text
+                res, attempts = self._check_and_fix_generated_code(
+                    messages, response, relative_start, relative_end, orig_code, scope=action_name
+                )
+            if qualifier is not None:
+                temp_script = Script("_temp.nxs", None, content=res)
+                temp_script.parse(enable_fixer=self.enable_fixer)
+                new_action = temp_script.actions[action_name]
+                if new_action.qualifier != qualifier:
+                    qual_str = "@completion: " + qualifier[0].value + "->" + qualifier[0].value + "\n"
+                    res = qual_str + res
 
         # summary
         if coding_level == CodeOperationEnum.COMPLETE and self.create_summary:
@@ -935,6 +961,27 @@ class Coder:
         # add none->none qualifier if there was no @completion
         elif coded_qual is None and qual is None:
             res = "@completion: _->_ \n" + res
+        # judge
+        if self.judge == Judge.LLM:
+            judge_prompt = LLM_JUDGE_PROMPT.format(original_nxs="\n".join(deliberate_original_code), coded_nxs=res,
+                                                   request=user_request)
+            vote = self.llm_proxy.invoke(judge_prompt).text
+            vote = json.loads(vote)
+            if vote["value"] < JUDGE_THRESHOLD:
+                rewrite_prompt = CODING_SYSTEM_PROMPT + JUDGE_CORRECTION_PROMPT.format(nxs_code=res,
+                                                                                       judge_reason=vote["reason"])
+                response = self.llm_proxy.invoke_grammar_based(rewrite_prompt).text
+                res, attempts = self._check_and_fix_generated_code(
+                    messages, response, relative_start, relative_end, deliberate_original_code,
+                    scope=deliberate_name
+                )
+            if qual is not None:
+                temp_script = Script("_temp.nxs", None, content=res)
+                temp_script.parse(enable_fixer=self.enable_fixer)
+                new_action = temp_script.deliberates[deliberate_name]
+                if new_action.qualifier != qual:
+                    qual_str = "@completion: " + qual[0].value + "->" + qual[0].value + "\n"
+                    res = qual_str + res
 
         temp_script_df = Script("_temp.nxs", None, content=res)
         temp_script_df.parse(enable_fixer=self.enable_fixer)

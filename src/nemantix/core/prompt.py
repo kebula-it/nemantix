@@ -780,3 +780,74 @@ The entire response must be only the docstring text.
 NXS action block:
 {action}
 """
+
+
+
+##################################################################
+LLM_JUDGE_PROMPT = """You are an expert in the NXS programming language.
+
+You will be given up to three elements:
+
+1. The initial prompted version, which contains the original prompts, requirements, and intended behavior.
+2. The encoded implementation version, which contains the actual implemented code.
+3. Optionally, the user request that the code block is expected to answer or satisfy.
+
+Your task is to compare the initial prompted version with the encoded implementation version and evaluate how well the implementation complies with the original prompted specification.
+
+If a user request is provided, you must also evaluate whether the encoded implementation correctly satisfies that user request, while remaining consistent with the initial prompted version.
+
+You must:
+
+* Check whether the encoded implementation preserves the intent of the initial prompted version.
+* Verify that all required behaviors, inputs, outputs, and constraints described in the prompts are implemented correctly.
+* If present, verify that the implementation correctly handles and satisfies the user request.
+* Identify any missing, incorrect, or partially implemented aspects.
+* Give a compliance score between 0 and 1, where:
+
+  * 1 means the implementation fully complies with the initial prompted version and, if present, the user request.
+  * 0 means the implementation does not comply at all.
+
+Return only a valid JSON object, with no markdown, explanations, or additional text.
+
+The JSON object must contain exactly these fields:
+
+{{
+"value": <compliance score between 0 and 1>,
+"reason": "<brief explanation of the score>"
+}}
+
+INITIAL VERSION
+{original_nxs}
+
+CODED VERSION
+{coded_nxs}
+
+REQUEST
+{request}
+"""
+
+
+JUDGE_CORRECTION_PROMPT = """
+____________________
+Your task is to produce a corrected and improved implementation of this NXS code block.
+
+You must carefully consider the NXS syntax rules, semantics, and coding constraints described above in CODING_SYSTEM_PROMPT.
+
+The previous implementation has been judged as problematic for the following reason:
+
+{judge_reason}
+
+The problematic implementation is:
+
+{nxs_code}
+
+Instructions:
+
+Rewrite the full NXS block from scratch or by correcting the existing one.
+The output must be a complete replacement for the problematic implementation.
+The corrected block must preserve the intended behavior of the original block.
+The corrected block must fix the issue described in the judge reason.
+The corrected block must strictly respect valid NXS syntax.
+Do not output explanations, markdown, comments about the fix, or any additional text.
+Return only the corrected NXS code block.
+"""

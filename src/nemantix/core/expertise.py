@@ -493,9 +493,7 @@ class Expertise:
         include_body_semantics = kwargs.pop(
             "experimental_include_action_body_in_semantics", False
         )
-        experimental_llm_judge = kwargs.pop(
-            "experimental_llm_judge", False
-        )
+        experimental_llm_judge = kwargs.pop("experimental_llm_judge", False)
 
         logger.debug(f"Allow fallback value = {allow_fallback} ")
 

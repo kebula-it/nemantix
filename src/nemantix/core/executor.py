@@ -206,6 +206,7 @@ class Executor:
                 script = self.expertise.update_script_content(
                     script.get_location(), deliberate, new_content
                 )
+                self.interpreter.update_context(deliberate=deliberate)
 
         # check for not frozen actions that are required by this deliberate, and update all affected scripts
         modified = self.uncoded_actions_runtime_coding(
@@ -220,6 +221,8 @@ class Executor:
             )
             export_path = script.source_manager.join(output_dir, new_filename)
             script.write(script.content, source_manager=None, location=export_path)
+
+            self.interpreter.update_context(script=script)
 
         try:
             if uncoded:

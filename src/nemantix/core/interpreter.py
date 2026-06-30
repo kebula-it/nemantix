@@ -117,6 +117,21 @@ class Interpreter:
             self.toolsets: set[str] = set()
             self.toolsets_locations: dict[str, str] = {}
             self.env = nmx_runtime.OperationalEnv()
+            self._seen_scripts: set[str] = set()
+            self._seen_deliberates: set[str] = set()
+
+        def add_script(self, script: Script):
+            self._seen_scripts.add(script.get_location())
+
+        def add_deliberate(self, deliberate: Deliberate):
+            self._seen_deliberates.add(deliberate.name)
+
+        def __contains__(self, item: Script | Deliberate) -> bool:
+            if isinstance(item, Script):
+                return item.get_location() in self._seen_scripts
+
+            assert isinstance(item, Deliberate)
+            return item.name in self._seen_deliberates
 
     class SimilaritySchema(BaseModel):
         """LLM response schema used by similarity and semantic inclusion operators"""
@@ -1732,6 +1747,18 @@ class Interpreter:
         assert isinstance(response, self.SimilaritySchema)
         return response
 
+    def update_context(
+        self, script: Script | None = None, deliberate: Deliberate | None = None
+    ):
+        """Updates the interpretation context."""
+        if script is not None:
+            self._discover_actions(script, should_update=True)
+            self.context.add_script(script)
+
+        if deliberate is not None:
+            self._discover_deliberate_actions(deliberate, should_update=True)
+            self.context.add_deliberate(deliberate)
+
     def _build_context(self, script: Script, deliberate: Deliberate):
         self._set_global_deliberate(deliberate)
         self._set_global_script(script)
@@ -1741,14 +1768,22 @@ class Interpreter:
         for location in required_locations:
             required_script = self.expertise.script_by_loc[location]
 
-            self._discover_actions(script=required_script)
-            self._discover_frames(script=required_script)
-            self._discover_toolsets_and_imports(script=required_script)
+            if required_script not in self.context:
+                self.context.add_script(script=required_script)
+                self._discover_actions(script=required_script)
+                self._discover_frames(script=required_script)
+                self._discover_toolsets_and_imports(script=required_script)
 
         # current script discover
-        self._discover_actions(script, deliberate=deliberate)
-        self._discover_frames(script)
-        self._discover_toolsets_and_imports(script)
+        if script not in self.context:
+            self._discover_actions(script)
+            self._discover_frames(script)
+            self._discover_toolsets_and_imports(script)
+            self.context.add_script(script=script)
+
+        if deliberate not in self.context:
+            self._discover_deliberate_actions(deliberate)
+            self.context.add_deliberate(deliberate)
 
     def _discover_frames(self, script: Script):
         for frame in script.frames:
@@ -2124,9 +2159,9 @@ class Interpreter:
 
         return inputs
 
-    def _discover_actions(self, script: Script, deliberate: Deliberate | None = None):
+    def _discover_actions(self, script: Script, should_update=False):
         for action in script.actions.values():
-            if action.name not in self.context.actions:
+            if should_update or action.name not in self.context.actions:
                 self.context.actions[action.name] = dict(
                     closure=self._action_closure(action),
                     is_global=True,
@@ -2138,24 +2173,22 @@ class Interpreter:
                     f'Name "{action.name}" already defined in context.actions!'
                 )
 
-        if deliberate is not None:
-            for action in deliberate.generated_actions:
-                if action.name not in self.context.actions:
-                    action_dict = dict(
-                        closure=self._action_closure(action),
-                        is_global=False,
-                        action=action,
-                        imported_by={deliberate.name},
-                    )
+    def _discover_deliberate_actions(self, deliberate: Deliberate, should_update=False):
+        for action in deliberate.generated_actions:
+            if should_update or action.name not in self.context.actions:
+                action_dict = dict(
+                    closure=self._action_closure(action),
+                    is_global=False,
+                    action=action,
+                    imported_by={deliberate.name},
+                )
 
-                    self.context.actions[action.name] = action_dict
-                    self.context.actions[f"{deliberate.name}.{action.name}"] = (
-                        action_dict
-                    )
-                else:
-                    logger.warning(
-                        f'Private action "{action.name}" shadowed by global action with same name!'
-                    )
+                self.context.actions[action.name] = action_dict
+                self.context.actions[f"{deliberate.name}.{action.name}"] = action_dict
+            else:
+                logger.warning(
+                    f'Private action "{action.name}" shadowed by global action with same name!'
+                )
 
     def _set_global_deliberate(self, deliberate: nmx_nodes.Deliberate):
         self.globals["__deliberate"] = deliberate

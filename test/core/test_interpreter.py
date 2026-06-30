@@ -4,7 +4,7 @@ import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
@@ -25,6 +25,7 @@ from nemantix.core.node import (
     VariableTypeEnum,
 )
 from nemantix.core.parser import AsFrame
+from nemantix.core.script import Script
 from nemantix.core.tools import Toolset
 
 HERE = Path(__file__).parent
@@ -3221,3 +3222,290 @@ def test_interpret_builtin_soft_conversions_with_struct_vars(interpreter_instanc
         meta=make_meta(),
     )
     assert interpreter_instance.interpret_expression(bool_expr) is True
+
+
+# =============================================================================
+# Tests for update_context
+# =============================================================================
+
+
+def test_update_context_with_script(interpreter_instance):
+    """
+    Test that updating the context with a Script registers the script location
+    and discovers its global actions.
+    """
+    # 1. Setup mock script with a global action
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "dynamic_script.nxs"
+
+    dummy_action = DummyAction(
+        name="dynamic_global_action", input=[], output=[], children=[], meta=make_meta()
+    )
+    mock_script.actions = {"dynamic_global_action": dummy_action}
+
+    # 2. Call update_context
+    interpreter_instance.update_context(script=mock_script)
+
+    # 3. Assertions
+    assert "dynamic_script.nxs" in interpreter_instance.context._seen_scripts
+    assert "dynamic_global_action" in interpreter_instance.context.actions
+    assert (
+        interpreter_instance.context.actions["dynamic_global_action"]["is_global"]
+        is True
+    )
+    assert (
+        interpreter_instance.context.actions["dynamic_global_action"]["action"]
+        == dummy_action
+    )
+
+
+def test_update_context_with_deliberate(interpreter_instance):
+    """
+    Test that updating the context with a Deliberate registers the deliberate name
+    and discovers its private (generated) actions.
+    """
+    # 1. Setup deliberate with a private action
+    dummy_action = DummyAction(
+        name="dynamic_private_action",
+        input=[],
+        output=[],
+        children=[],
+        meta=make_meta(),
+    )
+
+    mock_deliberate = make_node(
+        nmx_nodes.Deliberate,
+        name="dynamic_deliberate",
+        generated_actions=[dummy_action],
+        meta=make_meta(),
+    )
+
+    # 2. Call update_context
+    interpreter_instance.update_context(deliberate=mock_deliberate)
+
+    # 3. Assertions
+    assert "dynamic_deliberate" in interpreter_instance.context._seen_deliberates
+
+    # Private actions are registered under their short name and fully qualified name
+    assert "dynamic_private_action" in interpreter_instance.context.actions
+    assert (
+        "dynamic_deliberate.dynamic_private_action"
+        in interpreter_instance.context.actions
+    )
+
+    assert (
+        interpreter_instance.context.actions["dynamic_private_action"]["is_global"]
+        is False
+    )
+    assert (
+        "dynamic_deliberate"
+        in interpreter_instance.context.actions["dynamic_private_action"]["imported_by"]
+    )
+
+
+def test_update_context_with_both_script_and_deliberate(interpreter_instance):
+    """
+    Test that update_context correctly handles being passed both a Script and a Deliberate simultaneously.
+    """
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "combo_script.nxs"
+    mock_script.actions = {}
+
+    mock_deliberate = make_node(
+        nmx_nodes.Deliberate,
+        name="combo_deliberate",
+        generated_actions=[],
+        meta=make_meta(),
+    )
+
+    interpreter_instance.update_context(script=mock_script, deliberate=mock_deliberate)
+
+    assert "combo_script.nxs" in interpreter_instance.context._seen_scripts
+    assert "combo_deliberate" in interpreter_instance.context._seen_deliberates
+
+
+def test_update_context_none_args(interpreter_instance):
+    """
+    Test that calling update_context with no arguments safely returns without modifying state.
+    """
+    initial_script_count = len(interpreter_instance.context._seen_scripts)
+    initial_delib_count = len(interpreter_instance.context._seen_deliberates)
+
+    interpreter_instance.update_context()
+
+    assert len(interpreter_instance.context._seen_scripts) == initial_script_count
+    assert len(interpreter_instance.context._seen_deliberates) == initial_delib_count
+
+
+def test_update_context_forces_overwrite(interpreter_instance):
+    """
+    Test that update_context forces an overwrite of existing actions because it
+    passes `should_update=True` to the discovery methods.
+    """
+    # 1. Pre-populate the context with a stale action
+    interpreter_instance.context.actions["updatable_action"] = {
+        "closure": None,
+        "is_global": False,
+        "action": "stale_reference",
+    }
+
+    # 2. Setup a script with a fresh action carrying the exact same name
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "refresh.nxs"
+
+    fresh_action = DummyAction(
+        name="updatable_action", input=[], output=[], children=[], meta=make_meta()
+    )
+    mock_script.actions = {"updatable_action": fresh_action}
+
+    # 3. Update the context
+    interpreter_instance.update_context(script=mock_script)
+
+    # 4. Assert the action was overwritten with the fresh attributes
+    updated_action_info = interpreter_instance.context.actions["updatable_action"]
+    assert updated_action_info["is_global"] is True
+    assert updated_action_info["action"] == fresh_action
+    assert updated_action_info["closure"] is not None
+
+
+# =============================================================================
+# Tests for _build_context (Caching & Discovery)
+# =============================================================================
+
+
+def test_build_context_fresh_script_and_deliberate(interpreter_instance):
+    """
+    Test that a completely unseen script and deliberate trigger all the discovery methods.
+    """
+    mock_script = MagicMock(spec=Script)
+    mock_script.get_location.return_value = "main.nxs"
+
+    mock_deliberate = make_node(
+        nmx_nodes.Deliberate, name="fresh_deliberate", meta=make_meta()
+    )
+
+    # Mock the discovery methods to verify they are called
+    interpreter_instance._discover_actions = MagicMock()
+    interpreter_instance._discover_frames = MagicMock()
+    interpreter_instance._discover_toolsets_and_imports = MagicMock()
+    interpreter_instance._discover_deliberate_actions = MagicMock()
+
+    # Empty requires_map to isolate the test to just the main script
+    interpreter_instance.expertise.requires_map = {"main.nxs": []}
+
+    interpreter_instance._build_context(mock_script, mock_deliberate)
+
+    # 1. Assert global scope tracking was updated
+    assert interpreter_instance._get_global_script() == mock_script
+    assert interpreter_instance._get_global_deliberate() == mock_deliberate
+
+    # 2. Assert discovery methods were called exactly once for the script/deliberate
+    interpreter_instance._discover_actions.assert_called_once_with(mock_script)
+    interpreter_instance._discover_frames.assert_called_once_with(mock_script)
+    interpreter_instance._discover_toolsets_and_imports.assert_called_once_with(
+        mock_script
+    )
+    interpreter_instance._discover_deliberate_actions.assert_called_once_with(
+        mock_deliberate
+    )
+
+    # 3. Assert they are now tracked in the context
+    assert "main.nxs" in interpreter_instance.context._seen_scripts
+    assert "fresh_deliberate" in interpreter_instance.context._seen_deliberates
+
+
+def test_build_context_already_seen_skips_discovery(interpreter_instance):
+    """
+    Test that if a script and deliberate are already in the context,
+    the interpreter skips the expensive AST discovery phase entirely.
+    """
+    mock_script = MagicMock(spec=Script)
+    mock_script.get_location.return_value = "cached.nxs"
+
+    mock_deliberate = make_node(
+        nmx_nodes.Deliberate, name="cached_deliberate", meta=make_meta()
+    )
+
+    # Pre-seed the context tracking sets
+    interpreter_instance.context.add_script(mock_script)
+    interpreter_instance.context.add_deliberate(mock_deliberate)
+
+    # Mock the discovery methods
+    interpreter_instance._discover_actions = MagicMock()
+    interpreter_instance._discover_frames = MagicMock()
+    interpreter_instance._discover_toolsets_and_imports = MagicMock()
+    interpreter_instance._discover_deliberate_actions = MagicMock()
+
+    interpreter_instance.expertise.requires_map = {"cached.nxs": []}
+
+    # Execute
+    interpreter_instance._build_context(mock_script, mock_deliberate)
+
+    # Assert that NO discovery methods were called
+    interpreter_instance._discover_actions.assert_not_called()
+    interpreter_instance._discover_frames.assert_not_called()
+    interpreter_instance._discover_toolsets_and_imports.assert_not_called()
+    interpreter_instance._discover_deliberate_actions.assert_not_called()
+
+    # The globals should still be updated for execution context though
+    assert interpreter_instance._get_global_script() == mock_script
+    assert interpreter_instance._get_global_deliberate() == mock_deliberate
+
+
+def test_build_context_with_required_scripts_partial_cache(interpreter_instance):
+    """
+    Test that _build_context properly resolves the `requires_map`, skipping scripts
+    it has already seen, but discovering the ones it hasn't.
+    """
+    mock_main = MagicMock(spec=Script)
+    mock_main.get_location.return_value = "main.nxs"
+
+    mock_req1 = MagicMock(spec=Script)
+    mock_req1.get_location.return_value = "lib_cached.nxs"
+
+    mock_req2 = MagicMock(spec=Script)
+    mock_req2.get_location.return_value = "lib_fresh.nxs"
+
+    mock_deliberate = make_node(
+        nmx_nodes.Deliberate,
+        name="main_deliberate",
+        generated_actions=[],
+        meta=make_meta(),
+    )
+
+    # Setup expertise script routing and requirements
+    interpreter_instance.expertise.script_by_loc = {
+        "main.nxs": mock_main,
+        "lib_cached.nxs": mock_req1,
+        "lib_fresh.nxs": mock_req2,
+    }
+    interpreter_instance.expertise.requires_map = {
+        "main.nxs": ["lib_cached.nxs", "lib_fresh.nxs"]
+    }
+
+    # Mark `lib_cached.nxs` as already seen
+    interpreter_instance.context.add_script(mock_req1)
+
+    # Mock discovery
+    interpreter_instance._discover_actions = MagicMock()
+    interpreter_instance._discover_frames = MagicMock()
+    interpreter_instance._discover_toolsets_and_imports = MagicMock()
+
+    # Execute
+    interpreter_instance._build_context(mock_main, mock_deliberate)
+
+    # Extract all the arguments passed to _discover_actions
+    action_calls = interpreter_instance._discover_actions.call_args_list
+
+    # Assert `lib_fresh` (required script, called with kwargs)
+    # and `main` (main script, called positionally) were discovered
+    assert call(script=mock_req2) in action_calls
+    assert call(mock_main) in action_calls
+
+    # Assert `lib_cached` was SKIPPED
+    assert call(script=mock_req1) not in action_calls
+
+    # Ensure all scripts ended up in the seen list
+    assert "main.nxs" in interpreter_instance.context._seen_scripts
+    assert "lib_fresh.nxs" in interpreter_instance.context._seen_scripts
+    assert "lib_cached.nxs" in interpreter_instance.context._seen_scripts

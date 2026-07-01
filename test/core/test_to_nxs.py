@@ -67,7 +67,7 @@ def test_microprompt_multiline():
 
 
 # =============================================================================
-# Step 5 — SchemedCollection
+# Step 2 — Collection and SchemedCollection
 # =============================================================================
 
 
@@ -97,8 +97,30 @@ def test_schemed_collection_suffix():
     assert result.endswith("{PersonFrame}") and "[x]" in result
 
 
+def test_collection_list():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    y = node.Variable(name="y", prompt=None, path=None, meta=_meta())
+    col = node.Collection(
+        value=[x, y], inferred_type=node.VariableTypeEnum.LIST, meta=_meta()
+    )
+    result = col.to_nxs()
+    assert "[x]" in result and "[y]" in result
+
+
+def test_collection_dict():
+    val = node.SingleValue(
+        value=1, inferred_type=node.VariableTypeEnum.INT, meta=_meta()
+    )
+    col = node.Collection(
+        value={"count": val}, inferred_type=node.VariableTypeEnum.DICT, meta=_meta()
+    )
+    result = col.to_nxs()
+    assert "count" in result and "1" in result
+    _parse_as_body(f"[ [z] = {result} ]")
+
+
 # =============================================================================
-# Step 4 — SimilarityOperation
+# Step 3 — SimilarityOperation
 # =============================================================================
 
 
@@ -132,8 +154,26 @@ def test_similarity_operation_with_qualifier():
     assert "close" in result
 
 
+def test_similarity_operation_number_qualifier():
+    a = node.Variable(name="a", prompt=None, path=None, meta=_meta())
+    b = node.Variable(name="b", prompt=None, path=None, meta=_meta())
+    threshold = node.SingleValue(
+        value=0.82, inferred_type=node.VariableTypeEnum.FLOAT, meta=_meta()
+    )
+    op = node.SimilarityOperation(
+        operation=node.SimilarityEnum.SIM_QUAL,
+        qualifier=(node.SimilarityQualifierEnum.NUMBER, threshold),
+        first=a,
+        second=b,
+        meta=_meta(),
+    )
+    result = op.to_nxs()
+    assert "0.82" in result
+    _parse_as_body(f"[ {result} ]")
+
+
 # =============================================================================
-# Step 3 — MetaExpression
+# Step 4 — MetaExpression
 # =============================================================================
 
 
@@ -143,7 +183,7 @@ def test_meta_expression():
 
 
 # =============================================================================
-# Step 2 — Return, Break, Continue
+# Step 5 — SingleValue, Return, Break, Continue
 # =============================================================================
 
 
@@ -171,6 +211,22 @@ def test_return_with_values():
     result = node.Return(val=[x, y], meta=_meta()).to_nxs()
     assert result == "return [x], [y]"
     _parse_as_body(result)
+
+
+@pytest.mark.parametrize(
+    "value, inferred_type, expected",
+    [
+        (True, node.VariableTypeEnum.BOOL, "true"),
+        (False, node.VariableTypeEnum.BOOL, "false"),
+        (3.14, node.VariableTypeEnum.FLOAT, "3.14"),
+    ],
+    ids=["bool_true", "bool_false", "float"],
+)
+def test_single_value_types(value, inferred_type, expected):
+    sv = node.SingleValue(value=value, inferred_type=inferred_type, meta=_meta())
+    result = sv.to_nxs()
+    assert result == expected
+    _parse_as_body(f"[ [x] = {result} ]")
 
 
 # =============================================================================
@@ -302,6 +358,22 @@ def test_condition_block():
     )
     result = cb.to_nxs()
     assert "if " in result and "else:" in result and result.endswith("__if")
+    _parse_as_body(result)
+
+
+def test_condition_block_with_elif():
+    if_block = node.IfBlock(
+        condition=_simple_cond(), body=[node.Break(meta=_meta())], meta=_meta()
+    )
+    elif_block = node.ElifBlock(
+        condition=_simple_cond(), body=[node.Continue(meta=_meta())], meta=_meta()
+    )
+    else_block = node.ElseBlock(body=[node.Return(val=[], meta=_meta())], meta=_meta())
+    cb = node.ConditionBlock(
+        if_block=if_block, elif_list=[elif_block], else_block=else_block, meta=_meta()
+    )
+    result = cb.to_nxs()
+    assert "if " in result and "elif " in result and "else:" in result
     _parse_as_body(result)
 
 
@@ -466,7 +538,272 @@ def test_deliberate_round_trip():
 
 
 # =============================================================================
-# Step 15 — Round-trip integration over all .nxs test scripts
+# Step 15 — Require
+# =============================================================================
+
+
+def test_require():
+    r = node.Require(file_path="path/to/script.nxs", meta=_meta())
+    result = r.to_nxs()
+    assert result == "require path/to/script.nxs"
+    _parse_toplevel(result)
+
+
+# =============================================================================
+# Step 16 — Variable with struct path
+# =============================================================================
+
+
+def test_variable_with_path():
+    path = [
+        node.SingleValue(
+            value="field", inferred_type=node.VariableTypeEnum.STRING, meta=_meta()
+        ),
+        node.SingleValue(
+            value="sub_field", inferred_type=node.VariableTypeEnum.STRING, meta=_meta()
+        ),
+    ]
+    v = node.Variable(name="struct", prompt=None, path=path, meta=_meta())
+    result = v.to_nxs()
+    assert result == "[struct:field:sub_field]"
+    _parse_as_body(f"[ [x] = {result} ]")
+
+
+# =============================================================================
+# Step 17 — Assignment
+# =============================================================================
+
+
+def test_assignment_single_value():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    one = node.SingleValue(
+        value=1, inferred_type=node.VariableTypeEnum.INT, meta=_meta()
+    )
+    a = node.Assignment(var=x, value=one, meta=_meta())
+    result = a.to_nxs()
+    assert result == "[x] = 1"
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_assignment_multi_value():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    y = node.Variable(name="y", prompt=None, path=None, meta=_meta())
+    z = node.Variable(name="z", prompt=None, path=None, meta=_meta())
+    a = node.Assignment(var=x, value=[y, z], meta=_meta())
+    result = a.to_nxs()
+    assert result == "[x] = ([y], [z])"
+    _parse_as_body(f"[ {result} ]")
+
+
+# =============================================================================
+# Step 18 — Unary and Binary operations
+# =============================================================================
+
+
+def test_unary_operation_neg():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    op = node.UnaryOperation(
+        operation=node.UnaryOperationEnum.NEG, operand=x, meta=_meta()
+    )
+    result = op.to_nxs()
+    assert result == "-[x]"
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_unary_operation_not():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    op = node.UnaryOperation(
+        operation=node.UnaryOperationEnum.NOT, operand=x, meta=_meta()
+    )
+    result = op.to_nxs()
+    assert result == "![x]"
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_binary_operation_add():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    one = node.SingleValue(
+        value=1, inferred_type=node.VariableTypeEnum.INT, meta=_meta()
+    )
+    op = node.BinaryOperation(
+        operation=node.BinaryOperationEnum.ADD, first=x, second=one, meta=_meta()
+    )
+    result = op.to_nxs()
+    assert result == "[x] + 1"
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_binary_operation_concat():
+    a = node.SingleValue(
+        value="hello", inferred_type=node.VariableTypeEnum.STRING, meta=_meta()
+    )
+    b = node.SingleValue(
+        value="world", inferred_type=node.VariableTypeEnum.STRING, meta=_meta()
+    )
+    op = node.BinaryOperation(
+        operation=node.BinaryOperationEnum.CONCAT, first=a, second=b, meta=_meta()
+    )
+    result = op.to_nxs()
+    assert result == '"hello" | "world"'
+    _parse_as_body(f"[ {result} ]")
+
+
+# =============================================================================
+# Step 19 — Semantic inclusion (~> and <~)
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    "operation, qualifier, expected_substrings",
+    [
+        (node.SimilarityEnum.SIM_RIGHT, None, ["~>", "[a]", "[b]"]),
+        (node.SimilarityEnum.SIM_LEFT, None, ["<~", "[a]", "[b]"]),
+        (
+            node.SimilarityEnum.SIM_QUAL_RIGHT,
+            (node.SimilarityQualifierEnum.CLOSE, None),
+            ["close", "~>"],
+        ),
+        (
+            node.SimilarityEnum.SIM_QUAL_LEFT,
+            (node.SimilarityQualifierEnum.CLOSE, None),
+            ["close", "<~"],
+        ),
+    ],
+    ids=["right", "left", "right_qualified", "left_qualified"],
+)
+def test_similarity_inclusion(operation, qualifier, expected_substrings):
+    a = node.Variable(name="a", prompt=None, path=None, meta=_meta())
+    b = node.Variable(name="b", prompt=None, path=None, meta=_meta())
+    # silence PyCharm false positive
+    # noinspection PyTypeChecker
+    op = node.SimilarityOperation(
+        operation=operation, qualifier=qualifier, first=a, second=b, meta=_meta()
+    )
+    result = op.to_nxs()
+    for s in expected_substrings:
+        assert s in result
+    _parse_as_body(f"[ {result} ]")
+
+
+# =============================================================================
+# Step 20 — BuiltinFunction
+# =============================================================================
+
+
+def test_builtin_function_list_args():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    bf = node.BuiltinFunction(
+        function=node.BuiltinFunctionEnum.TO_STR,
+        args=[x],
+        meta=_meta(),
+    )
+    result = bf.to_nxs()
+    assert result == "to_str([x])"
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_builtin_function_single_arg_normalised():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    bf = node.BuiltinFunction(
+        function=node.BuiltinFunctionEnum.TO_STR,
+        args=x,
+        meta=_meta(),
+    )
+    assert isinstance(bf.args, list) and len(bf.args) == 1
+    assert bf.to_nxs() == "to_str([x])"
+
+
+# =============================================================================
+# Step 21 — DoStatement
+# =============================================================================
+
+
+def test_do_statement_inline():
+    text = node.Variable(name="text", prompt=None, path=None, meta=_meta())
+    inp = node.Variable(name="input", prompt=None, path=None, meta=_meta())
+    using = node.Assignment(var=text, value=inp, meta=_meta())
+    stmt = node.DoStatement(
+        name="trim",
+        callable_type="tool",
+        using=using,
+        prompt=node.MicroPrompt(prompt="trim it", meta=_meta()),
+        producing=None,
+        producing_schema=None,
+        meta=_meta(),
+    )
+    result = stmt.to_nxs()
+    assert "do tool trim" in result and "using" in result and ">> trim it <<" in result
+    _parse_as_body(result)
+
+
+def test_do_statement_multiline():
+    text = node.Variable(name="text", prompt=None, path=None, meta=_meta())
+    inp = node.Variable(name="input", prompt=None, path=None, meta=_meta())
+    using = node.Assignment(var=text, value=inp, meta=_meta())
+    file_meta = node.FileMeta(line=(1, 4), column=(0, 0))
+    stmt = node.DoStatement(
+        name="trim",
+        callable_type="tool",
+        using=using,
+        prompt=node.MicroPrompt(prompt="trim it", meta=_meta()),
+        producing=None,
+        producing_schema=None,
+        meta={"file_meta": file_meta, "node_meta": None},
+    )
+    result = stmt.to_nxs()
+    assert result.startswith("do tool trim:") and "__do" in result and "\n" in result
+    _parse_as_body(result)
+
+
+def test_do_statement_with_producing_and_schema():
+    text = node.Variable(name="text", prompt=None, path=None, meta=_meta())
+    inp = node.Variable(name="input", prompt=None, path=None, meta=_meta())
+    using = node.Assignment(var=text, value=inp, meta=_meta())
+    out = node.Variable(name="result", prompt=None, path=None, meta=_meta())
+    stmt = node.DoStatement(
+        name="extract",
+        callable_type="action",
+        using=using,
+        prompt=None,
+        producing=out,
+        producing_schema="PersonFrame",
+        meta=_meta(),
+    )
+    result = stmt.to_nxs()
+    assert "producing" in result and "{PersonFrame}" in result
+    _parse_as_body(result)
+
+
+# =============================================================================
+# Step 22 — Deliberate with generated_actions
+# =============================================================================
+
+
+def test_deliberate_with_generated_actions():
+    action = node.ActionBlock(
+        name="SubAction",
+        prompt=node.MicroPrompt(prompt="do sub thing", meta=_meta()),
+        action_inputs=[],
+        action_outputs=[],
+        body=None,
+        meta=_meta(),
+    )
+    plan = node.PlanBlock(action_inputs=[], action_outputs=[], body=[], meta=_meta())
+    d = node.Deliberate(
+        name="Foo",
+        when=node.MicroPrompt(prompt="run when needed", meta=_meta()),
+        guidelines=node.MicroPrompt(prompt="follow guidelines", meta=_meta()),
+        plan=plan,
+        meta=_meta(),
+        generated_actions=[action],
+    )
+    result = d.to_nxs()
+    assert "action SubAction" in result and "__deliberate" in result
+    ParserLark().parse(result, "<test-deliberate-generated>")
+
+
+# =============================================================================
+# Step 23 — Round-trip integration over all .nxs test scripts
 # =============================================================================
 
 

@@ -105,6 +105,8 @@ def test_schemed_collection_suffix():
 def test_similarity_operation_simple():
     a = node.Variable(name="a", prompt=None, path=None, meta=_meta())
     b = node.Variable(name="b", prompt=None, path=None, meta=_meta())
+    # silence PyCharm false positive
+    # noinspection PyTypeChecker
     op = node.SimilarityOperation(
         operation=node.SimilarityEnum.SIM,
         qualifier=None,
@@ -180,14 +182,17 @@ def test_python_tool_declaration():
     prompt = node.MicroPrompt(prompt="do something", meta=_meta())
     decl = node.PythonToolDeclaration(name="MyTool", prompt=prompt, meta=_meta())
     result = decl.to_nxs()
-    assert result.startswith("toolset MyTool:") and ">> do something <<" in result and result.endswith("__toolset")
+    assert (
+        result.startswith("toolset MyTool:")
+        and ">> do something <<" in result
+        and result.endswith("__toolset")
+    )
     _parse_toplevel(result)
 
 
 # =============================================================================
 # Step 7 — ImportStatement and ImportToolsetStatement
 # =============================================================================
-
 
 
 def test_import_toolset_no_alias_no_args():

@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from nemantix.core.exceptions import NemantixException
 
@@ -121,62 +123,6 @@ class BlockStatement(Statement):
 
         return val
 
-    def get_qualifier(self) -> Any | list:
-        if hasattr(self, "qualifier"):
-            if self.qualifier is not None:
-                return self.qualifier
-
-        try:
-            qualifier = self.get_annotation_value("completion")
-
-            # Unwrap SingleValue if present
-            if hasattr(qualifier, "value"):
-                qualifier = qualifier.value
-
-            # Convert to list if it was parsed as a raw string
-            if isinstance(qualifier, str):
-                if "->" in qualifier:
-                    qualifier = qualifier.split("->")
-                else:
-                    qualifier = [qualifier]
-
-            if isinstance(qualifier, list | tuple):
-                # unwrap SingleValues inside lists
-                def _get_str(item):
-                    return (
-                        str(item.value).strip()
-                        if hasattr(item, "value")
-                        else str(item).strip()
-                    )
-
-                if len(qualifier) == 1:
-                    val = _get_str(qualifier[0])
-                    qualifier = [plan_qualifier_map[val], plan_qualifier_map[val]]
-
-                elif len(qualifier) == 2:
-                    qualifier = [
-                        plan_qualifier_map[_get_str(qualifier[0])],
-                        plan_qualifier_map[_get_str(qualifier[1])],
-                    ]
-            else:
-                raise NemantixException(
-                    f"Received {type(qualifier)} as completion qualifier!"
-                )
-
-            return qualifier
-
-        except NemantixException:
-            return None
-
-    def is_not_valid_qualifier(self) -> bool:
-        if hasattr(self, "qualifier"):
-            return (
-                self.qualifier
-                and not plan_qualifier_ordered_map[self.qualifier[0]]
-                <= plan_qualifier_ordered_map[self.qualifier[1]]
-            )
-        return True
-
     def get_intent(self):
         intent = None
         for name in ["intent.goal", "goal"]:
@@ -204,7 +150,7 @@ class Require(LeafStatement):
     def __str__(self):
         return f"Require: {self.file_path!r}"
 
-    def to_nxs(self) -> str:
+    def to_nxs(self, **kwargs) -> str:
         return f"require {self.file_path}"
 
 
@@ -486,11 +432,11 @@ class SchemedCollection(Collection):
         )
 
         if hasattr(self.dataframe, "value"):
-            dataframe = self.dataframe.value
+            dataframe = str(self.dataframe.value)
         else:
             dataframe = str(self.dataframe)
 
-        return f"SchemedCollection {'{' + dataframe + '}'}[{pos_str}]: {val_str})"
+        return f"SchemedCollection {{{dataframe}}}[{pos_str}]: {val_str})"
 
     def to_nxs(self, **kwargs) -> str:
         inner = super().to_nxs(**kwargs)
@@ -511,7 +457,10 @@ class SchemedCollection(Collection):
 
 class Assignment(Expression):
     def __init__(
-        self, var: Variable, value: Expression | None, meta: dict[str, Meta | None]
+        self,
+        var: Variable,
+        value: Expression | list[Expression] | None,
+        meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.var = var
@@ -523,8 +472,9 @@ class Assignment(Expression):
     def to_nxs(self, **kwargs) -> str:
         var_nxs = self.var.to_nxs(**kwargs)
         if isinstance(self.value, list):
-            values = [v.to_nxs(**kwargs) for v in self.value]
-            return f"{var_nxs} = ({', '.join(values)})"
+            # noinspection PyUnnecessaryCast
+            exprs = cast(list[Expression], self.value)
+            return f"{var_nxs} = ({', '.join(v.to_nxs(**kwargs) for v in exprs)})"
         if self.value is None:
             return f"{var_nxs} = none"
         return f"{var_nxs} = {self.value.to_nxs(**kwargs)}"
@@ -724,23 +674,19 @@ class BuiltinFunction(Expression):
     def __init__(
         self,
         function: BuiltinFunctionEnum,
-        args: list[Expression],
+        args: list[Expression] | Expression,
         meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.function = function
-        self.args = args
+        self.args: list[Expression] = [args] if isinstance(args, Expression) else args
 
     def __str__(self):
         args_str = ", ".join(str(a) for a in self.args)
         return f"BuiltinFunction({self.function.value}({args_str}))"
 
     def to_nxs(self, **kwargs) -> str:
-        if isinstance(self.args, list):
-            args = ", ".join(a.to_nxs(**kwargs) for a in self.args)
-        else:
-            args = self.args.to_nxs(**kwargs)
-
+        args = ", ".join(a.to_nxs(**kwargs) for a in self.args)
         return f"{self.function.name.lower()}({args})"
 
 
@@ -804,8 +750,11 @@ class DoStatement(LeafStatement):
 
     def to_nxs(self, **kwargs):
         code = ["do"]
-        lines = self.meta["file_meta"].line
-        is_multiline = lines[1] - lines[0] > 0
+        file_meta = self.meta["file_meta"]
+        is_multiline = (
+            isinstance(file_meta, FileMeta)
+            and file_meta.line[1] - file_meta.line[0] > 0
+        )
 
         if self.callable_type is not None:
             code.append(str(self.callable_type.value).lower())
@@ -883,6 +832,62 @@ def _child_body_nxs(child: "Statement", **kwargs) -> str:
     if isinstance(child, Assignment):
         return f"[{nxs}]"
     return nxs
+
+
+class QualifiableBlock(BlockStatement):
+    """BlockStatement with a completion qualifier (action, plan, deliberate)."""
+
+    def __init__(self, meta: dict[str, Meta | None]):
+        super().__init__(meta)
+        self.qualifier: tuple[PlanQualifierEnum, PlanQualifierEnum] | None = None
+
+    def get_qualifier(self) -> tuple[PlanQualifierEnum, PlanQualifierEnum] | None:
+        if self.qualifier is not None:
+            return self.qualifier
+
+        try:
+            qualifier = self.get_annotation_value("completion")
+
+            if isinstance(qualifier, SingleValue):
+                qualifier = qualifier.value
+
+            if isinstance(qualifier, str):
+                if "->" in qualifier:
+                    qualifier = qualifier.split("->")
+                else:
+                    qualifier = [qualifier]
+
+            if isinstance(qualifier, list | tuple):
+
+                def _get_str(item) -> str:
+                    return (
+                        str(item.value).strip()
+                        if isinstance(item, SingleValue)
+                        else str(item).strip()
+                    )
+
+                if len(qualifier) == 1:
+                    val = _get_str(qualifier[0])
+                    return (plan_qualifier_map[val], plan_qualifier_map[val])
+                elif len(qualifier) == 2:
+                    return (
+                        plan_qualifier_map[_get_str(qualifier[0])],
+                        plan_qualifier_map[_get_str(qualifier[1])],
+                    )
+            raise NemantixException(
+                f"Received {type(qualifier)} as completion qualifier!"
+            )
+
+        except NemantixException:
+            return None
+
+    def is_not_valid_qualifier(self) -> bool:
+        if isinstance(self.qualifier, tuple):
+            return not (
+                plan_qualifier_ordered_map[self.qualifier[0]]
+                <= plan_qualifier_ordered_map[self.qualifier[1]]
+            )
+        return False
 
 
 # =============================================================================
@@ -1179,7 +1184,7 @@ class ActionOutput:
         return f"{self.name}{prompt_str}"
 
 
-class ActionBlock(BlockStatement):
+class ActionBlock(QualifiableBlock):
     def __init__(
         self,
         name: str | None,
@@ -1187,7 +1192,7 @@ class ActionBlock(BlockStatement):
         action_inputs: list[ActionInput],
         action_outputs: list[ActionOutput],
         body: list[Statement] | None,
-        meta: dict[str, Meta],
+        meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.name = name
@@ -1196,7 +1201,6 @@ class ActionBlock(BlockStatement):
         self.output = action_outputs
         if body:
             self.children = body
-        self.qualifier = None
         self.qualifier = self.get_qualifier()
         if (
             self.qualifier
@@ -1306,13 +1310,13 @@ plan_qualifier_ordered_map = {
 }
 
 
-class PlanBlock(BlockStatement):
+class PlanBlock(QualifiableBlock):
     def __init__(
         self,
         action_inputs: list[ActionInput],
         action_outputs: list[ActionOutput],
         body: list[Statement] | None,
-        meta: dict[str, Meta],
+        meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.input = action_inputs
@@ -1321,10 +1325,9 @@ class PlanBlock(BlockStatement):
         if body:
             self.children = body
 
-        self.qualifier = None
         self.qualifier = self.get_qualifier()
 
-        if self.is_not_valid_qualifier():
+        if isinstance(self.qualifier, tuple) and self.is_not_valid_qualifier():
             raise NemantixException(
                 "Plan/deliberate completion qualifiers must specify "
                 "increasing completion levels (e.g drafted->frozen). "
@@ -1365,7 +1368,7 @@ class PlanBlock(BlockStatement):
         return "\n".join(lines)
 
 
-class Deliberate(BlockStatement):
+class Deliberate(QualifiableBlock):
     def __init__(
         self,
         name: str,
@@ -1373,17 +1376,16 @@ class Deliberate(BlockStatement):
         guidelines: MicroPrompt,
         plan: PlanBlock,
         meta: dict[str, Meta | None],
-        generated_actions: list[ActionBlock] = None,
+        generated_actions: list[ActionBlock] | None = None,
     ):
         super().__init__(meta)
         self.when = when
         self.guidelines = guidelines
         self.name = name
         self.generated_actions = generated_actions if generated_actions else []
-        self.qualifier = None
         self.qualifier = self.get_qualifier()
 
-        if self.is_not_valid_qualifier():
+        if isinstance(self.qualifier, tuple) and self.is_not_valid_qualifier():
             raise NemantixException(
                 "Plan/deliberate completion qualifiers must specify increasing"
                 " completion levels (e.g drafted->frozen). "

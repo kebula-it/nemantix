@@ -12,9 +12,12 @@ def test_db_engine_enum():
     assert DBEngineEnum.SQLITE.value == "sqlite"
 
 
-def test_db_connector_from_parameters():
+@patch("nemantix.common.connectors.create_engine")
+def test_db_connector_from_parameters(mock_create_engine):
     """Tests that DBConnector correctly builds a URL from explicit parameters."""
-    connector = DBConnector.from_parameters(
+
+    # create_engine is mocked, so it won't try to import psycopg2
+    _ = DBConnector.from_parameters(
         engine=DBEngineEnum.POSTGRES,
         username="user",
         password="pwd",
@@ -23,9 +26,14 @@ def test_db_connector_from_parameters():
         port=5432,
     )
 
-    # Verify the compiled URL
+    # Extract the URL object that was passed into create_engine
+    mock_create_engine.assert_called_once()
+    args, kwargs = mock_create_engine.call_args
+    passed_url = args[0]
+
+    # Verify the URL was built correctly
     assert (
-        connector.engine.url.render_as_string(hide_password=False)
+        passed_url.render_as_string(hide_password=False)
         == "postgresql://user:pwd@localhost:5432/mydb"
     )
 
@@ -85,6 +93,7 @@ def test_create_tables(mock_create_db, mock_db_exists):
         mock_db_exists.assert_called_once()
         mock_create_db.assert_called_once_with(connector.engine.url)
         mock_create_all.assert_called_once_with(connector.engine)
+
 
 @patch("nemantix.common.connectors.create_engine")
 def test_db_connector_pool_args_postgres(mock_create_engine):

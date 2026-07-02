@@ -370,9 +370,7 @@ class Agent:
 
     @staticmethod
     def _emit_phase(phase: str, start=False):
-        event_type = (
-            EventType.PHASE_START if start else EventType.PHASE_END
-        )
+        event_type = EventType.PHASE_START if start else EventType.PHASE_END
         hub = EventHub.get_active_hub(event_type=event_type)
 
         if not hub:

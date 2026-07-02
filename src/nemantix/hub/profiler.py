@@ -91,9 +91,7 @@ class Profiler(Observable):
         event_hub.subscribe(EventType.CALL_EXIT, self.on_call_exit)
         event_hub.subscribe(EventType.CODING_START, self.on_coding_start)
         event_hub.subscribe(EventType.CODING_END, self.on_coding_end)
-        event_hub.subscribe(
-            EventType.PHASE_START, self.on_executor_phase_start
-        )
+        event_hub.subscribe(EventType.PHASE_START, self.on_executor_phase_start)
         event_hub.subscribe(EventType.PHASE_END, self.on_executor_phase_end)
         event_hub.subscribe(EventType.PROFILE_MARK, self.on_profile_mark)
         event_hub.subscribe(EventType.LLM, self.on_llm)

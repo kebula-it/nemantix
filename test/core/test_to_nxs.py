@@ -107,6 +107,24 @@ def test_collection_list():
     assert "[x]" in result and "[y]" in result
 
 
+def test_collection_nested():
+    inner = node.Collection(
+        value=[
+            node.SingleValue(
+                value=1, inferred_type=node.VariableTypeEnum.INT, meta=_meta()
+            )
+        ],
+        inferred_type=node.VariableTypeEnum.LIST,
+        meta=_meta(),
+    )
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    outer = node.Collection(
+        value=[x, inner], inferred_type=node.VariableTypeEnum.LIST, meta=_meta()
+    )
+    result = outer.to_nxs()
+    assert "[x]" in result and "1" in result
+
+
 def test_collection_dict():
     val = node.SingleValue(
         value=1, inferred_type=node.VariableTypeEnum.INT, meta=_meta()
@@ -219,8 +237,9 @@ def test_return_with_values():
         (True, node.VariableTypeEnum.BOOL, "true"),
         (False, node.VariableTypeEnum.BOOL, "false"),
         (3.14, node.VariableTypeEnum.FLOAT, "3.14"),
+        (None, node.VariableTypeEnum.NONE, "none"),
     ],
-    ids=["bool_true", "bool_false", "float"],
+    ids=["bool_true", "bool_false", "float", "none"],
 )
 def test_single_value_types(value, inferred_type, expected):
     sv = node.SingleValue(value=value, inferred_type=inferred_type, meta=_meta())
@@ -269,6 +288,56 @@ def test_import_toolset_with_alias():
     _parse_toplevel(result)
 
 
+def test_import_toolset_with_args():
+    args = node.Variable(name="cfg", prompt=None, path=None, meta=_meta())
+    stmt = node.ImportToolsetStatement(
+        name="my_toolset", elements=["MyTool"], args=args, alias="mt", meta=_meta()
+    )
+    result = stmt.to_nxs()
+    assert "as mt" in result and "with [[cfg]]" in result and "use MyTool" in result
+    _parse_toplevel(result)
+
+
+def test_import_toolset_block_form_round_trip():
+    src = "from toolset my_toolset use:\n    MyTool\n__use"
+    result = round_trip(src)
+    assert "from toolset my_toolset use MyTool" in result
+
+
+def test_import_toolset_block_form_with_alias():
+    src = "from toolset my_toolset as mt use:\n    MyTool\n__use"
+    result = round_trip(src)
+    assert "from toolset my_toolset as mt use MyTool" in result
+
+
+def test_import_toolset_block_form_with_alias_and_args():
+    src = "from toolset my_toolset as mt with [[cfg]] use:\n    MyTool\n__use"
+    result = round_trip(src)
+    assert "as mt" in result and "with [[cfg]]" in result and "use MyTool" in result
+
+
+def test_import_toolset_multi_tool():
+    stmt = node.ImportToolsetStatement(
+        name="my_toolset",
+        elements=["Tool1", "Tool2"],
+        args=None,
+        alias=None,
+        meta=_meta(),
+    )
+    result = stmt.to_nxs()
+    assert result == "from toolset my_toolset use Tool1, Tool2"
+    _parse_toplevel(result)
+
+
+def test_import_toolset_wildcard():
+    stmt = node.ImportToolsetStatement(
+        name="my_toolset", elements=["*"], args=None, alias=None, meta=_meta()
+    )
+    result = stmt.to_nxs()
+    assert result == "from toolset my_toolset use *"
+    _parse_toplevel(result)
+
+
 # =============================================================================
 # Step 8 — ActionInput and ActionOutput
 # =============================================================================
@@ -306,6 +375,34 @@ def test_action_output():
     ao = node.ActionOutput(name="message", prompt=prompt, meta=_meta())
     result = ao.to_nxs()
     assert result == "message >> greeting message <<"
+    _parse_as_out(result)
+
+
+def test_action_input_unnamed_mod():
+    prompt = node.MicroPrompt(prompt="any name", meta=_meta())
+    ai = node.ActionInput(
+        name="", required=True, default=None, prompt=prompt, meta=_meta()
+    )
+    result = ai.to_nxs()
+    assert "(required)" in result and "any name" in result
+    _parse_as_in(result)
+
+
+def test_action_input_unnamed():
+    prompt = node.MicroPrompt(prompt="any value", meta=_meta())
+    ai = node.ActionInput(
+        name="", required=False, default=None, prompt=prompt, meta=_meta()
+    )
+    result = ai.to_nxs()
+    assert "any value" in result
+    _parse_as_in(result)
+
+
+def test_action_output_unnamed():
+    prompt = node.MicroPrompt(prompt="the result", meta=_meta())
+    ao = node.ActionOutput(name="", prompt=prompt, meta=_meta())
+    result = ao.to_nxs()
+    assert "the result" in result
     _parse_as_out(result)
 
 
@@ -421,6 +518,20 @@ def test_repeat_until_block():
     _parse_as_body(result)
 
 
+def test_repeat_generic_round_trip():
+    src = (
+        "action _T >> t <<:\n"
+        "body:\n"
+        "    repeat >> do something <<:\n"
+        "        break\n"
+        "    __repeat\n"
+        "__body\n"
+        "__action"
+    )
+    result = round_trip(src)
+    assert "repeat" in result and "break" in result
+
+
 # =============================================================================
 # Step 11 — Slot and Frame
 # =============================================================================
@@ -430,7 +541,7 @@ def test_slot_with_type_and_prompt():
     prompt = node.MicroPrompt(prompt="full name", meta=_meta())
     slot = node.Slot(
         name="name",
-        types=[node.SlotTypesEnum.TEXT],
+        types={node.SlotTypesEnum.TEXT: None},
         card=None,
         prompt=prompt,
         meta=_meta(),
@@ -443,7 +554,7 @@ def test_slot_with_type_and_prompt():
 def test_slot_with_cardinality():
     slot = node.Slot(
         name="tags",
-        types=[node.SlotTypesEnum.TEXT],
+        types={node.SlotTypesEnum.TEXT: None},
         card="*",
         prompt=None,
         meta=_meta(),
@@ -457,7 +568,7 @@ def test_frame():
     prompt = node.MicroPrompt(prompt="full name", meta=_meta())
     slot = node.Slot(
         name="name",
-        types=[node.SlotTypesEnum.TEXT],
+        types={node.SlotTypesEnum.TEXT: None},
         card=None,
         prompt=prompt,
         meta=_meta(),
@@ -470,6 +581,124 @@ def test_frame():
         and "slot name" in result
         and result.endswith("__frame")
     )
+    _parse_toplevel(result)
+
+
+def test_frame_with_inline_prompt():
+    prompt_child = node.MicroPrompt(prompt="personal identity data", meta=_meta())
+    slot = node.Slot(
+        name="name",
+        types={node.SlotTypesEnum.TEXT: None},
+        card=None,
+        prompt=None,
+        meta=_meta(),
+    )
+    frame = node.Frame(name="Person", meta=_meta())
+    frame.children = [prompt_child, slot]
+    result = frame.to_nxs()
+    assert ">> personal identity data <<" in result
+    assert "slot name" in result
+    _parse_toplevel(result)
+
+
+def test_frame_with_multiline_prompt():
+    prompt_child = node.MicroPrompt(prompt="line one\nline two", meta=_meta())
+    frame = node.Frame(name="Doc", meta=_meta())
+    frame.children = [prompt_child]
+    result = frame.to_nxs()
+    assert ">>> line one\nline two <<<" in result
+    _parse_toplevel(result)
+
+
+def test_slot_no_type():
+    slot = node.Slot(name="x", types=None, card=None, prompt=None, meta=_meta())
+    result = slot.to_nxs()
+    assert result == "slot x"
+    _parse_as_slot(result)
+
+
+def test_slot_int_type():
+    slot = node.Slot(
+        name="count",
+        types={node.SlotTypesEnum.INT: None},
+        card=None,
+        prompt=None,
+        meta=_meta(),
+    )
+    result = slot.to_nxs()
+    assert result == "slot count as INT"
+    _parse_as_slot(result)
+
+
+def test_slot_bool_type():
+    slot = node.Slot(
+        name="active",
+        types={node.SlotTypesEnum.BOOL: None},
+        card=None,
+        prompt=None,
+        meta=_meta(),
+    )
+    result = slot.to_nxs()
+    assert result == "slot active as BOOL"
+    _parse_as_slot(result)
+
+
+def test_slot_float_type():
+    slot = node.Slot(
+        name="score",
+        types={node.SlotTypesEnum.FLOAT: None},
+        card=None,
+        prompt=None,
+        meta=_meta(),
+    )
+    result = slot.to_nxs()
+    assert result == "slot score as FLOAT"
+    _parse_as_slot(result)
+
+
+def test_slot_enum_type():
+    slot = node.Slot(
+        name="color",
+        types={node.SlotTypesEnum.ENUM: ["red", "blue"]},
+        card=None,
+        prompt=None,
+        meta=_meta(),
+    )
+    result = slot.to_nxs()
+    assert 'ENUM("red", "blue")' in result
+    _parse_as_slot(result)
+
+
+def test_slot_frame_type():
+    slot = node.Slot(
+        name="person",
+        types={node.SlotTypesEnum.FRAME: "PersonFrame"},
+        card=None,
+        prompt=None,
+        meta=_meta(),
+    )
+    result = slot.to_nxs()
+    assert "PersonFrame" in result and "slot person" in result
+    # PersonFrame must be declared before it can be referenced in a slot
+    src = f"frame PersonFrame:\n__frame\nframe _F:\n{result}\n__frame"
+    ParserLark().parse(src, "<test-slot-frame>")
+
+
+def test_frame_nested():
+    inner = node.Frame(name="Inner", meta=_meta())
+    inner.children = [
+        node.Slot(
+            name="x",
+            types={node.SlotTypesEnum.INT: None},
+            card=None,
+            prompt=None,
+            meta=_meta(),
+        )
+    ]
+    outer = node.Frame(name="Outer", meta=_meta())
+    outer.children = [inner]
+    result = outer.to_nxs()
+    assert "frame Outer:" in result and "frame Inner:" in result
     _parse_toplevel(result)
 
 
@@ -549,6 +778,13 @@ def test_require():
     _parse_toplevel(result)
 
 
+def test_require_nxc():
+    r = node.Require(file_path="path/to/script.nxc", meta=_meta())
+    result = r.to_nxs()
+    assert result == "require path/to/script.nxc"
+    _parse_toplevel(result)
+
+
 # =============================================================================
 # Step 16 — Variable with struct path
 # =============================================================================
@@ -566,6 +802,34 @@ def test_variable_with_path():
     v = node.Variable(name="struct", prompt=None, path=path, meta=_meta())
     result = v.to_nxs()
     assert result == "[struct:field:sub_field]"
+    _parse_as_body(f"[ [x] = {result} ]")
+
+
+def test_variable_with_prompt():
+    prompt = node.MicroPrompt(prompt="explain x", meta=_meta())
+    v = node.Variable(name="x", prompt=prompt, path=None, meta=_meta())
+    result = v.to_nxs()
+    assert result == "[x >> explain x <<]"
+    _parse_as_body(f"[ [z] = {result} ]")
+
+
+def test_variable_access_index():
+    path = [
+        node.SingleValue(
+            value="0", inferred_type=node.VariableTypeEnum.INT, meta=_meta()
+        )
+    ]
+    v = node.Variable(name="items", prompt=None, path=path, meta=_meta())
+    result = v.to_nxs()
+    assert result == "[items:0]"
+    _parse_as_body(f"[ [x] = {result} ]")
+
+
+def test_variable_access_expr():
+    idx = node.Variable(name="i", prompt=None, path=None, meta=_meta())
+    v = node.Variable(name="items", prompt=None, path=[idx], meta=_meta())
+    result = v.to_nxs()
+    assert result == "[items:([i])]"
     _parse_as_body(f"[ [x] = {result} ]")
 
 
@@ -645,6 +909,77 @@ def test_binary_operation_concat():
     )
     result = op.to_nxs()
     assert result == '"hello" | "world"'
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_binary_operation_fallback():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    default = node.SingleValue(
+        value="default", inferred_type=node.VariableTypeEnum.STRING, meta=_meta()
+    )
+    op = node.BinaryOperation(
+        operation=node.BinaryOperationEnum.FALLBACK,
+        first=x,
+        second=default,
+        meta=_meta(),
+    )
+    result = op.to_nxs()
+    assert result == '[x] ?? "default"'
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_binary_operation_sub():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    y = node.Variable(name="y", prompt=None, path=None, meta=_meta())
+    op = node.BinaryOperation(
+        operation=node.BinaryOperationEnum.SUB, first=x, second=y, meta=_meta()
+    )
+    result = op.to_nxs()
+    assert result == "[x] - [y]"
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_binary_operation_mul():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    y = node.Variable(name="y", prompt=None, path=None, meta=_meta())
+    op = node.BinaryOperation(
+        operation=node.BinaryOperationEnum.MUL, first=x, second=y, meta=_meta()
+    )
+    result = op.to_nxs()
+    assert result == "[x] * [y]"
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_binary_operation_eq():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    y = node.Variable(name="y", prompt=None, path=None, meta=_meta())
+    op = node.BinaryOperation(
+        operation=node.BinaryOperationEnum.EQ, first=x, second=y, meta=_meta()
+    )
+    result = op.to_nxs()
+    assert result == "[x] == [y]"
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_binary_operation_lt():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    y = node.Variable(name="y", prompt=None, path=None, meta=_meta())
+    op = node.BinaryOperation(
+        operation=node.BinaryOperationEnum.LT, first=x, second=y, meta=_meta()
+    )
+    result = op.to_nxs()
+    assert result == "[x] < [y]"
+    _parse_as_body(f"[ {result} ]")
+
+
+def test_binary_operation_gt():
+    x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
+    y = node.Variable(name="y", prompt=None, path=None, meta=_meta())
+    op = node.BinaryOperation(
+        operation=node.BinaryOperationEnum.GT, first=x, second=y, meta=_meta()
+    )
+    result = op.to_nxs()
+    assert result == "[x] > [y]"
     _parse_as_body(f"[ {result} ]")
 
 
@@ -771,6 +1106,27 @@ def test_do_statement_with_producing_and_schema():
     )
     result = stmt.to_nxs()
     assert "producing" in result and "{PersonFrame}" in result
+    _parse_as_body(result)
+
+
+def test_do_statement_builtin():
+    stmt = node.DoStatement(
+        name="print",
+        callable_type=None,
+        using=node.Assignment(
+            var=node.Variable(name="text", prompt=None, path=None, meta=_meta()),
+            value=node.SingleValue(
+                value="hello", inferred_type=node.VariableTypeEnum.STRING, meta=_meta()
+            ),
+            meta=_meta(),
+        ),
+        prompt=None,
+        producing=None,
+        producing_schema=None,
+        meta=_meta(),
+    )
+    result = stmt.to_nxs()
+    assert result.startswith("do print") and "using" in result
     _parse_as_body(result)
 
 

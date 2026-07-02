@@ -290,7 +290,7 @@ class Variable(ExpressionOperand):
         self,
         name: str | None,
         prompt: MicroPrompt | None,
-        path: str | None | list[SingleValue],
+        path: str | None | list[SingleValue] | list[Expression],
         meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
@@ -318,12 +318,17 @@ class Variable(ExpressionOperand):
 
     def to_nxs(self, **kwargs) -> str:
         path_str = ""
-        if self.path:
-            # Handle nested paths like [user:address:city]
+        if isinstance(self.path, list) and self.path:
             path_str = ":" + ":".join(
-                str(p.value) if hasattr(p, "value") else str(p) for p in self.path
+                str(p.value)
+                if isinstance(p, SingleValue)
+                else f"({p.to_nxs(**kwargs)})"
+                for p in self.path
             )
-        return f"[{self.name}{path_str}]"
+        prompt_str = (
+            f" {self.prompt.to_nxs(**kwargs)}" if self.prompt is not None else ""
+        )
+        return f"[{self.name}{path_str}{prompt_str}]"
 
 
 class Collection(Value):
@@ -894,8 +899,23 @@ class QualifiableBlock(BlockStatement):
 # BlockStatement subclasses
 # =============================================================================
 class RepeatBlock(BlockStatement):
-    def __init__(self, meta: dict[str, Meta | None]):
+    def __init__(
+        self, meta: dict[str, Meta | None], prompt: "MicroPrompt | None" = None
+    ):
         super().__init__(meta)
+        self.prompt = prompt
+
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        prompt_nxs = (
+            self.prompt.to_nxs(**kwargs) if self.prompt is not None else ">> <<"
+        )
+        body = "\n".join(
+            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
+            for c in self.children
+        )
+        return f"{pad}repeat {prompt_nxs}:\n{body}\n{pad}__repeat"
 
 
 class RepeatEachBlock(RepeatBlock):
@@ -1284,7 +1304,7 @@ class ImportToolsetStatement(ImportStatement):
     def to_nxs(self, **kwargs) -> str:
         elements_str = ", ".join(self.elements)
         alias_str = f" as {self.alias}" if self.alias else ""
-        with_str = f" with {self.args.to_nxs(**kwargs)}" if self.args else ""
+        with_str = f" with [{self.args.to_nxs(**kwargs)}]" if self.args else ""
         return f"from toolset {self.name}{alias_str}{with_str} use {elements_str}"
 
 
@@ -1488,7 +1508,7 @@ class Slot(LeafStatement):
     def __init__(
         self,
         name: str | None,
-        types: list[SlotTypesEnum] | None,
+        types: dict[SlotTypesEnum, Any] | None,
         card: str | None,
         prompt: MicroPrompt | None,
         meta: dict[str, Meta | None],
@@ -1501,7 +1521,7 @@ class Slot(LeafStatement):
 
     def __str__(self):
         types_str = (
-            f" of type {[t for t in self.types]}" if self.types is not None else ""
+            f" of type {list(self.types.keys())}" if self.types is not None else ""
         )
         card_str = (
             f" and cardinality {self.cardinality}"
@@ -1512,20 +1532,17 @@ class Slot(LeafStatement):
         return f"Slot '{self.name}'{types_str}{card_str}{prompt_str}"
 
     @staticmethod
-    def _type_to_nxs(t) -> str:
-        if isinstance(t, SlotTypesEnum):
-            return t.name
-        if isinstance(t, dict):
-            if SlotTypesEnum.FRAME in t:
-                return t[SlotTypesEnum.FRAME]
-            if SlotTypesEnum.ENUM in t:
-                vals = t[SlotTypesEnum.ENUM] or []
-                return "ENUM(" + ", ".join(f'"{v}"' for v in vals) + ")"
-        return str(t)
+    def _type_to_nxs(k: SlotTypesEnum, v: Any) -> str:
+        if k == SlotTypesEnum.FRAME:
+            return v
+        if k == SlotTypesEnum.ENUM:
+            vals = v or []
+            return "ENUM(" + ", ".join(f'"{x}"' for x in vals) + ")"
+        return k.name
 
     def to_nxs(self, **kwargs) -> str:
         types_str = (
-            " as " + "|".join(self._type_to_nxs(t) for t in self.types)
+            " as " + "|".join(self._type_to_nxs(k, v) for k, v in self.types.items())
             if self.types
             else ""
         )

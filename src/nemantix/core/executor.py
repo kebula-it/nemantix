@@ -77,14 +77,14 @@ class Executor:
 
         def __enter__(self):
             self.executor._emit_executor_event(
-                EventType.EXECUTOR_PHASE_START,
+                EventType.PHASE_START,
                 phase=self.phase,
                 deliberate=self.deliberate.name,
             )
 
         def __exit__(self, *args):
             self.executor._emit_executor_event(
-                EventType.EXECUTOR_PHASE_END,
+                EventType.PHASE_END,
                 phase=self.phase,
                 deliberate=self.deliberate.name,
             )
@@ -159,7 +159,7 @@ class Executor:
         inputs = None
 
         # Phase 1: parse the request (coded or uncoded via LLM)
-        self._emit_executor_event(EventType.EXECUTOR_PHASE_START, phase="parse_request")
+        self._emit_executor_event(EventType.PHASE_START, phase="parse_request")
         try:
             # check if coded
             script, deliberate, inputs = self.parse_coded_request(user_request)
@@ -175,7 +175,7 @@ class Executor:
             uncoded = True
 
         self._emit_executor_event(
-            EventType.EXECUTOR_PHASE_END,
+            EventType.PHASE_END,
             phase="parse_request",
             deliberate=deliberate.name,
             uncoded=uncoded,

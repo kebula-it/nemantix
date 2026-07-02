@@ -128,7 +128,7 @@ def test_agent_metrics_accumulation(observer):
     # Simulate User Request & Runtime Coding
     observer.on_user_request(MockEvent(EventType.USER_REQUEST))
     observer.on_runtime_coding(
-        MockEvent(EventType.EXECUTOR_PHASE_START, {"phase": "code_deliberate"})
+        MockEvent(EventType.PHASE_START, {"phase": "code_deliberate"})
     )
 
     # Simulate Errors

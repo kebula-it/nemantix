@@ -19,9 +19,8 @@ class EventType(Enum):
     ERROR = auto()
     BREAKPOINT = auto()
     LLM = auto()
-    # TODO: rename as "phase_event"?
-    EXECUTOR_PHASE_START = auto()
-    EXECUTOR_PHASE_END = auto()
+    PHASE_START = auto()
+    PHASE_END = auto()
     PROFILE_MARK = auto()
     LOG_EVENT = auto()
     USER_REQUEST = auto()

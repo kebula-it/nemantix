@@ -69,7 +69,7 @@ def make_executor_phase_start_event(
     if deliberate:
         payload["deliberate"] = deliberate
     return Event(
-        type=EventType.EXECUTOR_PHASE_START,
+        type=EventType.PHASE_START,
         lines=(0, 0),
         scope="executor",
         script=None,
@@ -81,7 +81,7 @@ def make_executor_phase_start_event(
 
 def make_executor_phase_end_event(phase: str, timestamp: float) -> Event:
     return Event(
-        type=EventType.EXECUTOR_PHASE_END,
+        type=EventType.PHASE_END,
         lines=(0, 0),
         scope="executor",
         script=None,

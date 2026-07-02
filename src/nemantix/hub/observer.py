@@ -187,7 +187,7 @@ class Observer(Observable, Storable):
         event_hub.subscribe(EventType.LLM, self.on_llm)
         event_hub.subscribe(EventType.CALL_ENTER, self.on_tool_call)
         event_hub.subscribe(EventType.USER_REQUEST, self.on_user_request)
-        event_hub.subscribe(EventType.EXECUTOR_PHASE_START, self.on_runtime_coding)
+        event_hub.subscribe(EventType.PHASE_START, self.on_runtime_coding)
         event_hub.subscribe(EventType.ERROR, self.on_error)
         event_hub.subscribe(EventType.CODING_ERROR, self.on_error)
         event_hub.subscribe(EventType.LOG_EVENT, self.on_log)

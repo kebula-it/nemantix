@@ -31,30 +31,33 @@ class VectorStoreFactory:
         store_type = store_type.lower()
 
         if store_type == "qdrant":
-            from nemantix.knowledge_base.persistence.vector_stores.qdrant import QdrantVectorStore
+            from nemantix.knowledge_base.persistence.vector_stores.qdrant import (
+                QdrantVectorStore,
+            )
+
             return QdrantVectorStore(
-                db_path_or_url=path,
-                collection_name=collection_name,
-                metric="COSINE"
+                db_path_or_url=path, collection_name=collection_name, metric="COSINE"
             )
 
         elif store_type == "milvus":
-            from nemantix.knowledge_base.persistence.vector_stores.milvus import MilvusVectorStore
-            if not path.endswith('.db') and not path.startswith('http'):
+            from nemantix.knowledge_base.persistence.vector_stores.milvus import (
+                MilvusVectorStore,
+            )
+
+            if not path.endswith(".db") and not path.startswith("http"):
                 path = f"{path}/milvus_{collection_name}.db"
             return MilvusVectorStore(
-                db_path_or_uri=path,
-                collection_name=collection_name,
-                metric="COSINE"
+                db_path_or_uri=path, collection_name=collection_name, metric="COSINE"
             )
 
         elif store_type == "faiss":
-            from nemantix.knowledge_base.persistence.vector_stores.faiss import FAISSVectorStore
+            from nemantix.knowledge_base.persistence.vector_stores.faiss import (
+                FAISSVectorStore,
+            )
+
             file_path = Path(path) / f"{collection_name}.index"
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            return FAISSVectorStore(
-                index_path=file_path
-            )
+            return FAISSVectorStore(index_path=file_path)
 
         else:
             logger.error("Unsupported vector store type requested: %s", store_type)

@@ -1,8 +1,10 @@
 import os
-import wave
 import shutil
-import pytest
+import wave
+
 import numpy as np
+import pytest
+
 from nemantix.core import Toolset
 from nemantix.stl.audio_processor.base import AudioProcessorToolset
 
@@ -71,6 +73,7 @@ class TestAudioToolset:
         """Test retrieving metadata from a real audio file."""
         ts_info = Toolset.get_tool(
             tool_name="AudioProcessorToolset.get_audio_info",
+            instance_alias="AudioProcessorToolset",
             instance_args=(OUTPUT_DIR,),
         )
 
@@ -84,6 +87,7 @@ class TestAudioToolset:
         """Test error when file is missing."""
         ts_info = Toolset.get_tool(
             tool_name="AudioProcessorToolset.get_audio_info",
+            instance_alias="AudioProcessorToolset",
             instance_args=(OUTPUT_DIR,),
         )
 
@@ -97,6 +101,7 @@ class TestAudioToolset:
         """Test converting audio format from WAV to MP3 using a real file."""
         ts_convert = Toolset.get_tool(
             tool_name="AudioProcessorToolset.convert_format",
+            instance_alias="AudioProcessorToolset",
             instance_args=(OUTPUT_DIR,),
         )
 
@@ -112,7 +117,9 @@ class TestAudioToolset:
     def test_trim_audio(self):
         """Test trimming a real audio segment."""
         ts_trim = Toolset.get_tool(
-            tool_name="AudioProcessorToolset.trim_audio", instance_args=(OUTPUT_DIR,)
+            tool_name="AudioProcessorToolset.trim_audio",
+            instance_alias="AudioProcessorToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         # Trim the 1-second file in half
@@ -128,7 +135,9 @@ class TestAudioToolset:
     def test_adjust_volume(self):
         """Test actual volume scaling on a real file."""
         ts_volume = Toolset.get_tool(
-            tool_name="AudioProcessorToolset.adjust_volume", instance_args=(OUTPUT_DIR,)
+            tool_name="AudioProcessorToolset.adjust_volume",
+            instance_alias="AudioProcessorToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         result = ts_volume(REAL_WAV, volume_factor=2.0)
@@ -143,7 +152,9 @@ class TestAudioToolset:
     def test_merge_audios(self):
         """Test concatenating the real file with itself."""
         ts_merge = Toolset.get_tool(
-            tool_name="AudioProcessorToolset.merge_audios", instance_args=(OUTPUT_DIR,)
+            tool_name="AudioProcessorToolset.merge_audios",
+            instance_alias="AudioProcessorToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         files_to_merge = [REAL_WAV, REAL_WAV]
@@ -159,7 +170,9 @@ class TestAudioToolset:
     def test_decode_audio(self):
         """Test decoding an actual audio file to a NumPy array."""
         ts_decode = Toolset.get_tool(
-            tool_name="AudioProcessorToolset.decode_audio", instance_args=(OUTPUT_DIR,)
+            tool_name="AudioProcessorToolset.decode_audio",
+            instance_alias="AudioProcessorToolset",
+            instance_args=(OUTPUT_DIR,),
         )
 
         result = ts_decode(REAL_WAV, start_time=0, end_time=0.5)
@@ -179,6 +192,7 @@ class TestAudioToolset:
         """Test that internal MoviePy/FFmpeg errors are caught on invalid files."""
         ts_info = Toolset.get_tool(
             tool_name="AudioProcessorToolset.get_audio_info",
+            instance_alias="AudioProcessorToolset",
             instance_args=(OUTPUT_DIR,),
         )
 

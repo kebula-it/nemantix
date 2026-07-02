@@ -81,20 +81,58 @@ logger = get_package_logger(__name__)
 
 logger.setLevel("DEBUG")
 FSTRING_START_EXPR_PATTERN = r"(?<!\\)\["
-RESERVED_VAR_NAMES = ['_', '__', 'when', 'from', 'use', 'as', 'with',
-                      'include', 'guidelines', 'if', 'elif', 'else',
-                      'repeat', 'while', 'until', 'each', 'do',
-                      'return', 'break', 'continue', 'using',
-                      'producing', 'required', 'optional', 'true',
-                      'false', 'none', 'undefined', 'drafted',
-                      'frozen', '__deliberate', '__guidelines', '__plan',
-                      '__action', '__body', '__do', '__in', '__out', '__repeat',
-                      '__if', '__toolset', '__use', '__frame']
+RESERVED_VAR_NAMES = [
+    "_",
+    "__",
+    "when",
+    "from",
+    "use",
+    "as",
+    "with",
+    "include",
+    "guidelines",
+    "if",
+    "elif",
+    "else",
+    "repeat",
+    "while",
+    "until",
+    "each",
+    "do",
+    "return",
+    "break",
+    "continue",
+    "using",
+    "producing",
+    "required",
+    "optional",
+    "true",
+    "false",
+    "none",
+    "undefined",
+    "drafted",
+    "frozen",
+    "__deliberate",
+    "__guidelines",
+    "__plan",
+    "__action",
+    "__body",
+    "__do",
+    "__in",
+    "__out",
+    "__repeat",
+    "__if",
+    "__toolset",
+    "__use",
+    "__frame",
+]
 IMPORTED_TOOLSETS = {}
+
 
 @dataclass
 class AsFrame:
     """Simulate node to temporarily store file meta of AS clause in producing clause (do)"""
+
     value: str
     meta: dict
 
@@ -138,8 +176,12 @@ _STMT_PARSER: Optional[Lark] = None
 def _get_fstring_parser() -> Lark:
     global _FSTRING_PARSER
     if _FSTRING_PARSER is None:
-        _FSTRING_PARSER = Lark(read_grammar(), start=["start_fstr"],
-                               parser="lalr", propagate_positions=True)
+        _FSTRING_PARSER = Lark(
+            read_grammar(),
+            start=["start_fstr"],
+            parser="lalr",
+            propagate_positions=True,
+        )
 
     assert isinstance(_FSTRING_PARSER, Lark)
     return _FSTRING_PARSER
@@ -148,8 +190,12 @@ def _get_fstring_parser() -> Lark:
 def _get_frame_parser() -> Lark:
     global _FRAME_PARSER
     if _FRAME_PARSER is None:
-        _FRAME_PARSER = Lark(read_grammar(), start=["start_frame"],
-                             parser="lalr", propagate_positions=True)
+        _FRAME_PARSER = Lark(
+            read_grammar(),
+            start=["start_frame"],
+            parser="lalr",
+            propagate_positions=True,
+        )
 
     assert isinstance(_FRAME_PARSER, Lark)
     return _FRAME_PARSER
@@ -158,8 +204,12 @@ def _get_frame_parser() -> Lark:
 def _get_stmt_parser() -> Lark:
     global _STMT_PARSER
     if _STMT_PARSER is None:
-        _STMT_PARSER = Lark(read_grammar(), start=["start_stmt"],
-                            parser="lalr", propagate_positions=True)
+        _STMT_PARSER = Lark(
+            read_grammar(),
+            start=["start_stmt"],
+            parser="lalr",
+            propagate_positions=True,
+        )
 
     assert isinstance(_STMT_PARSER, Lark)
     return _STMT_PARSER
@@ -252,7 +302,7 @@ def parse_escaped_string(string: str, *, file: Optional[Path] = None) -> List[ob
                     raise NemantixParserException("Internal f-string parse error")
 
                 expr_end = i
-                expr_text = string[expr_start: expr_end + 1]
+                expr_text = string[expr_start : expr_end + 1]
 
                 tree = _get_fstring_parser().parse(expr_text)
                 tr = AstTransformer()
@@ -303,7 +353,8 @@ class AstTransformer(Transformer):
         return FileMeta(
             (lark_meta.line, lark_meta.end_line),
             (lark_meta.column, lark_meta.end_column),
-            file=self._current_file)
+            file=self._current_file,
+        )
 
     # ------------------------------------------------------------------
     # start / toolset / deliberate / include
@@ -314,7 +365,10 @@ class AstTransformer(Transformer):
 
     @v_args(meta=True)
     def require(self, meta, items):
-        return Require(items[0].value, meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return Require(
+            items[0].value,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     # ---- toolset ----
     def toolset_name(self, items):
@@ -418,7 +472,10 @@ class AstTransformer(Transformer):
         if len(prompts) == 1:
             return prompts[0]
         text = "\n".join(p.prompt for p in prompts)
-        return MicroPrompt(text, meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta})
+        return MicroPrompt(
+            text,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
+        )
 
     def plan_type(self, items):
         return items[0].value
@@ -463,12 +520,17 @@ class AstTransformer(Transformer):
         if all([o is None for o in outs]):
             outs = []
 
-        file_meta = FileMeta((meta.line, meta.end_line), (meta.column, meta.end_column), file=self._current_file)
+        file_meta = FileMeta(
+            (meta.line, meta.end_line),
+            (meta.column, meta.end_column),
+            file=self._current_file,
+        )
         return PlanBlock(
             action_inputs=ins,
             action_outputs=outs,
             body=body,
-            meta={"file_meta": file_meta, "node_meta": node_meta})
+            meta={"file_meta": file_meta, "node_meta": node_meta},
+        )
 
     @v_args(meta=True)
     def deliberate(self, meta, items):
@@ -510,7 +572,8 @@ class AstTransformer(Transformer):
             guidelines=guidelines,
             plan=plan_blocks,
             generated_actions=actions,
-            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta})
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
+        )
 
     # ------------------------------------------------------------------
     # Prompts
@@ -589,7 +652,9 @@ class AstTransformer(Transformer):
     def math_func(self, meta, items):
         fn_name = items[0]
         if fn_name not in builtin_func_map:
-            raise NemantixParserException(f"Undefined builtin function: \"{fn_name}(...)\"!")
+            raise NemantixParserException(
+                f'Undefined builtin function: "{fn_name}(...)"!'
+            )
         return BuiltinFunction(
             builtin_func_map[fn_name],
             args=items[1:],
@@ -615,21 +680,30 @@ class AstTransformer(Transformer):
             text, exp = text.split("e")
         if "." in text:
             val = float(text) if not exp else float(text) * (10 ** int(exp))
-            return SingleValue(val, VariableTypeEnum.FLOAT,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+            return SingleValue(
+                val,
+                VariableTypeEnum.FLOAT,
+                meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+            )
 
         val = int(text) if not exp else int(text) * (10 ** int(exp))
-        return SingleValue(val, VariableTypeEnum.INT,
-                           meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return SingleValue(
+            val,
+            VariableTypeEnum.INT,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def boolean(self, meta, items):
         item = items[0]
         if isinstance(item, Token):
-            item = item.value == 'true'
+            item = item.value == "true"
 
-        return SingleValue(item, VariableTypeEnum.BOOL,
-                           meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return SingleValue(
+            item,
+            VariableTypeEnum.BOOL,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     def string(self, items):
         return items[0]
@@ -637,17 +711,31 @@ class AstTransformer(Transformer):
     def ESCAPED_STRING(self, token):
         # token.value includes quotes
         val = token.value[1:-1]
-        file_meta = FileMeta((token.line, token.end_line), (token.column, token.end_column), file=self._current_file)
+        file_meta = FileMeta(
+            (token.line, token.end_line),
+            (token.column, token.end_column),
+            file=self._current_file,
+        )
 
         if re.search(FSTRING_START_EXPR_PATTERN, val):
             try:
                 parts = parse_escaped_string(val)
             except Exception as e:
-                raise NemantixParserException(f"Error in formatted string parsing at line {token.line}, "
-                                              f"column {token.column} \n{token}\n{e}")
-            return SingleValue(parts, VariableTypeEnum.FSTRING, meta={"file_meta": file_meta, "node_meta": None})
+                raise NemantixParserException(
+                    f"Error in formatted string parsing at line {token.line}, "
+                    f"column {token.column} \n{token}\n{e}"
+                )
+            return SingleValue(
+                parts,
+                VariableTypeEnum.FSTRING,
+                meta={"file_meta": file_meta, "node_meta": None},
+            )
 
-        return SingleValue(val, VariableTypeEnum.STRING, meta={"file_meta": file_meta, "node_meta": None})
+        return SingleValue(
+            val,
+            VariableTypeEnum.STRING,
+            meta={"file_meta": file_meta, "node_meta": None},
+        )
 
     @v_args(meta=True)
     def variable(self, meta, items):
@@ -670,13 +758,15 @@ class AstTransformer(Transformer):
                 path.append(it)
 
         if name in RESERVED_VAR_NAMES:
-            raise NemantixParserException(f'Cannot declare variable with reserved name "{name}"!')
+            raise NemantixParserException(
+                f'Cannot declare variable with reserved name "{name}"!'
+            )
 
         return Variable(
             name=name,
             prompt=prompt,
             path=path,
-            meta={"file_meta": self._build_file_meta(meta), "node_meta": None}
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
         )
 
     def var_path(self, items):
@@ -687,111 +777,187 @@ class AstTransformer(Transformer):
     # ------------------------------------------------------------------
     @staticmethod
     def _get_binary_operands(items):
-        it0 = items[0][0] if isinstance(items[0], list) and len(items[0]) == 1 else items[0]
-        it1 = items[1][0] if isinstance(items[1], list) and len(items[1]) == 1 else items[1]
+        it0 = (
+            items[0][0]
+            if isinstance(items[0], list) and len(items[0]) == 1
+            else items[0]
+        )
+        it1 = (
+            items[1][0]
+            if isinstance(items[1], list) and len(items[1]) == 1
+            else items[1]
+        )
         return it0, it1
 
     @v_args(meta=True)
     def add(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.ADD, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.ADD,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def sub(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.SUB, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.SUB,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def mul(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.MUL, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.MUL,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def div(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.DIV, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.DIV,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def mod(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.MOD, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.MOD,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def pow(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.POW, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.POW,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def eq(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.EQ, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.EQ,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def neq(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.NE, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.NE,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def lt(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.LT, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.LT,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def gt(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.GT, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.GT,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def lte(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.LTE, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.LTE,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def gte(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.GTE, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.GTE,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def op_or(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.LOGICAL_OR, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.LOGICAL_OR,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def op_xor(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.LOGICAL_XOR, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.LOGICAL_XOR,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def op_and(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.LOGICAL_AND, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.LOGICAL_AND,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def op_fallback(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.FALLBACK, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.FALLBACK,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def string_concat(self, meta, items):
         it0, it1 = self._get_binary_operands(items)
-        return BinaryOperation(BinaryOperationEnum.CONCAT, it0, it1,
-                               meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return BinaryOperation(
+            BinaryOperationEnum.CONCAT,
+            it0,
+            it1,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     # ------------------------------------------------------------------
     # Similarity ops
@@ -872,26 +1038,38 @@ class AstTransformer(Transformer):
     # ------------------------------------------------------------------
     @v_args(meta=True)
     def unary_plus(self, meta, items):
-        return UnaryOperation(UnaryOperationEnum.POS, items[0],
-                              meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return UnaryOperation(
+            UnaryOperationEnum.POS,
+            items[0],
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def unary_minus(self, meta, items):
-        return UnaryOperation(UnaryOperationEnum.NEG, items[0],
-                              meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return UnaryOperation(
+            UnaryOperationEnum.NEG,
+            items[0],
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def op_not(self, meta, items):
-        return UnaryOperation(UnaryOperationEnum.NOT, items[0],
-                              meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return UnaryOperation(
+            UnaryOperationEnum.NOT,
+            items[0],
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     # ------------------------------------------------------------------
     # Lists / structures
     # ------------------------------------------------------------------
     @v_args(meta=True)
     def list_create(self, meta, items):
-        return Collection(items, VariableTypeEnum.LIST,
-                          meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return Collection(
+            items,
+            VariableTypeEnum.LIST,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     def list_key(self, items):
         return "key", items[0].value
@@ -905,8 +1083,11 @@ class AstTransformer(Transformer):
     @v_args(meta=True)
     def list_literal(self, meta, items):
         data = items[0] if len(items) > 0 else []
-        return Collection(data, VariableTypeEnum.LIST,
-                          meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return Collection(
+            data,
+            VariableTypeEnum.LIST,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     def list_item_kv(self, items):
         k, v = None, None
@@ -922,7 +1103,10 @@ class AstTransformer(Transformer):
 
     @v_args(meta=True)
     def frame_apply(self, meta, items) -> AsFrame:
-        apply = AsFrame(value=items[0][0].value, meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        apply = AsFrame(
+            value=items[0][0].value,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
         return apply
 
     @v_args(meta=True)
@@ -975,9 +1159,11 @@ class AstTransformer(Transformer):
 
     @v_args(meta=True)
     def none(self, meta, items):
-        return SingleValue(None, VariableTypeEnum.NONE,
-                           meta={"file_meta": self._build_file_meta(meta),
-                                 "node_meta": None})
+        return SingleValue(
+            None,
+            VariableTypeEnum.NONE,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     # ------------------------------------------------------------------
     # IN / OUT (ActionInput / ActionOutput)
@@ -1027,7 +1213,9 @@ class AstTransformer(Transformer):
             meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
         )
 
-    def get_parameter_modifiers(self, modifier: dict | None, rest: List) -> tuple[Expression | None, MicroPrompt, bool]:
+    def get_parameter_modifiers(
+        self, modifier: dict | None, rest: List
+    ) -> tuple[Expression | None, MicroPrompt, bool]:
         prompt = None
 
         for it in rest:
@@ -1136,8 +1324,11 @@ class AstTransformer(Transformer):
         if var_name == "__out" or var_name == "__":
             return None
 
-        return ActionOutput(name=var_name, prompt=prompt,
-                            meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return ActionOutput(
+            name=var_name,
+            prompt=prompt,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def output_unnamed(self, meta, items):
@@ -1205,7 +1396,11 @@ class AstTransformer(Transformer):
         if all([o is None for o in outs]):
             outs = []
 
-        file_meta = FileMeta((meta.line, meta.end_line), (meta.column, meta.end_column), file=self._current_file)
+        file_meta = FileMeta(
+            (meta.line, meta.end_line),
+            (meta.column, meta.end_column),
+            file=self._current_file,
+        )
         return ActionBlock(
             name=name_str,
             prompt=desc_prompt,
@@ -1247,7 +1442,9 @@ class AstTransformer(Transformer):
         node_meta = items.pop(0) if items and isinstance(items[0], NodeMeta) else None
         non_tokens = [i for i in items if not isinstance(i, Token)]
 
-        block = RepeatBlock(meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta})
+        block = RepeatBlock(
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta}
+        )
         for st in non_tokens[1:]:
             if isinstance(st, Statement):
                 block.add_node(st)
@@ -1269,7 +1466,9 @@ class AstTransformer(Transformer):
             )
             body = filtered[1]
         else:
-            bind = filtered[1].children  # Tree(Token('RULE', 'loop_each_bind'), ['idx', 'var_name', [where_cond]])
+            bind = filtered[
+                1
+            ].children  # Tree(Token('RULE', 'loop_each_bind'), ['idx', 'var_name', [where_cond]])
             idx_name = bind[0]
             item_name = bind[1]
             block = RepeatEachBlock(
@@ -1305,8 +1504,11 @@ class AstTransformer(Transformer):
                 body = it
             elif isinstance(it, tuple) and it[0] == "index":
                 as_vars = it[1]
-        block = RepeatTimesBlock(times or 0, as_vars=as_vars,
-                                 meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta})
+        block = RepeatTimesBlock(
+            times or 0,
+            as_vars=as_vars,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
+        )
         for st in body:
             block.add_node(st)
         return block
@@ -1334,11 +1536,17 @@ class AstTransformer(Transformer):
                         body.append(it)
 
         if mode == "WHILE":
-            block = RepeatWhileBlock(condition=cond, max_it=max_iter,
-                                     meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta})
+            block = RepeatWhileBlock(
+                condition=cond,
+                max_it=max_iter,
+                meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
+            )
         else:
-            block = RepeatUntilBlock(condition=cond, max_it=max_iter,
-                                     meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta})
+            block = RepeatUntilBlock(
+                condition=cond,
+                max_it=max_iter,
+                meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
+            )
 
         for st in body:
             if isinstance(st, Statement):
@@ -1356,17 +1564,26 @@ class AstTransformer(Transformer):
 
     @v_args(meta=True)
     def elif_clause(self, meta, items):
-        return ElifBlock(condition=items[0], body=items[1],
-                         meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return ElifBlock(
+            condition=items[0],
+            body=items[1],
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def else_clause(self, meta, items):
-        return ElseBlock(body=items[0], meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return ElseBlock(
+            body=items[0],
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def if_clause(self, meta, items):
-        return IfBlock(condition=items[0], body=items[1],
-                       meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return IfBlock(
+            condition=items[0],
+            body=items[1],
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     @v_args(meta=True)
     def condition_if(self, meta, items):
@@ -1389,7 +1606,8 @@ class AstTransformer(Transformer):
             if_block=if_block,
             elif_list=elif_list,
             else_block=else_block,
-            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta})
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
+        )
 
     # ------------------------------------------------------------------
     # Function calls: do ...
@@ -1431,8 +1649,11 @@ class AstTransformer(Transformer):
 
     def inline_func_call(self, items):
         node_meta = items.pop(0) if items and isinstance(items[0], NodeMeta) else None
-        callable_type = items.pop(0)[1] if items and isinstance(items[0], tuple) and items[0][
-            0] == "callable_type" else None
+        callable_type = (
+            items.pop(0)[1]
+            if items and isinstance(items[0], tuple) and items[0][0] == "callable_type"
+            else None
+        )
         name: Optional[str] = None
         using_expr: Optional[Expression] = None
         producing_expr: Optional[Expression] = None
@@ -1460,9 +1681,9 @@ class AstTransformer(Transformer):
             if isinstance(end_item, tuple):
                 end_line = 0
                 end_column = 0
-                
+
                 for it in end_item:
-                    if it is None or not hasattr(it, 'meta'):
+                    if it is None or not hasattr(it, "meta"):
                         continue
 
                     end_line = max(end_line, it.meta["file_meta"].line[-1])
@@ -1501,7 +1722,9 @@ class AstTransformer(Transformer):
                 prompt = it
 
         if isinstance(producing_expr, SingleValue):
-            raise NemantixParserException(f'Cannot produce a constant value "{producing_expr.value}" in DO statement!')
+            raise NemantixParserException(
+                f'Cannot produce a constant value "{producing_expr.value}" in DO statement!'
+            )
 
         # TODO: handle imports from included files and manage imported deliberates
         # if ( name not in builtin_func_map and
@@ -1533,7 +1756,11 @@ class AstTransformer(Transformer):
         return {"name": items[0].value}
 
     def slot_enum(self, items):
-        return {"ENUM_TYPE": [it.value for it in items[1:]]}
+        vals = [it.value for it in items[1:]]
+        for it in vals:
+            if it.strip() == "":
+                raise NemantixParserException("Cannot use empty string as slot enum.")
+        return {"ENUM_TYPE": vals}
 
     def slot_types(self, items):
         types_list = []
@@ -1582,7 +1809,9 @@ class AstTransformer(Transformer):
                 if "types" in it:
                     types = it["types"] if len(it["types"]) > 0 else None
                 if "cardinality" in it:
-                    cardinality = it["cardinality"] if len(it["cardinality"]) > 0 else None
+                    cardinality = (
+                        it["cardinality"] if len(it["cardinality"]) > 0 else None
+                    )
 
         return Slot(
             name=name,
@@ -1601,7 +1830,10 @@ class AstTransformer(Transformer):
     @v_args(meta=True)
     def frame(self, meta, items):
         node_meta = items.pop(0) if items and isinstance(items[0], NodeMeta) else None
-        frame = Frame(name=items[0], meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta})
+        frame = Frame(
+            name=items[0],
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
+        )
         self._frame_names.append(items[0])
         if len(items) > 1:
             for e in items[1]:
@@ -1615,7 +1847,11 @@ class AstTransformer(Transformer):
         return items[0].value
 
     def meta_decl(self, items):
-        name = ".".join([n.value for n in items[0]]) if len(items[0]) > 1 else items[0][0].value
+        name = (
+            ".".join([n.value for n in items[0]])
+            if len(items[0]) > 1
+            else items[0][0].value
+        )
         value = items[1] if len(items) > 1 else None
 
         if isinstance(value, Token):
@@ -1631,7 +1867,9 @@ class AstTransformer(Transformer):
                 lab = it
             elif isinstance(it, Annotation):
                 _annotations.append(it)
-        return NodeMeta(annotations=_annotations, label=lab, file_meta=self._build_file_meta(meta))
+        return NodeMeta(
+            annotations=_annotations, label=lab, file_meta=self._build_file_meta(meta)
+        )
 
     def meta_content(self, items):
         name = items[0].value
@@ -1641,19 +1879,27 @@ class AstTransformer(Transformer):
 
     def inner_meta_expr_value(self, items):
         if items[0].meta["node_meta"]:
-            raise NemantixParserException("Parsing error on node '" + str(items[
-                                                                              0]) + "':\nNested intentables are not allowed. Maybe you used a '{label}' as a value of a '@meta'")
+            raise NemantixParserException(
+                "Parsing error on node '"
+                + str(items[0])
+                + "':\nNested intentables are not allowed. Maybe you used a '{label}' as a value of a '@meta'"
+            )
         return items[0]
 
     @v_args(meta=True)
     def meta_expression(self, meta, items):
         items = items[0] if items and isinstance(items[0], list) else items
-        return MetaExpression(quals=items, meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return MetaExpression(
+            quals=items,
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None},
+        )
 
     # --- Flow control ---
     @v_args(meta=True)
     def return_statement(self, meta, items):
-        return Return(items, meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return Return(
+            items, meta={"file_meta": self._build_file_meta(meta), "node_meta": None}
+        )
 
     @v_args(meta=True)
     def break_statement(self, meta, items):
@@ -1661,7 +1907,9 @@ class AstTransformer(Transformer):
 
     @v_args(meta=True)
     def continue_statement(self, meta, items):
-        return Continue(meta={"file_meta": self._build_file_meta(meta), "node_meta": None})
+        return Continue(
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": None}
+        )
 
 
 class FixerTransformer(AstTransformer):
@@ -1679,8 +1927,10 @@ class FixerTransformer(AstTransformer):
 
         if do.callable_type == CallableTypeEnum.TOOL and name not in IMPORTED_TOOLSETS:
             if name in BuiltinFunctionEnum:
-                logger.warning(f'Changed callable_type from "{do.callable_type}" to "None" '
-                               f'to avoid error on builtin call "{name}"!')
+                logger.warning(
+                    f'Changed callable_type from "{do.callable_type}" to "None" '
+                    f'to avoid error on builtin call "{name}"!'
+                )
                 do.callable_type = None
 
         # fix output variables in do llm
@@ -1688,14 +1938,18 @@ class FixerTransformer(AstTransformer):
             producing = do.producing
             if isinstance(producing, Collection):
                 if len(producing.value) >= 1:
-                    logger.warning(f'Changed producing clause in do llm from '
-                                   f'"{[v for v in producing.value]}" to "{producing.value[0]}"!')
+                    logger.warning(
+                        f"Changed producing clause in do llm from "
+                        f'"{[v for v in producing.value]}" to "{producing.value[0]}"!'
+                    )
                     do.producing = producing.value[0]
 
         # fix wrong producing schema (frame) usage
         if do.callable_type in [CallableTypeEnum.TOOL, CallableTypeEnum.ACTION]:
             if do.producing_schema is not None:
-                logger.warning(f'Removed producing schema "{do.producing_schema}" on action or tool!')
+                logger.warning(
+                    f'Removed producing schema "{do.producing_schema}" on action or tool!'
+                )
                 do.producing_schema = None
 
         return do
@@ -1836,7 +2090,9 @@ class ParserLark:
         self._fixer_transformer = FixerTransformer()
         self._include_collector = IncludeCollector()
 
-    def parse(self, content: str, location: PathLike, verbose=False, enable_fixer=False):
+    def parse(
+        self, content: str, location: PathLike, verbose=False, enable_fixer=False
+    ):
         """
         Parse one root location or a list of root locations, using a caller-provided registry.
 
@@ -1908,16 +2164,24 @@ class ParserLark:
             expected = sorted([TOKEN_MAP.get(t, t) for t in e.expected])
 
             if ":" in e.expected or "COLON" in e.expected:
-                msg.append("💡 Hint: You might be missing a colon ':' at the end of the previous definition.")
+                msg.append(
+                    "💡 Hint: You might be missing a colon ':' at the end of the previous definition."
+                )
             elif any("_END_" in t for t in e.expected):
                 msg.append("💡 Hint: A block might not be closed properly.")
                 msg.append(f"         Expected one of: {', '.join(expected)}")
                 if token.type == "$END":
-                    msg.append("         (You reached the end of the file without closing a block)")
+                    msg.append(
+                        "         (You reached the end of the file without closing a block)"
+                    )
             elif "]" in e.expected:
-                msg.append("💡 Hint: You might have forgotten to close a variable bracket ']'")
+                msg.append(
+                    "💡 Hint: You might have forgotten to close a variable bracket ']'"
+                )
             else:
-                formatted_expected = ", ".join(f"'{x}'" if not x.startswith("'") else x for x in expected)
+                formatted_expected = ", ".join(
+                    f"'{x}'" if not x.startswith("'") else x for x in expected
+                )
                 msg.append(f"Expected one of: {formatted_expected}")
 
         return "\n".join(msg)

@@ -16,9 +16,7 @@ def llama_llm_proxy(mock_openai_client, monkeypatch):
     # Patch the OpenAI class where the base OpenAICompatibleProxy instantiates it
     monkeypatch.setattr("nemantix.llm.openai_proxy.OpenAI", mock_openai_client)
     monkeypatch.setenv("OLLAMA_API_KEY", "mock-api-key")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
     return LlamaProxy("llama-3.1-8b", host="http://localhost:11434")
 
 
@@ -70,9 +68,7 @@ def test_llama_errors_surface(monkeypatch):
 
     monkeypatch.setattr("nemantix.llm.openai_proxy.OpenAI", bad_ctor)
     monkeypatch.setenv("OLLAMA_API_KEY", "mock-key")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
 
     with pytest.raises(
         LLMProxyException,

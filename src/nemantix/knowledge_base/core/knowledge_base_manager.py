@@ -9,13 +9,18 @@ from pathlib import Path
 from typing import List, Dict
 from pydantic import BaseModel, Field
 
-from nemantix.knowledge_base.document_plugins.plugin_registry import DocumentPluginRegistry
+from nemantix.knowledge_base.document_plugins.plugin_registry import (
+    DocumentPluginRegistry,
+)
 from nemantix.knowledge_base.document_structure.coordinates import Coordinates
 from nemantix.knowledge_base.document_structure.document import Document
 from nemantix.knowledge_base.document_structure.hierarchy import DocumentHierarchy
 from nemantix.knowledge_base.document_structure.item import Item
 from nemantix.knowledge_base.document_structure.location import Location
-from nemantix.knowledge_base.persistence.relational_registry import RegistryManager, DocumentRecord
+from nemantix.knowledge_base.persistence.relational_registry import (
+    RegistryManager,
+    DocumentRecord,
+)
 from nemantix.knowledge_base.persistence.vector_stores.factory import VectorStoreFactory
 from nemantix.knowledge_base.pipeline.enricher import SegmentEnricher
 from nemantix.knowledge_base.pipeline.graph_builder import GraphBuilder
@@ -28,7 +33,6 @@ from nemantix.common.logger import get_package_logger
 from nemantix.llm import AbstractLLMProxy
 
 logger = get_package_logger(__name__)
-
 
 
 os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
@@ -69,6 +73,7 @@ class KnowledgeBaseManagerConfig(BaseModel):
 class KnowledgeBaseManager:
     def __init__(self, llm: AbstractLLMProxy, config: KnowledgeBaseManagerConfig):
         from nemantix.knowledge_base.models.embedding import SentenceTransformerWrapper
+
         self.llm = llm
 
         self.config = config
@@ -86,12 +91,11 @@ class KnowledgeBaseManager:
         self.planner = HierarchyPlanner(
             llm_proxy=self.llm,
             window_lines=self.config.planner_window_lines,
-            overlap_lines=self.config.planner_overlap_lines
+            overlap_lines=self.config.planner_overlap_lines,
         )
 
         self.enricher = SegmentEnricher(
-            llm_proxy=self.llm,
-            max_workers=self.config.enricher_max_workers
+            llm_proxy=self.llm, max_workers=self.config.enricher_max_workers
         )
 
         self.embedder = SentenceTransformerWrapper(self.config.embedder_model)
@@ -102,7 +106,8 @@ class KnowledgeBaseManager:
             password=self.config.db_password,
             host=self.config.db_host,
             port=self.config.db_port,
-            database=self.config.db_database)
+            database=self.config.db_database,
+        )
 
         self.registry_manager = RegistryManager(self.db_connector)
         self.registry_manager.initialize_database()
@@ -120,14 +125,21 @@ class KnowledgeBaseManager:
             collection_name=index_name,
         )
 
-    def process_folder(self, folder_path: Path | str, index_name: str, target_views: List[Dict[str, str]] = None,
-                       doc_type: str = "unknown") -> None:
+    def process_folder(
+        self,
+        folder_path: Path | str,
+        index_name: str,
+        target_views: List[Dict[str, str]] = None,
+        doc_type: str = "unknown",
+    ) -> None:
         """
         Scans a folder and performs ingestion for all files with
         supported extensions based on the loaded plugins.
         """
         folder_path = Path(folder_path)
-        logger.info(f"\n=== Starting folder scan: {folder_path} into '{index_name}' ===")
+        logger.info(
+            f"\n=== Starting folder scan: {folder_path} into '{index_name}' ==="
+        )
 
         supported_extensions = {
             f".{ext}" for ext in self.registry._plugins_by_extension.keys()
@@ -137,7 +149,9 @@ class KnowledgeBaseManager:
             logger.warning("No plugins found in the registry. Aborting.")
             return
 
-        logger.info(f"  > Loaded supported extensions: {', '.join(supported_extensions)}")
+        logger.info(
+            f"  > Loaded supported extensions: {', '.join(supported_extensions)}"
+        )
 
         processed_count = 0
         for filepath in folder_path.iterdir():
@@ -149,25 +163,35 @@ class KnowledgeBaseManager:
                         location=location,
                         doc_type=doc_type,
                         index_name=index_name,
-                        target_views=target_views
+                        target_views=target_views,
                     )
                     if success:
                         processed_count += 1
                 except Exception as e:
                     logger.info(f"Error processing {filepath.name}: {e}")
 
-        logger.info(f"\n=== Scan completed. Processed {processed_count} files into '{index_name}' ===")
+        logger.info(
+            f"\n=== Scan completed. Processed {processed_count} files into '{index_name}' ==="
+        )
 
-    def index_document(self, location: Location, index_name: str, target_views: List[Dict[str, str]] = None, doc_type: str = "unknown") -> bool:
+    def index_document(
+        self,
+        location: Location,
+        index_name: str,
+        target_views: List[Dict[str, str]] = None,
+        doc_type: str = "unknown",
+    ) -> bool:
         """
         Processes a single document: Planning, Segmentation, Graph construction, and Summarization.
         """
         if target_views is None:
-            target_views = [{
-                "view_id": "global_view",
-                "name": "Global View",
-                "description": "Default view for all ingested documents."
-            }]
+            target_views = [
+                {
+                    "view_id": "global_view",
+                    "name": "Global View",
+                    "description": "Default view for all ingested documents.",
+                }
+            ]
 
         if location.location_type in ["path", "file"]:
             safe_path = Path(location.value)
@@ -194,32 +218,44 @@ class KnowledgeBaseManager:
             self.registry_manager.get_or_create_index(
                 index_name=index_name,
                 graph_path=str(graph_path),
-                embedding_model=self.config.embedder_model
+                embedding_model=self.config.embedder_model,
             )
         except ValueError as e:
             logger.error(f"  > [CRITICAL ERROR] {e}")
             raise NemantixException(
-                f"Embedding model mismatch. Aborting ingestion to prevent vector space corruption: {e}") from e
+                f"Embedding model mismatch. Aborting ingestion to prevent vector space corruption: {e}"
+            ) from e
 
         if self.registry_manager.is_document_in_index(document.doc_id, index_name):
-            logger.info(f"  > [SKIP] Document '{doc_name}' is already present in index {index_name}. Skipping.")
+            logger.info(
+                f"  > [SKIP] Document '{doc_name}' is already present in index {index_name}. Skipping."
+            )
 
             try:
-                self.registry_manager.bind_documents_to_views([document.doc_id], target_views)
+                self.registry_manager.bind_documents_to_views(
+                    [document.doc_id], target_views
+                )
                 logger.info(
-                    f"  > Existing document successfully bound to views: {[v.get('view_id') for v in target_views]}.")
+                    f"  > Existing document successfully bound to views: {[v.get('view_id') for v in target_views]}."
+                )
             except Exception as e:
-                logger.error(f"  > [ERROR] Failed to update views for existing document: {e}")
+                logger.error(
+                    f"  > [ERROR] Failed to update views for existing document: {e}"
+                )
 
             return False
 
         # Load existing Graph for this specific index
         if os.path.exists(graph_path):
-            logger.info(f"  > [Load] Existing graph found. Loading from {graph_path}...")
+            logger.info(
+                f"  > [Load] Existing graph found. Loading from {graph_path}..."
+            )
             with open(graph_path, "rb") as f:
                 knowledge_graph = pickle.load(f)
         else:
-            logger.info(f"  > [Init] No pre-existing graph found for '{index_name}'. Creating a new graph...")
+            logger.info(
+                f"  > [Init] No pre-existing graph found for '{index_name}'. Creating a new graph..."
+            )
             knowledge_graph = nx.DiGraph()
 
         # Hierarchy inference
@@ -242,21 +278,24 @@ class KnowledgeBaseManager:
         # Base trees and graphs construction
         doc_graph = GraphBuilder.build_from_hierarchy(document.doc_id, planner_output)
         doc_hierarchy = DocumentHierarchy.from_planner_output(
-            doc_id=document.doc_id,
-            planner_output=planner_output
+            doc_id=document.doc_id, planner_output=planner_output
         )
 
         # Segmentation and Enrichment
         segmenter = DocumentSegmenter(document, plugin)
         flat_segments = segmenter.extract_flat_segments(planner_output)
 
-        logger.info(f"  > Extracted {len(flat_segments)} segments. Starting enrichment...")
+        logger.info(
+            f"  > Extracted {len(flat_segments)} segments. Starting enrichment..."
+        )
         enriched_segments = self.enricher.enrich_batch(flat_segments)
 
         items_collection = []
 
         # Chunk processing and relationship building
-        self._process_chunks(enriched_segments, doc_graph, doc_hierarchy, document, items_collection)
+        self._process_chunks(
+            enriched_segments, doc_graph, doc_hierarchy, document, items_collection
+        )
 
         # Bottom-Up Summarization
         self._bottom_up_summarization(doc_graph, document, plugin, items_collection)
@@ -279,14 +318,16 @@ class KnowledgeBaseManager:
         metadata = []
         for item in items_collection:
             meta = item.metadata.copy()
-            meta.update({
-                "item_id": item.item_id,
-                "base_node_id": item.item_id,
-                "hierarchy": item.hierarchy_ref,
-                "text": item.content,
-                "doc_id": item.doc_id,
-                "doc_ref": item.doc_ref,
-            })
+            meta.update(
+                {
+                    "item_id": item.item_id,
+                    "base_node_id": item.item_id,
+                    "hierarchy": item.hierarchy_ref,
+                    "text": item.content,
+                    "doc_id": item.doc_id,
+                    "doc_ref": item.doc_ref,
+                }
+            )
             if item.metadata:
                 for key, value in item.metadata.items():
                     if key not in meta:
@@ -295,22 +336,26 @@ class KnowledgeBaseManager:
 
         vector_store = self._get_vector_store(index_name)
         vector_store.add(vectors=vectors_array, metadata=metadata)
-        logger.info(f"  > Vectors saved to vector store. Total vectors present: {vector_store.count()}")
+        logger.info(
+            f"  > Vectors saved to vector store. Total vectors present: {vector_store.count()}"
+        )
 
         try:
-
             self.registry_manager.register_document(
                 doc_id=document.doc_id,
                 index_name=index_name,
                 title=doc_stem,
                 source_path=location.value,
-                doc_format=location.extension.lstrip('.'),
+                doc_format=location.extension.lstrip("."),
                 doc_type=document.doc_type,
-                has_physical_copy=True
+                has_physical_copy=True,
             )
-            self.registry_manager.bind_documents_to_views([document.doc_id], target_views)
+            self.registry_manager.bind_documents_to_views(
+                [document.doc_id], target_views
+            )
             logger.info(
-                f"  > Document registered in PostgreSQL and bound to views: {[v.get('view_id') for v in target_views]}.")
+                f"  > Document registered in PostgreSQL and bound to views: {[v.get('view_id') for v in target_views]}."
+            )
         except Exception as e:
             logger.error(f"  > [ERROR] Failed to register document in DB: {e}")
 
@@ -319,20 +364,30 @@ class KnowledgeBaseManager:
 
         return True
 
-    def _process_chunks(self, enriched_segments: List[Dict], doc_graph: nx.DiGraph, doc_hierarchy, document,
-                        items_collection: list) -> None:
+    def _process_chunks(
+        self,
+        enriched_segments: List[Dict],
+        doc_graph: nx.DiGraph,
+        doc_hierarchy,
+        document,
+        items_collection: list,
+    ) -> None:
         """Helper to transform segments into Items and insert them into the graph as leaf nodes."""
 
         for seg in enriched_segments:
             raw_id = seg.get("node_id", "")
-            original_node_id = raw_id.split("_chunk_")[0].split("_intro")[0].split("_outro")[0]
+            original_node_id = (
+                raw_id.split("_chunk_")[0].split("_intro")[0].split("_outro")[0]
+            )
 
             chunk_node_id = raw_id
             if chunk_node_id == original_node_id:
                 chunk_node_id = f"{chunk_node_id}_chunk_0"
 
             try:
-                hierarchy_string = doc_hierarchy.build_hierarchy_ref(original_node_id, include_document=True)
+                hierarchy_string = doc_hierarchy.build_hierarchy_ref(
+                    original_node_id, include_document=True
+                )
             except KeyError:
                 hierarchy_string = f"document::Unknown<|>{seg.get('kind', 'unknown')}::{seg.get('label', 'unknown')}"
 
@@ -348,7 +403,7 @@ class KnowledgeBaseManager:
                 text_view=seg.get("text_view", seg["text"]),
                 hierarchy_ref=hierarchy_string,
                 coordinates=coords,
-                metadata=seg.get("metadata", {})
+                metadata=seg.get("metadata", {}),
             )
 
             items_collection.append(item)
@@ -359,15 +414,21 @@ class KnowledgeBaseManager:
                 label=item.item_id,
                 text=item.content,
                 text_view=item.text_view,
-                coordinates=coords
+                coordinates=coords,
             )
             doc_graph.add_edge(original_node_id, item.item_id, etype="HAS_CHILD")
 
-    def _bottom_up_summarization(self, doc_graph: nx.DiGraph, document, plugin, items_collection: list) -> None:
+    def _bottom_up_summarization(
+        self, doc_graph: nx.DiGraph, document, plugin, items_collection: list
+    ) -> None:
         """Helper to perform bottom-up summarization and update bounding boxes using the plugin."""
 
         logger.info("  > Starting Bottom-Up Summarization for current document...")
-        tree_edges = [(u, v) for u, v, d in doc_graph.edges(data=True) if d.get("etype") == "HAS_CHILD"]
+        tree_edges = [
+            (u, v)
+            for u, v, d in doc_graph.edges(data=True)
+            if d.get("etype") == "HAS_CHILD"
+        ]
         tree_graph = nx.DiGraph(tree_edges)
         tree_graph.add_nodes_from(doc_graph.nodes())
 
@@ -375,17 +436,22 @@ class KnowledgeBaseManager:
         generations = list(nx.topological_generations(reversed_tree))
 
         for level_idx, generation in enumerate(generations):
-            nodes_to_process = [n for n in generation if "text_view" not in doc_graph.nodes[n]]
+            nodes_to_process = [
+                n for n in generation if "text_view" not in doc_graph.nodes[n]
+            ]
 
             if not nodes_to_process:
                 continue
 
-            logger.info(f"    > Processing Level {level_idx}: {len(nodes_to_process)} nodes concurrently...")
+            logger.info(
+                f"    > Processing Level {level_idx}: {len(nodes_to_process)} nodes concurrently..."
+            )
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-
                 future_to_node = {
-                    executor.submit(self._summarize_single_node, n, doc_graph, document, plugin): n
+                    executor.submit(
+                        self._summarize_single_node, n, doc_graph, document, plugin
+                    ): n
                     for n in nodes_to_process
                 }
 
@@ -396,7 +462,9 @@ class KnowledgeBaseManager:
                         if result:
                             doc_graph.nodes[node_id]["text_view"] = result["text_view"]
                             if result["coordinates"]:
-                                doc_graph.nodes[node_id]["coordinates"] = result["coordinates"]
+                                doc_graph.nodes[node_id]["coordinates"] = result[
+                                    "coordinates"
+                                ]
 
                             parent_item = Item(
                                 item_id=node_id,
@@ -408,20 +476,26 @@ class KnowledgeBaseManager:
                                 text_view=result["text_view"],
                                 hierarchy_ref=result["node_label"],
                                 coordinates=result["coordinates"],
-                                metadata={"is_macro_node": True}
+                                metadata={"is_macro_node": True},
                             )
                             items_collection.append(parent_item)
 
                     except Exception as exc:
                         logger.error(f"      Error summarizing node {node_id}: {exc}")
 
-    def _summarize_single_node(self, node_id: str, doc_graph: nx.DiGraph, document, plugin) -> dict:
+    def _summarize_single_node(
+        self, node_id: str, doc_graph: nx.DiGraph, document, plugin
+    ) -> dict:
         """
         Isolated worker: calculates new coordinates and calls the LLM for summarization.
         Note: It only reads from the graph, it DOES NOT write to it.
         """
         node_data = doc_graph.nodes[node_id]
-        children_ids = [v for u, v, d in doc_graph.out_edges(node_id, data=True) if d.get("etype") == "HAS_CHILD"]
+        children_ids = [
+            v
+            for u, v, d in doc_graph.out_edges(node_id, data=True)
+            if d.get("etype") == "HAS_CHILD"
+        ]
 
         bounding_coords = None
         parent_coords_dict = node_data.get("coordinates", {})
@@ -434,12 +508,18 @@ class KnowledgeBaseManager:
             if not child_coords_raw:
                 continue
 
-            child_coords = Coordinates(**child_coords_raw) if isinstance(child_coords_raw, dict) else child_coords_raw
+            child_coords = (
+                Coordinates(**child_coords_raw)
+                if isinstance(child_coords_raw, dict)
+                else child_coords_raw
+            )
 
             if bounding_coords is None:
                 bounding_coords = child_coords
             else:
-                bounding_coords = plugin.get_bounding_coordinates(bounding_coords, child_coords)
+                bounding_coords = plugin.get_bounding_coordinates(
+                    bounding_coords, child_coords
+                )
 
         coords_dump = bounding_coords.model_dump() if bounding_coords else {}
         if coords_dump and "doc_format" not in coords_dump:
@@ -456,12 +536,14 @@ class KnowledgeBaseManager:
 
         node_label = node_data.get("label", node_id)
 
-        parent_summary = self.enricher.summarize_parent_node(node_label, children_summaries)
+        parent_summary = self.enricher.summarize_parent_node(
+            node_label, children_summaries
+        )
 
         return {
             "node_label": node_label,
             "text_view": parent_summary,
-            "coordinates": coords_dump
+            "coordinates": coords_dump,
         }
 
     def _save_debug_json(self, items_collection: list, doc_stem: str) -> None:
@@ -471,14 +553,18 @@ class KnowledgeBaseManager:
         logger.info("\n=== Saving generated Items for inspection ===")
         items_to_save = []
         for item in items_collection:
-            item_data = item.model_dump() if hasattr(item, 'model_dump') else item.__dict__.copy()
+            item_data = (
+                item.model_dump()
+                if hasattr(item, "model_dump")
+                else item.__dict__.copy()
+            )
 
-            coords = item_data.get('coordinates')
+            coords = item_data.get("coordinates")
             if coords is not None:
-                if hasattr(coords, 'model_dump'):
-                    item_data['coordinates'] = coords.model_dump()
-                elif hasattr(coords, '__dict__'):
-                    item_data['coordinates'] = coords.__dict__.copy()
+                if hasattr(coords, "model_dump"):
+                    item_data["coordinates"] = coords.model_dump()
+                elif hasattr(coords, "__dict__"):
+                    item_data["coordinates"] = coords.__dict__.copy()
 
             items_to_save.append(item_data)
 
@@ -493,10 +579,14 @@ class KnowledgeBaseManager:
         logger.info(f"\n[DANGER ZONE] Starting deletion of index: {index_name}")
 
         with self.db_connector.get_session() as session:
-            index_record = session.query(KnowledgeIndex).filter_by(index_name=index_name).first()
+            index_record = (
+                session.query(KnowledgeIndex).filter_by(index_name=index_name).first()
+            )
 
             if not index_record:
-                logger.info(f"Error: Index {index_name} does not exist in the relational database.")
+                logger.info(
+                    f"Error: Index {index_name} does not exist in the relational database."
+                )
                 return False
 
             graph_path = Path(index_record.graph_path)
@@ -510,7 +600,9 @@ class KnowledgeBaseManager:
             if success:
                 logger.info("    Done.")
             else:
-                logger.warning("    Failed to delete vector collection. It might not exist.")
+                logger.warning(
+                    "    Failed to delete vector collection. It might not exist."
+                )
         except Exception as e:
             logger.error(f"    Vector Store Error: {e}")
 
@@ -539,11 +631,17 @@ class KnowledgeBaseManager:
                 # Orphan identification and removal
                 logger.info("  > Checking for orphan documents...")
                 # A document is an orphan if it is NOT associated with ANY index (.spaces)
-                orphans = session.query(DocumentRecord).filter(~DocumentRecord.indexes.any()).all()
+                orphans = (
+                    session.query(DocumentRecord)
+                    .filter(~DocumentRecord.indexes.any())
+                    .all()
+                )
 
                 if orphans:
                     orphan_count = len(orphans)
-                    logger.info(f"    found {orphan_count} orphan documents. Deleting...")
+                    logger.info(
+                        f"    found {orphan_count} orphan documents. Deleting..."
+                    )
                     for doc in orphans:
                         # Deleting the document will automatically clean up
                         # 'view_documents' as well, thanks to the CASCADE on doc_id

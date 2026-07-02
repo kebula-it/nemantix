@@ -1,4 +1,5 @@
 """TDD suite for M1: Symbol Table — core static analysis of NXS/NXC/NXV ASTs."""
+
 from __future__ import annotations
 
 from nemantix.core.node import (
@@ -36,6 +37,7 @@ from nemantix.core.symbol_table import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fm(line: int, col: int = 0, end_col: int | None = None) -> FileMeta:
     ec = end_col if end_col is not None else col + 1
     return FileMeta(line=(line, line), column=(col, ec))
@@ -60,14 +62,19 @@ def _assign(name: str, line: int) -> Assignment:
 
 def _deliberate(name: str, line: int) -> Deliberate:
     plan = PlanBlock(action_inputs=[], action_outputs=[], body=None, meta=_meta(line))
-    return Deliberate(name=name, when=_mp(line), guidelines=_mp(line), plan=plan, meta=_meta(line))
+    return Deliberate(
+        name=name, when=_mp(line), guidelines=_mp(line), plan=plan, meta=_meta(line)
+    )
 
 
 def _action(name: str, line: int) -> ActionBlock:
     return ActionBlock(
-        name=name, prompt=_mp(line),
-        action_inputs=[], action_outputs=[],
-        body=None, meta=_meta(line),
+        name=name,
+        prompt=_mp(line),
+        action_inputs=[],
+        action_outputs=[],
+        body=None,
+        meta=_meta(line),
     )
 
 
@@ -81,9 +88,12 @@ def _slot(name: str, line: int) -> Slot:
 
 def _do(name: str, line: int, using=None) -> DoStatement:
     return DoStatement(
-        name=name, callable_type=None,
-        using=using, prompt=None,
-        producing=None, producing_schema=None,
+        name=name,
+        callable_type=None,
+        using=using,
+        prompt=None,
+        producing=None,
+        producing_schema=None,
         meta=_meta(line),
     )
 
@@ -91,6 +101,7 @@ def _do(name: str, line: int, using=None) -> DoStatement:
 # ---------------------------------------------------------------------------
 # Group 1: Scope
 # ---------------------------------------------------------------------------
+
 
 class TestScope:
     def test_define_and_local_lookup(self):
@@ -146,6 +157,7 @@ class TestScope:
 # Group 2: Variable definitions
 # ---------------------------------------------------------------------------
 
+
 class TestVariableDefinitions:
     def test_assignment_creates_variable_symbol(self):
         table = SymbolTableBuilder().build([_assign("x", line=3)])
@@ -159,11 +171,13 @@ class TestVariableDefinitions:
         assert sym.defined_at.line[0] == 7
 
     def test_multiple_assignments_all_defined(self):
-        table = SymbolTableBuilder().build([
-            _assign("a", 1),
-            _assign("b", 2),
-            _assign("c", 3),
-        ])
+        table = SymbolTableBuilder().build(
+            [
+                _assign("a", 1),
+                _assign("b", 2),
+                _assign("c", 3),
+            ]
+        )
         for name in ("a", "b", "c"):
             assert table.global_scope.lookup(name) is not None
 
@@ -186,6 +200,7 @@ class TestVariableDefinitions:
 # ---------------------------------------------------------------------------
 # Group 3: Top-level declarations
 # ---------------------------------------------------------------------------
+
 
 class TestDeclarations:
     def test_deliberate_creates_deliberate_symbol(self):
@@ -224,9 +239,7 @@ class TestDeclarations:
         assert table.global_scope.lookup("filesystem").kind == SymbolKind.TOOL
 
     def test_python_tool_declaration_creates_tool_symbol(self):
-        node = PythonToolDeclaration(
-            name="my_tool", prompt=_mp(1), meta=_meta(1)
-        )
+        node = PythonToolDeclaration(name="my_tool", prompt=_mp(1), meta=_meta(1))
         table = SymbolTableBuilder().build([node])
         assert table.global_scope.lookup("my_tool").kind == SymbolKind.TOOL
 
@@ -243,6 +256,7 @@ class TestDeclarations:
 # ---------------------------------------------------------------------------
 # Group 4: References
 # ---------------------------------------------------------------------------
+
 
 class TestReferences:
     def test_variable_usage_adds_reference(self):
@@ -281,6 +295,7 @@ class TestReferences:
 # Group 5: SymbolTable.at()
 # ---------------------------------------------------------------------------
 
+
 class TestAt:
     def test_at_definition_line_returns_symbol(self):
         table = SymbolTableBuilder().build([_assign("x", line=4)])
@@ -307,6 +322,7 @@ class TestAt:
 # Group 6: SymbolTable.lookup()
 # ---------------------------------------------------------------------------
 
+
 class TestLookup:
     def test_lookup_finds_symbol_in_scope(self):
         table = SymbolTableBuilder().build([_assign("x", line=1)])
@@ -322,10 +338,12 @@ class TestLookup:
 # Group 7: Expression traversal
 # ---------------------------------------------------------------------------
 
+
 def _bin_op(left, right, line: int) -> BinaryOperation:
     return BinaryOperation(
         operation=BinaryOperationEnum.CONCAT,
-        first=left, second=right,
+        first=left,
+        second=right,
         meta=_meta(line),
     )
 
@@ -340,7 +358,9 @@ def _builtin_call(arg, line: int) -> BuiltinFunction:
 
 def _if_cond(condition, line: int) -> ConditionBlock:
     if_block = IfBlock(condition=condition, body=[], meta=_meta(line))
-    return ConditionBlock(if_block=if_block, elif_list=None, else_block=None, meta=_meta(line))
+    return ConditionBlock(
+        if_block=if_block, elif_list=None, else_block=None, meta=_meta(line)
+    )
 
 
 class TestExpressionTraversal:
@@ -365,7 +385,11 @@ class TestExpressionTraversal:
         builder = SymbolTableBuilder()
         stmts = [
             _assign("x", line=1),
-            Assignment(var=_var("y", 2), value=_bin_op(_var("x", 2), _var("x", 2), line=2), meta=_meta(2)),
+            Assignment(
+                var=_var("y", 2),
+                value=_bin_op(_var("x", 2), _var("x", 2), line=2),
+                meta=_meta(2),
+            ),
         ]
         builder.build(stmts)
         assert builder.unresolved == []
@@ -389,7 +413,9 @@ class TestExpressionTraversal:
 
     def test_undefined_var_in_builtin_arg_is_unresolved(self):
         builder = SymbolTableBuilder()
-        builder.build([_do("print", line=1, using=_builtin_call(_var("ghost", 1), line=1))])
+        builder.build(
+            [_do("print", line=1, using=_builtin_call(_var("ghost", 1), line=1))]
+        )
         names = [n for n, _ in builder.unresolved]
         assert "ghost" in names
 
@@ -448,6 +474,7 @@ class TestExpressionTraversal:
 # Group 9: Deliberate — private actions and plan inputs
 # ---------------------------------------------------------------------------
 
+
 class TestDeliberateScope:
     def test_private_action_in_generated_actions_not_unresolved(self):
         deliberate = _deliberate("my_d", 1)
@@ -470,9 +497,15 @@ class TestDeliberateScope:
         assert "pow3" in call_names
 
     def test_plan_inputs_visible_inside_deliberate(self):
-        inp = ActionInput(name="x", required=False, default=None, prompt=None, meta=_meta(2))
-        plan = PlanBlock(action_inputs=[inp], action_outputs=[], body=None, meta=_meta(1))
-        deliberate = Deliberate(name="my_d", when=_mp(1), guidelines=_mp(1), plan=plan, meta=_meta(1))
+        inp = ActionInput(
+            name="x", required=False, default=None, prompt=None, meta=_meta(2)
+        )
+        plan = PlanBlock(
+            action_inputs=[inp], action_outputs=[], body=None, meta=_meta(1)
+        )
+        deliberate = Deliberate(
+            name="my_d", when=_mp(1), guidelines=_mp(1), plan=plan, meta=_meta(1)
+        )
         # Variable reference to "x" inside the deliberate's body
         ref_do = _do("print", 3)
         ref_do.using = _var("x", 3)
@@ -483,9 +516,15 @@ class TestDeliberateScope:
         assert "x" not in unresolved_names
 
     def test_plan_inputs_not_visible_outside_deliberate(self):
-        inp = ActionInput(name="secret", required=False, default=None, prompt=None, meta=_meta(2))
-        plan = PlanBlock(action_inputs=[inp], action_outputs=[], body=None, meta=_meta(1))
-        deliberate = Deliberate(name="my_d", when=_mp(1), guidelines=_mp(1), plan=plan, meta=_meta(1))
+        inp = ActionInput(
+            name="secret", required=False, default=None, prompt=None, meta=_meta(2)
+        )
+        plan = PlanBlock(
+            action_inputs=[inp], action_outputs=[], body=None, meta=_meta(1)
+        )
+        deliberate = Deliberate(
+            name="my_d", when=_mp(1), guidelines=_mp(1), plan=plan, meta=_meta(1)
+        )
         ref_outside = _do("print", 5)
         ref_outside.using = _var("secret", 5)
         builder = SymbolTableBuilder()
@@ -502,20 +541,27 @@ class TestDeliberateScope:
 # Group 10b: SymbolTable.at() — multiline FileMeta
 # ---------------------------------------------------------------------------
 
+
 class TestAtMultiline:
-    def _multiline_fm(self, line_start: int, line_end: int, col_start: int = 1, col_end: int = 9) -> dict:
+    def _multiline_fm(
+        self, line_start: int, line_end: int, col_start: int = 1, col_end: int = 9
+    ) -> dict:
         """FileMeta spanning multiple lines (mimics action block encoding)."""
         from nemantix.core.node import FileMeta, NodeMeta
+
         fm = FileMeta(line=(line_start, line_end), column=(col_start, col_end))
         return {"node_meta": NodeMeta(annotations=[], label=None, file_meta=fm)}
 
     def test_at_start_line_any_col_from_col_start(self):
         """Clicking at col > col_end on the first line of a multiline block still finds the symbol."""
         from nemantix.core.node import ActionBlock, MicroPrompt
+
         block = ActionBlock(
             name="my_action",
             prompt=MicroPrompt(prompt="p", meta=self._multiline_fm(1, 1)),
-            action_inputs=[], action_outputs=[], body=None,
+            action_inputs=[],
+            action_outputs=[],
+            body=None,
             meta=self._multiline_fm(2, 10, col_start=1, col_end=9),
         )
         table = SymbolTableBuilder().build([block])
@@ -528,10 +574,13 @@ class TestAtMultiline:
     def test_at_middle_line_any_col_finds_symbol(self):
         """Clicking on a middle line (not start/end) finds the multiline symbol at any column."""
         from nemantix.core.node import ActionBlock, MicroPrompt
+
         block = ActionBlock(
             name="my_action",
             prompt=MicroPrompt(prompt="p", meta=self._multiline_fm(1, 1)),
-            action_inputs=[], action_outputs=[], body=None,
+            action_inputs=[],
+            action_outputs=[],
+            body=None,
             meta=self._multiline_fm(2, 10, col_start=1, col_end=9),
         )
         table = SymbolTableBuilder().build([block])
@@ -541,12 +590,20 @@ class TestAtMultiline:
     def test_at_narrower_symbol_wins_over_multiline(self):
         """A single-line symbol inside a multiline block takes priority over the block."""
         from nemantix.core.node import ActionBlock, ActionInput, MicroPrompt
-        inp = ActionInput(name="x", required=True, default=None, prompt=None,
-                          meta={"file_meta": FileMeta(line=(5, 5), column=(5, 6))})
+
+        inp = ActionInput(
+            name="x",
+            required=True,
+            default=None,
+            prompt=None,
+            meta={"file_meta": FileMeta(line=(5, 5), column=(5, 6))},
+        )
         block = ActionBlock(
             name="my_action",
             prompt=MicroPrompt(prompt="p", meta=self._multiline_fm(1, 1)),
-            action_inputs=[inp], action_outputs=[], body=None,
+            action_inputs=[inp],
+            action_outputs=[],
+            body=None,
             meta=self._multiline_fm(2, 10, col_start=1, col_end=9),
         )
         table = SymbolTableBuilder().build([block])
@@ -577,6 +634,7 @@ class TestRepeatBlocks:
 # Group: forward-reference resolution (second pass in build)
 # ---------------------------------------------------------------------------
 
+
 class TestForwardReferenceResolution:
     """Action/variable used before it is defined must appear in sym.references."""
 
@@ -584,7 +642,9 @@ class TestForwardReferenceResolution:
         return ActionBlock(
             name=name,
             prompt=MicroPrompt(prompt="p", meta=_meta(line)),
-            action_inputs=[], action_outputs=[], body=None,
+            action_inputs=[],
+            action_outputs=[],
+            body=None,
             meta=_meta(line),
         )
 

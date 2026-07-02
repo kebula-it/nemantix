@@ -111,7 +111,11 @@ class SqlExplorerToolset(Toolset):
                     return "Query executed successfully. No results returned."
 
                 # Format as a simple string representation (or JSON)
-                output = [f"Found {len(rows)} rows:", " | ".join(str(k) for k in keys), "-" * 30]
+                output = [
+                    f"Found {len(rows)} rows:",
+                    " | ".join(str(k) for k in keys),
+                    "-" * 30,
+                ]
 
                 # Limit rows to prevent overflowing context window
                 limit = 20

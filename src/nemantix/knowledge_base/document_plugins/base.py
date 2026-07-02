@@ -82,7 +82,9 @@ class BaseDocumentPlugin:
         """
         raise NotImplementedError
 
-    def get_gap(self, current_cursor: Any, next_node_start: Any) -> Optional[Coordinates]:
+    def get_gap(
+        self, current_cursor: Any, next_node_start: Any
+    ) -> Optional[Coordinates]:
         """
         Evaluates if there is an empty space between the current cursor and the next node,
         and returns its boundaries.
@@ -292,7 +294,9 @@ class BaseDocumentPlugin:
         """
         raise NotImplementedError
 
-    def is_out_of_scope(self, parent_coords: Coordinates, child_coords: Coordinates) -> bool:
+    def is_out_of_scope(
+        self, parent_coords: Coordinates, child_coords: Coordinates
+    ) -> bool:
         """
         Evaluates whether a child's coordinates fall completely outside the
         boundaries of a given parent node.
@@ -312,7 +316,9 @@ class BaseDocumentPlugin:
         """
         raise NotImplementedError
 
-    def get_bounding_coordinates(self, coords1: Coordinates, coords2: Coordinates) -> dict:
+    def get_bounding_coordinates(
+        self, coords1: Coordinates, coords2: Coordinates
+    ) -> dict:
         """
         Calculates the minimal bounding space that encompasses both sets of coordinates.
 

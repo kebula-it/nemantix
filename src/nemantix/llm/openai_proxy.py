@@ -3,7 +3,7 @@ import json
 from json import JSONDecodeError
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from nemantix.common import get_package_logger
 from nemantix.llm.abstract_proxy import (
@@ -29,7 +29,6 @@ logger = get_package_logger(__name__)
 ToolSpec = Dict[
     str, Any
 ]  # expected to be {"type":"function","function":{"name":..., "parameters": {...}}}
-
 
 
 class OpenAICompatibleProxy(AbstractLLMProxy):
@@ -77,6 +76,12 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
 
     # ----------------------------- helpers -----------------------------
     @staticmethod
+    def _normalize_messages(prompt: str | list) -> list:
+        return (
+            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        )
+
+    @staticmethod
     def _build_usage(u) -> LLMUsage:
         cached = 0
         if u and u.prompt_tokens_details:
@@ -88,18 +93,22 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
         )
 
     @staticmethod
-    def _map_parameter_type(parameter: inspect.Parameter) -> str:
-        # TODO: proper type mapping, including complex Pydantic parameters
+    def _build_parameter_schema(parameter: inspect.Parameter) -> Dict[str, Any]:
         ann_type = parameter.annotation
-        if ann_type is str:
-            return "string"
-        if ann_type is int:
-            return "integer"
-        if ann_type is bool:
-            return "boolean"
-        if ann_type is float:
-            return "number"
-        return "string"
+        if ann_type is inspect.Parameter.empty:
+            return {"type": "string"}
+
+        try:
+            schema = TypeAdapter(ann_type).json_schema()
+
+            schema.pop("title", None)
+            if "items" in schema and isinstance(schema["items"], dict):
+                schema["items"].pop("title", None)
+
+            return schema
+        except Exception:
+            # Safe primitive fallback if reflection fails
+            return {"type": "string"}
 
     @staticmethod
     def _extract_tool_calls(choice_msg: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -126,13 +135,11 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
     def get_name(self) -> str:
         raise NotImplementedError
 
-    def invoke(self, prompt: str | list, tool_choice='auto', **kwargs: Any) -> LLMResponse:
+    def invoke(
+        self, prompt: str | list, tool_choice="auto", **kwargs: Any
+    ) -> LLMResponse:
         try:
-            # if 1 message -> convert to user message. If list of messages->pass it (for context)
-            message = (
-                [{"role": "user", "content": prompt}]
-                if isinstance(prompt, str)
-                else prompt)
+            message = self._normalize_messages(prompt)
 
             req: Dict[str, Any] = {
                 "model": self.model_name,
@@ -158,18 +165,30 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             msg = resp.choices[0].message
 
             tool_calls = self._extract_tool_calls(
-                msg.__dict__ if hasattr(msg, "__dict__") else dict(msg))
+                msg.__dict__ if hasattr(msg, "__dict__") else dict(msg)
+            )
 
             if msg.tool_calls:
                 msg = self._call_tools(msg, message, prompt, request=req)
 
             text = msg.content or ""
-            return LLMResponse(text=text, tool_calls=tool_calls, usage=self._build_usage(resp.usage))
+            return LLMResponse(
+                text=text,
+                tool_calls=tool_calls,
+                proxy=self,
+                usage=self._build_usage(resp.usage),
+            )
 
         except Exception as e:
             raise LLMProxyException(f"Error invoking OpenAI LLM: {e}") from e
 
-    def invoke_structured(self, prompt: str, schema: Type[BaseModel], tool_choice='auto') -> StructuredLLMResponse:
+    def invoke_structured(
+        self,
+        prompt: str | list,
+        schema: Type[BaseModel],
+        tool_choice="auto",
+        **kwargs: Any,
+    ) -> StructuredLLMResponse:
         """
         Uses OpenAI Structured Outputs (response_format: json_schema) to force the
         model to return JSON that conforms to the provided Pydantic schema.
@@ -186,10 +205,7 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             },
         }
 
-        messages = (
-            [{"role": "user", "content": prompt}]
-            if isinstance(prompt, str)
-            else prompt)
+        messages = self._normalize_messages(prompt)
 
         try:
             req = {
@@ -218,7 +234,11 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             content = msg.content or "{}"
             data = json.loads(content)  # guaranteed valid JSON with structured outputs
 
-            return StructuredLLMResponse(result=schema.model_validate(data), usage=self._build_usage(resp.usage))
+            return StructuredLLMResponse(
+                result=schema.model_validate(data),
+                proxy=self,
+                usage=self._build_usage(resp.usage),
+            )
 
         except Exception as e:
             raise LLMProxyException(
@@ -275,19 +295,20 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
 
             msg = None
             try:
-                if not getattr(resp, 'output', None):
+                if not getattr(resp, "output", None):
                     raise ValueError("Output array is empty or missing.")
 
                 for item in reversed(resp.output):
-
-                    if hasattr(item, 'content') and item.content:
+                    if hasattr(item, "content") and item.content:
                         msg = item.content[0].text
                         break
 
                     elif type(item).__name__ == "ResponseCustomToolCall":
-                        tool_args = getattr(item, 'input', None) or getattr(item, 'args', None) or getattr(item,
-                                                                                                           'arguments',
-                                                                                                           None)
+                        tool_args = (
+                            getattr(item, "input", None)
+                            or getattr(item, "args", None)
+                            or getattr(item, "arguments", None)
+                        )
 
                         if isinstance(tool_args, dict):
                             msg = next(iter(tool_args.values()), str(tool_args))
@@ -310,15 +331,18 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
                 tool_calls=[],
                 usage=LLMUsage(
                     input_tokens=getattr(resp.usage, "input_tokens", 0) or 0,
-                    output_tokens=getattr(resp.usage, "output_tokens", 0) or 0))
+                    output_tokens=getattr(resp.usage, "output_tokens", 0) or 0,
+                ),
+                proxy=self,
+            )
         except Exception as e:
             raise LLMProxyException(f"Error invoking OpenAI LLM: {e}") from e
 
-    def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
+    def stream(self, prompt: str | list, **kwargs: Any) -> Iterator[str]:
         try:
             req: Dict[str, Any] = {
                 "model": self.model_name,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": self._normalize_messages(prompt),
                 "stream": True,
             }
             if self._bound_tools:
@@ -348,8 +372,9 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
     def supports_tool_use(self) -> bool:
         return True
 
-    def bind_tools(self, toolset_class: Type["Toolset"],
-                   tool_names: List[str] = None) -> "OpenAICompatibleProxy":
+    def bind_tools(
+        self, toolset_class: Type["Toolset"], tool_names: List[str] | None = None
+    ) -> "OpenAICompatibleProxy":
         try:
             bound_tools = []
 
@@ -368,10 +393,11 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
                 properties = {}
                 required = []
                 for p_name, param in info["parameters"].items():
-                    properties[p_name] = {
-                        "type": self._map_parameter_type(param),
-                        "description": p_name,
-                    }
+                    param_schema = self._build_parameter_schema(param)
+                    param_schema["description"] = p_name
+
+                    properties[p_name] = param_schema
+
                     if param.default == inspect.Parameter.empty:
                         required.append(p_name)
 
@@ -389,7 +415,8 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
                             },
                             "strict": True,
                         },
-                    })
+                    }
+                )
 
             self._bound_tools = bound_tools
             return self
@@ -400,13 +427,15 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
         self._bound_tools = []
         return self
 
-    def messages_from(self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]) -> list[dict]:
+    def messages_from(
+        self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]
+    ) -> list[dict]:
         messages = []
 
         for value in prompts_with_roles:
             if isinstance(value, dict):
-                assert 'prompt' in value
-                assert 'role' in value
+                assert "prompt" in value
+                assert "role" in value
                 prompt = value["prompt"]
                 role = value["role"]
             else:
@@ -429,7 +458,7 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             fn_name = tool_call.function.name
             args_str = tool_call.function.arguments
 
-            tool_name = f'{self._toolset_class.__name__}.{fn_name}'
+            tool_name = f"{self._toolset_class.__name__}.{fn_name}"
             tool_instance = self._toolset_class.get_tool(tool_name)
 
             try:
@@ -442,15 +471,25 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
             try:
                 result = tool_instance(**args)
                 # Ensure result is a string (JSON stringify dicts/lists)
-                tool_result_str = json.dumps(result) if not isinstance(result, str) else result
+                tool_result_str = (
+                    json.dumps(result) if not isinstance(result, str) else result
+                )
             except Exception as e:
                 # Pass execution errors back so the LLM knows it failed
                 tool_result_str = f"Error executing tool: {e}"
                 logger.warning(tool_result_str)
 
-            logger.debug(f'Call of tool "{fn_name}" ended with result:\n"{tool_result_str}"')
-            messages.append(dict(role='tool', tool_call_id=tool_call.id,
-                                 name=fn_name, content=tool_result_str))
+            logger.debug(
+                f'Call of tool "{fn_name}" ended with result:\n"{tool_result_str}"'
+            )
+            messages.append(
+                dict(
+                    role="tool",
+                    tool_call_id=tool_call.id,
+                    name=fn_name,
+                    content=tool_result_str,
+                )
+            )
 
         # Second LLM call: Send the tool results back to get the final answer
         request["messages"] = messages
@@ -472,8 +511,12 @@ class OpenAILLMProxy(OpenAICompatibleProxy):
             if k in kwargs and kwargs[k] is not None:
                 client_kwargs[k] = kwargs.pop(k)
 
-        super().__init__(model_name=model_name, api_key_name='openai_api_key',
-                         client_kwargs=client_kwargs, **kwargs)
+        super().__init__(
+            model_name=model_name,
+            api_key_name="openai_api_key",
+            client_kwargs=client_kwargs,
+            **kwargs,
+        )
 
     def get_name(self) -> str:
-        return f'OpenAI {self.model_name}'
+        return f"OpenAI {self.model_name}"

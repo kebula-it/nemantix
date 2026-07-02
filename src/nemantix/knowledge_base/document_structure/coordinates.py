@@ -10,6 +10,7 @@ class Coordinates(BaseModel):
         scheme (str): The coordinate format identifier (e.g., 'text.line_range', 'pdf.bbox').
         value (Dict[str, Any]): The actual coordinate values corresponding to the scheme.
     """
+
     scheme: str
     value: Dict[str, Any]
 

@@ -21,26 +21,29 @@ class GraphRAGRetriever:
         self.vector_store = vector_store
         self.kg = knowledge_graph
 
-    def retrieve(self, query_vector: Any, k: int = 5, filter_dict: Optional[Dict[str, Any]] = None,
-                 min_score: float = 0.0) -> List[Dict[str, Any]]:
+    def retrieve(
+        self,
+        query_vector: Any,
+        k: int = 5,
+        filter_dict: Optional[Dict[str, Any]] = None,
+        min_score: float = 0.0,
+    ) -> List[Dict[str, Any]]:
         """
-            Performs a dense vector search and enriches the results with hierarchical metadata
-            from the Knowledge Graph.
+        Performs a dense vector search and enriches the results with hierarchical metadata
+        from the Knowledge Graph.
 
-            Args:
-                query_vector (Any): The embedded representation of the user's query.
-                k (int): The number of top results to return.
-                filter_dict (Optional[Dict[str, Any]]): Key-value filters to apply during the vector search.
-                min_score (float): Mimum required score for a result to be kept.
+        Args:
+            query_vector (Any): The embedded representation of the user's query.
+            k (int): The number of top results to return.
+            filter_dict (Optional[Dict[str, Any]]): Key-value filters to apply during the vector search.
+            min_score (float): Mimum required score for a result to be kept.
 
-            Returns:
-                List[Dict[str, Any]]: A list of enriched result packages containing the text,
+        Returns:
+            List[Dict[str, Any]]: A list of enriched result packages containing the text,
         """
         # Vector Search
         store_hits = self.vector_store.search(
-            query_vectors=query_vector,
-            k=k,
-            filters=filter_dict
+            query_vectors=query_vector, k=k, filters=filter_dict
         )
 
         logger.debug("Vector Store returned %d raw hits.", len(store_hits))
@@ -52,7 +55,9 @@ class GraphRAGRetriever:
             hit_score = hit.get("score", 0.0)
 
             if hit_score < min_score:
-                logger.debug("Hit discarded (score %f < min_score %f)", hit_score, min_score)
+                logger.debug(
+                    "Hit discarded (score %f < min_score %f)", hit_score, min_score
+                )
                 continue
 
             meta = hit.get("metadata", {})
@@ -76,7 +81,7 @@ class GraphRAGRetriever:
                 "score": hit_score,
                 "breadcrumbs": hierarchy_str,
                 "node_id": base_node_id,  # Critical for subsequent expand/generalize operations
-                "content": content
+                "content": content,
             }
 
             enriched_results.append(result_package)
@@ -100,7 +105,11 @@ class GraphRAGRetriever:
             return {"error": f"Node {node_id} not found in the graph."}
 
             # Find all outgoing edges of type HAS_CHILD
-        children_ids = [v for u, v, d in self.kg.out_edges(node_id, data=True) if d.get("etype") == "HAS_CHILD"]
+        children_ids = [
+            v
+            for u, v, d in self.kg.out_edges(node_id, data=True)
+            if d.get("etype") == "HAS_CHILD"
+        ]
 
         # LEAF NODE: If there are no children, return the node itself with its full text
         if not children_ids:
@@ -110,7 +119,7 @@ class GraphRAGRetriever:
                 "type": node_data.get("type", "unknown"),
                 "label": node_data.get("label", "Unknown"),
                 "content": node_data.get("text", node_data.get("text_view", "")),
-                "message": "This node is a leaf. Returning full raw textual content."
+                "message": "This node is a leaf. Returning full raw textual content.",
             }
 
         results = []
@@ -118,12 +127,14 @@ class GraphRAGRetriever:
             node_data = self.kg.nodes[child_id]
             content = node_data.get("text_view", node_data.get("text", ""))
 
-            results.append({
-                "node_id": child_id,
-                "type": node_data.get("type", "unknown"),
-                "label": node_data.get("label", "Unknown"),
-                "content": content
-            })
+            results.append(
+                {
+                    "node_id": child_id,
+                    "type": node_data.get("type", "unknown"),
+                    "label": node_data.get("label", "Unknown"),
+                    "content": content,
+                }
+            )
 
         return results
 
@@ -141,10 +152,16 @@ class GraphRAGRetriever:
             logger.warning("Generalize failed: Node %s not found in graph.", node_id)
             return {"error": f"Node {node_id} not found in the graph."}
 
-        parent_edges = [u for u, v, d in self.kg.in_edges(node_id, data=True) if d.get("etype") == "HAS_CHILD"]
+        parent_edges = [
+            u
+            for u, v, d in self.kg.in_edges(node_id, data=True)
+            if d.get("etype") == "HAS_CHILD"
+        ]
 
         if not parent_edges:
-            return {"message": f"Node {node_id} is the document root (it has no parent)."}
+            return {
+                "message": f"Node {node_id} is the document root (it has no parent)."
+            }
 
         parent_id = parent_edges[0]
         parent_data = self.kg.nodes[parent_id]
@@ -155,7 +172,7 @@ class GraphRAGRetriever:
             "node_id": parent_id,
             "type": parent_data.get("type", "unknown"),
             "label": parent_data.get("label", "Unknown"),
-            "content": content
+            "content": content,
         }
 
     def extend(self, node_id: str) -> Dict[str, Any]:
@@ -172,14 +189,15 @@ class GraphRAGRetriever:
             logger.warning("Extend failed: Node %s not found in graph.", node_id)
             return {"error": f"Node {node_id} not found in graph."}
 
-        result = {
-            "previous_sibling": None,
-            "next_sibling": None
-        }
+        result = {"previous_sibling": None, "next_sibling": None}
 
         # Find the Previous Sibling
         # Look for nodes pointing TO this node via the NEXT_SIBLING edge (incoming)
-        prev_edges = [u for u, v, d in self.kg.in_edges(node_id, data=True) if d.get("etype") == "NEXT_SIBLING"]
+        prev_edges = [
+            u
+            for u, v, d in self.kg.in_edges(node_id, data=True)
+            if d.get("etype") == "NEXT_SIBLING"
+        ]
         if prev_edges:
             prev_id = prev_edges[0]
             prev_data = self.kg.nodes[prev_id]
@@ -187,12 +205,16 @@ class GraphRAGRetriever:
                 "node_id": prev_id,
                 "type": prev_data.get("type", "unknown"),
                 "label": prev_data.get("label", "Unknown"),
-                "content": prev_data.get("text_view", prev_data.get("text", ""))
+                "content": prev_data.get("text_view", prev_data.get("text", "")),
             }
 
         # Find the Next Sibling
         # Look for nodes this node points TO via the NEXT_SIBLING edge (outgoing)
-        next_edges = [v for u, v, d in self.kg.out_edges(node_id, data=True) if d.get("etype") == "NEXT_SIBLING"]
+        next_edges = [
+            v
+            for u, v, d in self.kg.out_edges(node_id, data=True)
+            if d.get("etype") == "NEXT_SIBLING"
+        ]
         if next_edges:
             next_id = next_edges[0]
             next_data = self.kg.nodes[next_id]
@@ -200,10 +222,12 @@ class GraphRAGRetriever:
                 "node_id": next_id,
                 "type": next_data.get("type", "unknown"),
                 "label": next_data.get("label", "Unknown"),
-                "content": next_data.get("text_view", next_data.get("text", ""))
+                "content": next_data.get("text_view", next_data.get("text", "")),
             }
 
         if not result["previous_sibling"] and not result["next_sibling"]:
-            result["message"] = "This node has no adjacent siblings. It is the only child of its parent."
+            result["message"] = (
+                "This node has no adjacent siblings. It is the only child of its parent."
+            )
 
         return result

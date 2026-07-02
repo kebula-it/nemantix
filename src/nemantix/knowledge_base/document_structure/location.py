@@ -9,7 +9,9 @@ class Location:
     supporting multiple storage backends (Local, Web, Cloud, DB).
     """
 
-    def __init__(self, location_type: str, value: str, metadata: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, location_type: str, value: str, metadata: Optional[Dict[str, Any]] = None
+    ):
         """
         Initializes a Location instance.
 
@@ -27,7 +29,7 @@ class Location:
         return {
             "type": self.location_type,
             "value": self.value,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
     @property

@@ -9,8 +9,8 @@ CORE CONCEPTS
 """
 
 CODING_SYSTEM_PROMPT = (
-        PROLOGUE
-        + """
+    PROLOGUE
+    + """
 PROMPTS INSIDE CODE (CRITICAL)
 NXS may contain natural-language prompts delimited as:
 - inline prompt: `>> ... <<` on the same line
@@ -226,6 +226,9 @@ deliberate DemoMain when >>> Run this deliberate when the user asks for a two-ac
                 producing [ [report_text] ]
                 >> build the final report
             __do
+            
+            # Inline version with frame application to the result with 'as {frame_name}'
+            do action extract_info using [ [text] = [raw_text] ] producing [ [summary] ] as {summary_frame}
 
             return [report_text] # CONTROL FLOW: return with expression
         __body
@@ -233,24 +236,24 @@ deliberate DemoMain when >>> Run this deliberate when the user asks for a two-ac
 __deliberate
 ```
 BUILT-IN FUNCTIONS LIST:
-- print: Wrapper around Python print, passing through arguments (and kwargs if provided).
-- coalesce: Returns the first argument that is not None; otherwise returns None.
-- exists: Checks whether x is not None.
-- size: Returns a “size” depending on type (e.g., len for strings/Struct; 0/1 for Opaque; 1/0 for DocRef leaf/non-leaf; otherwise 0).
-- type: Returns a string describing the type of the input variable. Possible types are: none; num (for integers and floats); 
+- print(*args, **kwargs): Wrapper around Python print, passing through arguments (and kwargs if provided).
+- coalesce(*args, **kwargs): Returns the first argument that is not None; otherwise returns None.
+- exists(x): Checks whether x is not None.
+- size(*args): Returns a “size” depending on type (e.g., len for strings/Struct; 0/1 for Opaque; 1/0 for DocRef leaf/non-leaf; otherwise 0).
+- type(x): Returns a string describing the type of the input variable. Possible types are: none; num (for integers and floats); 
 str (strings); bool (booleans); struct (for Nemantix structures, i.e., the ones within "(...)"); doc (for Nemantix Docref objects);
 and opaque (for Nemantix Opaque objects).
-- substring: Converts x to string and returns the slice [start:end] (safe defaults if inputs are invalid).
-- to_num: Explicit numeric conversion (handles numbers, booleans, numeric strings); returns 0 on failure.
-- to_bool: Explicit boolean conversion (handles booleans, numbers, strings like "true"/"false"/"none"); defaults to False.
-- to_str: Explicit string conversion (ALWAYS use it when you use concatenations with non-string objects).
-- num: Soft numeric conversion: returns None for None or complex/container-like types; otherwise uses to_num.
-- bool: Soft boolean conversion: returns None for None, uses type-specific rules for Struct/DocRef/Opaque, otherwise to_bool.
-- str: Soft string conversion: returns None for None, otherwise uses to_str.
-- sin: Computes sine of x after converting it to a number.
-- cos: Computes cosine of x after converting it to a number.
-- sqrt: Computes square root of x after converting it to a number.
-- llm: Calls llm.invoke(prompt, **kwargs) and returns the response text as a Python string.
+- substring(x, start=0, end: int): Converts x to string and returns the slice [start:end] (safe defaults if inputs are invalid).
+- to_num(x): Explicit numeric conversion (handles numbers, booleans, numeric strings); returns 0 on failure.
+- to_bool(x): Explicit boolean conversion (handles booleans, numbers, strings like "true"/"false"/"none"); defaults to False.
+- to_str(x): Explicit string conversion (ALWAYS use it when you use concatenations with non-string objects).
+- num(x): Soft numeric conversion: returns None for None or complex/container-like types; otherwise uses to_num.
+- bool(x): Soft boolean conversion: returns None for None, uses type-specific rules for Struct/DocRef/Opaque, otherwise to_bool.
+- str(x): Soft string conversion: returns None for None, otherwise uses to_str.
+- sin(x): Computes sine of x after converting it to a number.
+- cos(x): Computes cosine of x after converting it to a number.
+- sqrt(x): Computes square root of x after converting it to a number.
+- llm(prompt, **kwargs): Calls llm.invoke(prompt, **kwargs) and returns the response text as a Python string.
 - retrieve: Used to retrieve information from the knowledge base. Calls retrieve(query: str, top_k: int = 5, min_score: float = 0.6, 
 doc_types: list | str | None, content_types: list | str | None, metadata: list | str | None).
 doc_types, content_types, metadata are filters.
@@ -433,11 +436,19 @@ EVALUATE_DELIBERATE_RULES = """- The input `plan` must be treated as a draft imp
 """
 
 CODING_DELIBERATE_ADDITIONAL_INFO = (
-        CODING_ADDITIONAL_INFO
-        + """
+    CODING_ADDITIONAL_INFO
+    + """
 OTHER DELIBERATES
 {deliberates}
 
+KNOWLEDGE_BASE CONTEXT
+{knowledge_base}
+"""
+)
+
+CODING_ACTION_ADDITIONAL_INFO = (
+    CODING_ADDITIONAL_INFO
+    + """
 KNOWLEDGE_BASE CONTEXT
 {knowledge_base}
 """
@@ -574,8 +585,8 @@ Strictly follow these rules:
 FIX_GENERATION = "The code you generated gave an error during the parsing. Fix the error and rewrite the full corrected code and nothing else. This is the error:"
 
 INTENT_PROMPT = (
-        PROLOGUE
-        + """
+    PROLOGUE
+    + """
 For each `action` block in the following pseudo code, produce a brief doc string.
 Produce a JSON with the name of the action and the docstring. Output example:
 {"write_file": "Writes the given string to the specified file.",
@@ -669,6 +680,8 @@ frame Picture:
 __frame
 ```
 Available slot types: [TEXT | INT | BOOL | FLOAT | STRUCT | slot_enum | frame_name]
+NOTE: "slot_enum" means that a slot is an ENUM. Comply to the following syntax to 
+specify the enumeration elements: slot status as ENUM ("COMPLETED", "FAILED", "IN_PROGRESS")
 NOTE: "frame_name" means that a slot can be another frame, resulting in definition of 
 nested frames.
 NOTE: use STRUCT for both lists and dictionaries.
@@ -684,11 +697,17 @@ Strictly follow these rules:
     5. The name of the frame must not contain any white space, use camel case or snake case.
 """
 
-GEN_FRAME_PROMPT = PROLOGUE + """
-Generate a NXS Frame based on the provided name, and custom DSL usage syntax.""" + FRAMES_DSL
+GEN_FRAME_PROMPT = (
+    PROLOGUE
+    + """
+Generate a NXS Frame based on the provided name, and custom DSL usage syntax."""
+    + FRAMES_DSL
+)
 
 
-DO_AS_FRAMES_PROMPT  =  PROLOGUE + """
+DO_AS_FRAMES_PROMPT = (
+    PROLOGUE
+    + """
 Generate a NXS Frame based on the provided custom DSL usage syntax.
 The generated frame must follow the description given in the `as` clause of this `do` statement and the information about the called function. 
 The purpose of the frame is to give an output format for the tool/action/built-in that is being called.
@@ -697,7 +716,9 @@ DO STATEMENT
 {do_statement}
 CALLABLE INFO
 {callable_info}
-""" + FRAMES_DSL
+"""
+    + FRAMES_DSL
+)
 
 SCHEMA_APPLY_PROMPT = """
 Map each output variable name to the most appropriate slot of frame '{frame_name}'.
@@ -708,32 +729,37 @@ Omit variables with no clear slot match.
 """
 
 # Interpreter: semantic inclusion prompts
-RIGHT_SEM_INCL_PROMPT = ('Semantic inclusion (a ~> b) is a form of conceptual implication or semantic '
-                         'specialization which is more restrictive than usual similarity '
-                         'between two values: means that "a" is semantically included in "b". '
-                         '(think about "a" and "b" as two ontologies, and check whether "a" is '
-                         'a subset of "b".) '
-                         'For example: ["dog" ~> "animal"] is true - because all dogs are'
-                         'animals, whereas ["animal" ~> "dog"] is false - because there'
-                         'are animals that are not dogs (but lions, fishes, etc). NOTE:'
-                         'you should think in this way to solve semantic inclusion.')
-LEFT_SEM_INCL_PROMPT = ('Semantic inclusion (a <~ b) is a form of conceptual implication or semantic '
-                        'specialization which is more restrictive than usual similarity '
-                        'between two values: means that "b" is semantically included in "a". '
-                        '(think about "a" and "b" as two ontologies, and check whether "b" is '
-                        'a subset of "a".) '
-                        'For example: ["animal" <~ "dog"] is true - because all dogs are'
-                        'animals, whereas ["dog" <~ "animal"] is false - because there'
-                        'are animals that are not dogs (but lions, fishes, etc). NOTE:'
-                        'you should think in this way to solve semantic inclusion.')
-SEM_INCL_TEMPLATE = ('Task: Evaluate the expression: [{}]. Return true or false,'
-                     'along with a score in 0-1 range that quantifies the degree of '
-                     'semantic inclusion (0: weak or none, 1: full or strong).')
+RIGHT_SEM_INCL_PROMPT = (
+    "Semantic inclusion (a ~> b) is a form of conceptual implication or semantic "
+    "specialization which is more restrictive than usual similarity "
+    'between two values: means that "a" is semantically included in "b". '
+    '(think about "a" and "b" as two ontologies, and check whether "a" is '
+    'a subset of "b".) '
+    'For example: ["dog" ~> "animal"] is true - because all dogs are'
+    'animals, whereas ["animal" ~> "dog"] is false - because there'
+    "are animals that are not dogs (but lions, fishes, etc). NOTE:"
+    "you should think in this way to solve semantic inclusion."
+)
+LEFT_SEM_INCL_PROMPT = (
+    "Semantic inclusion (a <~ b) is a form of conceptual implication or semantic "
+    "specialization which is more restrictive than usual similarity "
+    'between two values: means that "b" is semantically included in "a". '
+    '(think about "a" and "b" as two ontologies, and check whether "b" is '
+    'a subset of "a".) '
+    'For example: ["animal" <~ "dog"] is true - because all dogs are'
+    'animals, whereas ["dog" <~ "animal"] is false - because there'
+    "are animals that are not dogs (but lions, fishes, etc). NOTE:"
+    "you should think in this way to solve semantic inclusion."
+)
+SEM_INCL_TEMPLATE = (
+    "Task: Evaluate the expression: [{}]. Return true or false,"
+    "along with a score in 0-1 range that quantifies the degree of "
+    "semantic inclusion (0: weak or none, 1: full or strong)."
+)
 
 
 ##################################################################
-CODE_SUMMARY_PROMPT = \
-"""You are an expert in the NXS programming language.
+CODE_SUMMARY_PROMPT = """You are an expert in the NXS programming language.
 
 Read the following NXS code block and generate its docstring.
 
@@ -753,4 +779,74 @@ The entire response must be only the docstring text.
 
 NXS action block:
 {action}
+"""
+
+
+##################################################################
+LLM_JUDGE_PROMPT = """You are an expert in the NXS programming language.
+
+You will be given up to three elements:
+
+1. The initial prompted version, which contains the original prompts, requirements, and intended behavior.
+2. The encoded implementation version, which contains the actual implemented code.
+3. Optionally, the user request that the code block is expected to answer or satisfy.
+
+Your task is to compare the initial prompted version with the encoded implementation version and evaluate how well the implementation complies with the original prompted specification.
+
+If a user request is provided, you must also evaluate whether the encoded implementation correctly satisfies that user request, while remaining consistent with the initial prompted version.
+
+You must:
+
+* Check whether the encoded implementation preserves the intent of the initial prompted version.
+* Verify that all required behaviors, inputs, outputs, and constraints described in the prompts are implemented correctly.
+* If present, verify that the implementation correctly handles and satisfies the user request.
+* Identify any missing, incorrect, or partially implemented aspects.
+* Give a compliance score between 0 and 1, where:
+
+  * 1 means the implementation fully complies with the initial prompted version and, if present, the user request.
+  * 0 means the implementation does not comply at all.
+
+Return only a valid JSON object, with no markdown, explanations, or additional text.
+
+The JSON object must contain exactly these fields:
+
+{{
+"value": <compliance score between 0 and 1>,
+"reason": "<brief explanation of the score>"
+}}
+
+INITIAL VERSION
+{original_nxs}
+
+CODED VERSION
+{coded_nxs}
+
+REQUEST
+{request}
+"""
+
+
+JUDGE_CORRECTION_PROMPT = """
+____________________
+Your task is to produce a corrected and improved implementation of this NXS code block.
+
+You must carefully consider the NXS syntax rules, semantics, and coding constraints described above in CODING_SYSTEM_PROMPT.
+
+The previous implementation has been judged as problematic for the following reason:
+
+{judge_reason}
+
+The problematic implementation is:
+
+{nxs_code}
+
+Instructions:
+
+Rewrite the full NXS block from scratch or by correcting the existing one.
+The output must be a complete replacement for the problematic implementation.
+The corrected block must preserve the intended behavior of the original block.
+The corrected block must fix the issue described in the judge reason.
+The corrected block must strictly respect valid NXS syntax.
+Do not output explanations, markdown, comments about the fix, or any additional text.
+Return only the corrected NXS code block.
 """

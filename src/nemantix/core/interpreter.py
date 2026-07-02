@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import math
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Iterable, List, Optional, Type, Union
@@ -39,7 +40,12 @@ from nemantix.core.runtime import Builtin, Struct
 from nemantix.core.script import Script
 from nemantix.core.tools import Toolset
 from nemantix.hub import Event, EventType
-from nemantix.llm import AbstractLLMProxy
+from nemantix.llm import (
+    AbstractLLMProxy,
+    LLMProxyConfig,
+    LLMResponse,
+    StructuredLLMResponse,
+)
 
 if TYPE_CHECKING:
     from nemantix.knowledge_base.core.nemantix_knowledge_base import (
@@ -73,13 +79,14 @@ BUILTIN_FUNCTIONS = {
     # math
     BuiltinFunctionEnum.SIN: Builtin.sin,
     BuiltinFunctionEnum.COS: Builtin.cos,
-    BuiltinFunctionEnum.SQRT: Builtin.sqrt}
+    BuiltinFunctionEnum.SQRT: Builtin.sqrt,
+}
 
 
 class ReturnType(Enum):
-    NONE = 0,
-    RETURN = 1,
-    BREAK = 2,
+    NONE = (0,)
+    RETURN = (1,)
+    BREAK = (2,)
     CONTINUE = 3
 
     def is_return(self) -> bool:
@@ -98,6 +105,7 @@ class ReturnType(Enum):
 # TODO: handle verifiable micro-prompts
 class Interpreter:
     """Nemantix interpreter"""
+
     _SPECIAL_VARS = set()
 
     class InterpretationContext:
@@ -107,52 +115,88 @@ class Interpreter:
             self.schemas: dict[str, type[BaseModel]] = {}
             self.tools = nmx_runtime.Tools()
             self.toolsets: set[str] = set()
+            self.toolsets_locations: dict[str, str] = {}
             self.env = nmx_runtime.OperationalEnv()
+            self._seen_scripts: set[str] = set()
+            self._seen_deliberates: set[str] = set()
+
+        def add_script(self, script: Script):
+            self._seen_scripts.add(script.get_location())
+
+        def add_deliberate(self, deliberate: Deliberate):
+            self._seen_deliberates.add(deliberate.name)
+
+        def __contains__(self, item: Script | Deliberate) -> bool:
+            if isinstance(item, Script):
+                return item.get_location() in self._seen_scripts
+
+            assert isinstance(item, Deliberate)
+            return item.name in self._seen_deliberates
 
     class SimilaritySchema(BaseModel):
         """LLM response schema used by similarity and semantic inclusion operators"""
+
         holds: bool
         score: float
 
     class CallEvent:
-        def __init__(self, interpreter: 'Interpreter', stmt, name: str = None, kind: str = None,
-                     args: list | None = None):
+        def __init__(
+            self,
+            interpreter: "Interpreter",
+            stmt,
+            name: str = None,
+            kind: str = None,
+            args: list | None = None,
+            kwargs: dict | None = None,
+        ):
             self.interpreter = interpreter
             self.stmt = stmt
             self.callable_name = name
             self.callable_type = kind
-            self.callable_prompt = ''
+            self.callable_prompt = ""
 
             if isinstance(args, (list, tuple)):
-                llm_prompt = (
-                    args[0]
-                    if name == "llm" and isinstance(args[0], str)
-                    else ""
-                )
+                if len(args) == 0:
+                    prompt = (kwargs or {}).get("prompt", "")
+                else:
+                    prompt = args[0] or ""
+
+                llm_prompt = prompt if name == "llm" and isinstance(prompt, str) else ""
                 self.callable_prompt = llm_prompt
 
             if isinstance(stmt, nmx_nodes.Deliberate):
                 self.callable_name = stmt.name
-                self.callable_type = 'deliberate'
+                self.callable_type = "deliberate"
 
             elif isinstance(stmt, nmx_nodes.PlanBlock):
                 assert isinstance(self.callable_name, str)
-                self.callable_type = 'plan'
+                self.callable_type = "plan"
             else:
                 assert isinstance(self.callable_name, str)
                 assert isinstance(self.callable_type, str)
 
         def __enter__(self):
-            self.interpreter._emit_call_enter(stmt=self.stmt, callable_name=self.callable_name,
-                                              callable_type=self.callable_type,
-                                              callable_prompt=self.callable_prompt)
+            self.interpreter._emit_call_enter(
+                stmt=self.stmt,
+                callable_name=self.callable_name,
+                callable_type=self.callable_type,
+                callable_prompt=self.callable_prompt,
+            )
 
         def __exit__(self, *_):
             self.interpreter._emit_call_exit(stmt=self.stmt)
 
-    def __init__(self, expertise: Expertise, llm: AbstractLLMProxy, embedder=None, knowledge_base=None,
-                 external_variables: nmx_runtime.ExternalVariables | None = None,
-                 agent_state: Optional[nmx_runtime.Struct] = None):
+    # TODO: deprecate "llm" argument
+    def __init__(
+        self,
+        expertise: Expertise,
+        proxy_config: LLMProxyConfig,
+        llm: AbstractLLMProxy | None = None,
+        embedder=None,
+        knowledge_base=None,
+        external_variables: nmx_runtime.ExternalVariables | None = None,
+        agent_state: Optional[nmx_runtime.Struct] = None,
+    ):
         # operational memory
         self.metadata = nmx_runtime.Metadata()
         self.expertise = expertise
@@ -160,11 +204,12 @@ class Interpreter:
 
         # globals: file scope
         self.globals = nmx_runtime.get_globals()
-        self.globals['__scope'] = []
+        self.globals["__scope"] = []
 
         # inner models
         self.embedder = embedder
-        self.llm = llm
+        self.proxies = proxy_config
+        self.llm = llm or self.proxies.internal
 
         self.knowledge_base = knowledge_base
         self.external_vars = external_variables or nmx_runtime.ExternalVariables()
@@ -173,16 +218,22 @@ class Interpreter:
             agent_state = nmx_runtime.Struct()
 
         elif not isinstance(agent_state, nmx_runtime.Struct):
-            logger.warning(f'Given "agent_state" is not a Struct but a "{type(agent_state)}"! '
-                           f'Ignoring.')
+            logger.warning(
+                f'Given "agent_state" is not a Struct but a "{type(agent_state)}"! '
+                f"Ignoring."
+            )
             agent_state = nmx_runtime.Struct()
 
         assert isinstance(agent_state, nmx_runtime.Struct)
         self.agent_state: nmx_runtime.Struct = agent_state
         self._set_special_variables()
 
-    def interpret_coded_request(self, script: Script, request_deliberate: Deliberate,
-                                user_inputs: Expression | None = None):
+    def interpret_coded_request(
+        self,
+        script: Script,
+        request_deliberate: Deliberate,
+        user_inputs: Expression | None = None,
+    ):
         self._build_context(script, deliberate=request_deliberate)
         outputs = self.interpret_deliberate(request_deliberate, user_inputs=user_inputs)
 
@@ -191,7 +242,9 @@ class Interpreter:
 
         return outputs
 
-    def interpret(self, deliberate: Deliberate, user_inputs: Optional[nmx_nodes.Expression] = None):
+    def interpret(
+        self, deliberate: Deliberate, user_inputs: Optional[nmx_nodes.Expression] = None
+    ):
         deliberate_name = deliberate.name
         script = self.expertise.get_script_from_deliberate(deliberate_name)
 
@@ -205,10 +258,17 @@ class Interpreter:
 
     def interpret_tool_declaration(self, declaration: nmx_nodes.PythonToolDeclaration):
         self.interpret_intentable(metadata=declaration.meta, stmt=declaration)
-        code = declaration.prompt.prompt.strip()
+
+        if isinstance(declaration.prompt, nmx_nodes.MicroPrompt):
+            code = declaration.prompt.prompt.strip()
+        else:
+            logger.warning(
+                f'Toolset declaration "{declaration.name}": prompt is "{type(declaration.prompt)}"'
+            )
+            code = ""
 
         if code.find("class ") == -1:
-            err_msg = f'Malformed tool declaration (generation failed completely): {declaration.name}'
+            err_msg = f"Malformed tool declaration (generation failed completely): {declaration.name}"
             raise self._runtime_exception(err_msg, statement=declaration)
 
         logger.debug(f'Exec on "\n{code}\n"')
@@ -220,10 +280,13 @@ class Interpreter:
             err_msg = f'Invalid code for toolset "{declaration.name}"!'
             raise self._runtime_exception(err_msg, statement=declaration)
 
-    def interpret_intentable(self, metadata: dict[str, nmx_nodes.Meta | None],
-                                stmt: nmx_nodes.Statement = None,
-                                name_override: str | None = None):
-        meta = metadata.get('node_meta', None)
+    def interpret_intentable(
+        self,
+        metadata: dict[str, nmx_nodes.Meta | None],
+        stmt: nmx_nodes.Statement = None,
+        name_override: str | None = None,
+    ):
+        meta = metadata.get("node_meta", None)
         if meta is None:
             return
 
@@ -235,14 +298,16 @@ class Interpreter:
             key = annotation.name.lower()
             value = annotation.value
 
-            if key in ['goal', 'completion', 'audience', 'style']:
-                key = f'intent.{key}'
+            if key in ["goal", "completion", "audience", "style"]:
+                key = f"intent.{key}"
 
             if isinstance(value, nmx_nodes.MicroPrompt):
-                logger.warning(f'Ignoring intentable in micro-prompt "{value.prompt}"..')
+                logger.warning(
+                    f'Ignoring intentable in micro-prompt "{value.prompt}"..'
+                )
 
             elif isinstance(value, list):
-                if key != 'intent.completion':
+                if key != "intent.completion":
                     err = f'Intentable "{key}" does not support "{value}" as value!'
                     raise self._runtime_exception(err)
 
@@ -250,9 +315,9 @@ class Interpreter:
                     value = value[0]
 
                 elif len(value) == 2:
-                    a = value[0] if isinstance(value[0], str) else '_'
-                    b = value[1] if isinstance(value[1], str) else '_'
-                    value = f'{a} -> {b}'
+                    a = value[0] if isinstance(value[0], str) else "_"
+                    b = value[1] if isinstance(value[1], str) else "_"
+                    value = f"{a} -> {b}"
                 else:
                     assert 0 <= len(value) <= 2
 
@@ -266,20 +331,30 @@ class Interpreter:
 
             intentable[key] = value
 
-            if annotation.name == 'breakpoint' and stmt is not None:
+            if annotation.name == "breakpoint" and stmt is not None:
                 if annotation.value is not None and not Builtin.to_bool(value):
                     continue
 
-                self._emit_event(stmt, event_type=EventType.BREAKPOINT,
-                                 payload=dict(interpreter=self))
+                self._emit_event(
+                    stmt,
+                    event_type=EventType.BREAKPOINT,
+                    payload=dict(interpreter=self),
+                )
 
-            if annotation.name == 'profile' and stmt is not None:
+            if annotation.name == "profile" and stmt is not None:
                 if annotation.value is not None and not Builtin.to_bool(value):
                     continue
 
-                profile_name = name_override if name_override is not None else getattr(stmt, 'name', None)
-                self._emit_event(stmt, event_type=EventType.PROFILE_MARK,
-                                 payload=dict(name=profile_name))
+                profile_name = (
+                    name_override
+                    if name_override is not None
+                    else getattr(stmt, "name", None)
+                )
+                self._emit_event(
+                    stmt,
+                    event_type=EventType.PROFILE_MARK,
+                    payload=dict(name=profile_name),
+                )
 
         # TODO: if label is None, intentables are overwritten
         self.metadata[label] = intentable
@@ -312,9 +387,11 @@ class Interpreter:
                         types.append(dict(name=t))
 
                 assert isinstance(slot.name, str)
-                frame_.add_slot(name=slot.name, cardinality=slot.cardinality, types=types)
+                frame_.add_slot(
+                    name=slot.name, cardinality=slot.cardinality, types=types
+                )
             else:
-                logger.warning(f'Skipping: {slot}')
+                logger.warning(f"Skipping: {slot}")
 
         return frame_
 
@@ -328,14 +405,18 @@ class Interpreter:
 
             if import_stmt.args is not None:
                 arguments = [self.interpret_expression(expression=import_stmt.args)]
+                kw_arguments = {}
 
                 if len(arguments) == 1 and isinstance(arguments[0], nmx_runtime.Struct):
-                    arguments, _ = arguments[0].to_args_and_kwargs()
+                    arguments, kw_arguments = arguments[0].to_args_and_kwargs()
 
                 arguments = nmx_runtime.Opaque.unbox_in(arguments)
+                kw_arguments = nmx_runtime.Opaque.unbox_in(kw_arguments)
+            else:
+                arguments, kw_arguments = [], {}
 
             elements = import_stmt.elements
-            if elements == '*':
+            if elements == "*" or elements == ["*"]:
                 toolset_class = None
 
                 for tool_cls in Toolset.get_registered_classes():
@@ -344,9 +425,22 @@ class Interpreter:
                         break
 
                 if toolset_class is None:
-                    raise self._runtime_exception(f'No toolset {tool_class}!')
+                    try:
+                        Toolset.load(tool_class)
+                        toolset_class = Toolset._classes.get(tool_class)
+                    except nmx_ex.NemantixException as exc:
+                        raise self._runtime_exception(str(exc)) from exc
+
+                if toolset_class is None:
+                    raise self._runtime_exception(f"No toolset {tool_class}!")
 
                 elements = toolset_class.get_tool_names()
+
+            elif tool_class not in Toolset._classes:
+                try:
+                    Toolset.load(tool_class)
+                except nmx_ex.NemantixException as exc:
+                    raise self._runtime_exception(str(exc)) from exc
 
             for tool in elements:
                 if isinstance(tool_alias, str):
@@ -358,19 +452,32 @@ class Interpreter:
                 if tool_name in Toolset.REGISTRY:
                     if tool_name not in self.context.tools:
                         self.context.tools[tool_name] = Toolset.get_tool(
-                            tool_name, instance_alias=tool_alias, instance_args=arguments)
+                            tool_name,
+                            instance_alias=tool_alias,
+                            instance_args=arguments,
+                            instance_kwargs=kw_arguments,
+                        )
                     else:
                         logger.info(f'Tool "{tool_name}" already imported!')
 
                     if tool not in self.context.tools:
                         self.context.tools[tool] = self.context.tools[tool_name]
                 else:
-                    self._emit_error(stmt=import_stmt, error=f'Tool "{tool_name}" not defined!')
-                    raise self._runtime_exception(action_or_tool=tool_name, statement=import_stmt,
-                                                  cls=nmx_ex.NemantixImportException, emit=False)
+                    self._emit_error(
+                        stmt=import_stmt, error=f'Tool "{tool_name}" not defined!'
+                    )
+                    raise self._runtime_exception(
+                        action_or_tool=tool_name,
+                        statement=import_stmt,
+                        cls=nmx_ex.NemantixImportException,
+                        emit=False,
+                    )
 
-    def interpret_deliberate(self, deliberate: nmx_nodes.Deliberate,
-                             user_inputs: Optional[nmx_nodes.Expression] = None):
+    def interpret_deliberate(
+        self,
+        deliberate: nmx_nodes.Deliberate,
+        user_inputs: Optional[nmx_nodes.Expression] = None,
+    ):
         self._set_global_deliberate(deliberate)
         self._push_scope(scope=deliberate.name)
 
@@ -380,24 +487,31 @@ class Interpreter:
             plan = deliberate.get_plan()
             assert plan is not None
 
-            result = self.interpret_plan(plan, inputs=self._unpack_user_inputs(user_inputs))
+            result = self.interpret_plan(
+                plan, inputs=self._unpack_user_inputs(user_inputs)
+            )
 
         self._pop_scope()
         return result
 
     def interpret_plan(self, plan: nmx_nodes.PlanBlock, inputs: Optional[list] = None):
         deliberate = self._get_global_deliberate()
-        plan_name = f"{deliberate.name}::plan" if deliberate else 'plan'
+        plan_name = f"{deliberate.name}::plan" if deliberate else "plan"
 
         with self.CallEvent(self, stmt=plan, name=plan_name):
-            self.interpret_intentable(metadata=plan.meta, stmt=plan, name_override=plan_name)
+            self.interpret_intentable(
+                metadata=plan.meta, stmt=plan, name_override=plan_name
+            )
             result = self.interpret_block(block=plan, args=inputs)
 
         return result
 
-    def interpret_block(self, block: nmx_types.PlanOrActionBlock,
-                        args: Optional[list] = None,
-                        callee: nmx_nodes.DoStatement | None = None):
+    def interpret_block(
+        self,
+        block: nmx_types.PlanOrActionBlock,
+        args: Optional[list] = None,
+        callee: nmx_nodes.DoStatement | None = None,
+    ):
         self.interpret_intentable(metadata=block.meta, stmt=block)
         is_plan = isinstance(block, nmx_nodes.PlanBlock)
         if not is_plan:
@@ -406,7 +520,7 @@ class Interpreter:
         try:
             if not is_plan:
                 self.context.env = nmx_runtime.OperationalEnv()
-                self._push_scope(scope=block.name or 'block')
+                self._push_scope(scope=block.name or "block")
 
             return_value = None
             explicit_return = False
@@ -417,7 +531,7 @@ class Interpreter:
             for statement in block.children or []:
                 # ignore 'break' and 'continue' at action level (i.e., not nested)
                 if isinstance(statement, (nmx_nodes.Break, nmx_nodes.Continue)):
-                    logger.warning(f'Ignoring: {statement}')
+                    logger.warning(f"Ignoring: {statement}")
                     continue
 
                 stmt_value, return_type = self.interpret_statement(statement)
@@ -452,14 +566,18 @@ class Interpreter:
 
         return return_value
 
-    def interpret_statement(self, statement: nmx_nodes.Statement) -> tuple[Any, ReturnType]:
+    def interpret_statement(
+        self, statement: nmx_nodes.Statement
+    ) -> tuple[Any, ReturnType]:
         return_type = ReturnType.NONE
         return_value = None
 
         self.interpret_intentable(metadata=statement.meta, stmt=statement)
 
         if isinstance(statement, nmx_nodes.ConditionBlock):
-            return_value, return_type = self.interpret_conditional(conditional=statement)
+            return_value, return_type = self.interpret_conditional(
+                conditional=statement
+            )
 
             if return_type.is_return():
                 return return_value, return_type
@@ -473,7 +591,7 @@ class Interpreter:
 
         # loops
         elif isinstance(statement, nmx_nodes.RepeatTimesBlock):
-            self._push_scope(scope='repeat_times')
+            self._push_scope(scope="repeat_times")
             num_iterations = statement.times
             iter_var = statement.as_vars
             should_set_iter_var = True
@@ -488,7 +606,9 @@ class Interpreter:
                 if should_set_iter_var:
                     self.context.env.set(iter_var, value=iter_num)
 
-                return_value, return_type = self.eval_loop_block(statements=statement.children)
+                return_value, return_type = self.eval_loop_block(
+                    statements=statement.children
+                )
 
                 if return_type.is_return():
                     self._pop_scope()
@@ -503,10 +623,11 @@ class Interpreter:
         elif isinstance(statement, nmx_nodes.RepeatEachBlock):
             idx_var_name, item_var_name = statement.as_vars
 
-            assert isinstance(statement.each, nmx_nodes.Expression), \
+            assert isinstance(statement.each, nmx_nodes.Expression), (
                 f"Loop iterable must be an Expression, got {type(statement.each).__name__}, in {statement}"
+            )
 
-            self._push_scope(scope='repeat_each')
+            self._push_scope(scope="repeat_each")
             iterator = self.interpret_expression(expression=statement.each)
             assert isinstance(iterator, Iterable)
 
@@ -514,7 +635,9 @@ class Interpreter:
                 self.context.env.set(var_name=idx_var_name, value=i)
                 self.context.env.set(var_name=item_var_name, value=item)
 
-                return_value, return_type = self.eval_loop_block(statements=statement.children)
+                return_value, return_type = self.eval_loop_block(
+                    statements=statement.children
+                )
 
                 if return_type.is_return():
                     self._pop_scope()
@@ -526,7 +649,9 @@ class Interpreter:
 
             self._pop_scope()
 
-        elif isinstance(statement, (nmx_nodes.RepeatWhileBlock, nmx_nodes.RepeatUntilBlock)):
+        elif isinstance(
+            statement, (nmx_nodes.RepeatWhileBlock, nmx_nodes.RepeatUntilBlock)
+        ):
             num_iterations = 0
             is_repeat_until = isinstance(statement, nmx_nodes.RepeatUntilBlock)
             scope_pushed = False
@@ -537,8 +662,9 @@ class Interpreter:
                 max_iterations = self.interpret_expression(expression=statement.max)
                 max_iterations = Builtin.to_num(max_iterations)
 
-            assert isinstance(statement.condition, nmx_nodes.Expression), \
+            assert isinstance(statement.condition, nmx_nodes.Expression), (
                 f"Loop condition must be an Expression, got {type(statement.condition).__name__}"
+            )
 
             while True:
                 condition = self.interpret_expression(expression=statement.condition)
@@ -551,14 +677,16 @@ class Interpreter:
 
                 if not scope_pushed:
                     if is_repeat_until:
-                        self._push_scope('repeat_until')
+                        self._push_scope("repeat_until")
                     else:
-                        self._push_scope('repeat_while')
+                        self._push_scope("repeat_while")
 
                     scope_pushed = True
 
                 num_iterations += 1
-                return_value, return_type = self.eval_loop_block(statements=statement.children)
+                return_value, return_type = self.eval_loop_block(
+                    statements=statement.children
+                )
 
                 if return_type.is_return():
                     self._pop_scope()
@@ -580,7 +708,9 @@ class Interpreter:
         # return statements: return, break, continue
         elif isinstance(statement, nmx_nodes.Return):
             self._emit_line(stmt=statement)
-            return_value = [self.interpret_expression(expression=v) for v in statement.val]
+            return_value = [
+                self.interpret_expression(expression=v) for v in statement.val
+            ]
 
             if len(return_value) == 1:
                 return_value = return_value[0]
@@ -609,7 +739,7 @@ class Interpreter:
         if callable_type == nmx_nodes.CallableTypeEnum.ACTION:
             # action lookup
             action_info = self.context.actions.get(fn_name, {})
-            callable_fn = action_info.get('closure', None)
+            callable_fn = action_info.get("closure", None)
             is_action_call = True
 
             if callable_fn is None:
@@ -619,12 +749,16 @@ class Interpreter:
             current_deliberate = self._get_global_deliberate()
             assert current_deliberate is not None
 
-            is_global_action = action_info.get('is_global', False)
-            is_imported = current_deliberate.name in action_info.get('imported_by', set())
+            is_global_action = action_info.get("is_global", False)
+            is_imported = current_deliberate.name in action_info.get(
+                "imported_by", set()
+            )
 
             if not is_global_action and not is_imported:
-                err_msg = (f'Private action "{fn_name}" cannot be called from deliberate '
-                           f'"{current_deliberate.name}"!"')
+                err_msg = (
+                    f'Private action "{fn_name}" cannot be called from deliberate '
+                    f'"{current_deliberate.name}"!"'
+                )
                 raise self._runtime_exception(err_msg, statement=do)
 
         elif callable_type == nmx_nodes.CallableTypeEnum.TOOL:
@@ -640,7 +774,7 @@ class Interpreter:
             # unqualified do statement
             # lookup action, tool, and builtin
             action_info = self.context.actions.get(fn_name, {})
-            callable_fn = action_info.get('closure', None)
+            callable_fn = action_info.get("closure", None)
 
             if callable_fn is None:
                 callable_fn = self.context.tools.get(fn_name)
@@ -650,9 +784,14 @@ class Interpreter:
                     callable_fn = BUILTIN_FUNCTIONS.get(builtin_name, None)
 
                     if builtin_name == BuiltinFunctionEnum.LLM:
+
                         def __llm_call(prompt, *_, **kwargs_):
-                            response = Builtin.ask_llm(self.llm, prompt, **kwargs_)
-                            self._emit_llm(stmt=do, prompt=prompt, usage=response.usage)
+                            response = Builtin.ask_llm(
+                                self.proxies.external, prompt, **kwargs_
+                            )
+                            self._emit_llm(
+                                stmt=do, prompt=prompt, llm_response=response
+                            )
                             return response.text
 
                         callable_fn = __llm_call
@@ -671,41 +810,66 @@ class Interpreter:
                                 EventType.OUTPUT,
                                 payload={"text": " ".join(parts) + "\n"},
                             )
-                        callable_fn = __print_call
-                    
-                    elif builtin_name == BuiltinFunctionEnum.RETRIEVE:
-                        def __retrieve(*args_, **kwargs_):
-                            self._emit_retrieve(stmt=do, knowledge_base=self.knowledge_base,
-                                                query=kwargs_.get('query', args_[0]))
 
-                            return Builtin.retrieve(self.knowledge_base, *args_, **kwargs_)
+                        callable_fn = __print_call
+
+                    elif builtin_name == BuiltinFunctionEnum.RETRIEVE:
+
+                        def __retrieve(*args_, **kwargs_):
+                            self._emit_retrieve(
+                                stmt=do,
+                                knowledge_base=self.knowledge_base,
+                                query=kwargs_.get("query", args_[0]),
+                            )
+
+                            return Builtin.retrieve(
+                                self.knowledge_base, *args_, **kwargs_
+                            )
 
                         callable_fn = __retrieve
 
                     elif builtin_name == BuiltinFunctionEnum.EXPAND:
-                        def __expand(*args_, **kwargs_):
-                            self._emit_expand(stmt=do, knowledge_base=self.knowledge_base,
-                                              node_id=kwargs_.get('node_id', args_[0]))
 
-                            return Builtin.expand(self.knowledge_base, *args_, **kwargs_)
+                        def __expand(*args_, **kwargs_):
+                            self._emit_expand(
+                                stmt=do,
+                                knowledge_base=self.knowledge_base,
+                                node_id=kwargs_.get("node_id", args_[0]),
+                            )
+
+                            return Builtin.expand(
+                                self.knowledge_base, *args_, **kwargs_
+                            )
 
                         callable_fn = __expand
 
                     elif builtin_name == BuiltinFunctionEnum.EXTEND:
-                        def __extend(*args_, **kwargs_):
-                            self._emit_extend(stmt=do, knowledge_base=self.knowledge_base,
-                                              node_id=kwargs_.get('node_id', args_[0]))
 
-                            return Builtin.extend(self.knowledge_base, *args_, **kwargs_)
+                        def __extend(*args_, **kwargs_):
+                            self._emit_extend(
+                                stmt=do,
+                                knowledge_base=self.knowledge_base,
+                                node_id=kwargs_.get("node_id", args_[0]),
+                            )
+
+                            return Builtin.extend(
+                                self.knowledge_base, *args_, **kwargs_
+                            )
 
                         callable_fn = __extend
 
                     elif builtin_name == BuiltinFunctionEnum.GENERALIZE:
-                        def __generalize(*args_, **kwargs_):
-                            self._emit_generalize(stmt=do, knowledge_base=self.knowledge_base,
-                                                  node_id=kwargs_.get('node_id', args_[0]))
 
-                            return Builtin.generalize(self.knowledge_base, *args_, **kwargs_)
+                        def __generalize(*args_, **kwargs_):
+                            self._emit_generalize(
+                                stmt=do,
+                                knowledge_base=self.knowledge_base,
+                                node_id=kwargs_.get("node_id", args_[0]),
+                            )
+
+                            return Builtin.generalize(
+                                self.knowledge_base, *args_, **kwargs_
+                            )
 
                         callable_fn = __generalize
 
@@ -719,27 +883,32 @@ class Interpreter:
 
         # function call
         if is_action_call:
-            kind = 'action'
+            kind = "action"
         elif is_tool_call:
-            kind = 'tool'
+            kind = "tool"
         else:
-            kind = 'builtin'
+            kind = "builtin"
 
         outputs = do.producing
-        args, kwargs = self._parse_do_using(do=do)
-        
-        with self.CallEvent(self, stmt=do, name=fn_name, kind=kind, args=args):
+        args, kwargs = self._extract_args_and_kwargs(expression=do.using, statement=do)
+
+        with self.CallEvent(
+            self, stmt=do, name=fn_name, kind=kind, args=args, kwargs=kwargs
+        ):
             # LLM with schema call
-            if fn_name == "llm" and getattr(do, 'producing_schema', None):
+            if fn_name == "llm" and getattr(do, "producing_schema", None):
                 frame_name = do.producing_schema
 
                 if not isinstance(frame_name, str):
-                    raise self._runtime_exception("Generative schema blocks are "
-                                                  "not yet supported for execution.",
-                                                  statement=do)
+                    raise self._runtime_exception(
+                        "Generative schema blocks are not yet supported for execution.",
+                        statement=do,
+                    )
                 try:
                     if frame_name not in self.context.schemas:
-                        pydantic_schema = self._frame_to_pydantic_schema(frame_name, statement=do)
+                        pydantic_schema = self._frame_to_pydantic_schema(
+                            frame_name, statement=do
+                        )
                         self.context.schemas[frame_name] = pydantic_schema
                     else:
                         pydantic_schema = self.context.schemas[frame_name]
@@ -753,22 +922,33 @@ class Interpreter:
                         prompt_ = args[0]
 
                     elif isinstance(args[0], Struct):
-                        prompt_ = args[0].get('prompt', str(args[0]))
+                        prompt_ = args[0].get("prompt", str(args[0]))
                     else:
                         prompt_ = None
                 else:
-                    prompt_ = kwargs.get('prompt', None)
+                    prompt_ = kwargs.get("prompt", None)
 
                 if not isinstance(prompt_, str):
-                    err_msg = (f'Provided input prompt is not a string '
-                               f'but a "{Builtin.type(prompt_)}"!')
+                    err_msg = (
+                        f"Provided input prompt is not a string "
+                        f'but a "{Builtin.type(prompt_)}"!'
+                    )
                     raise self._runtime_exception(err_msg, statement=do)
 
-                structured = self.llm.invoke_structured(prompt_, schema=pydantic_schema)
-                self._emit_llm(stmt=do, prompt=prompt_, schema=pydantic_schema, usage=structured.usage)
+                structured = self.proxies.external.invoke_structured(
+                    prompt_, schema=pydantic_schema
+                )
+                self._emit_llm(
+                    stmt=do,
+                    prompt=prompt_,
+                    schema=pydantic_schema,
+                    llm_response=structured,
+                )
                 result = structured.result.model_dump()
             else:
-                callable_fn = self._wrap_callable_with_try_except(fn=callable_fn, statement=do)
+                callable_fn = self._wrap_callable_with_try_except(
+                    fn=callable_fn, statement=do
+                )
 
                 if is_action_call:
                     # Pass arguments as-is (Struct, list, or scalar).
@@ -791,10 +971,10 @@ class Interpreter:
                     else:
                         result = callable_fn(*args, **kwargs)
 
-            producing_schema = getattr(do, 'producing_schema', None)
+            producing_schema = getattr(do, "producing_schema", None)
             schema_applied = False
 
-            if isinstance(producing_schema, str) and fn_name != "llm" and outputs is not None:
+            if isinstance(producing_schema, str) and outputs is not None:
                 result = self._apply_frame_schema(do, result, producing_schema)
                 schema_applied = True
 
@@ -810,22 +990,29 @@ class Interpreter:
                 for i, var in enumerate(outputs.value):
                     assert isinstance(var, nmx_nodes.Variable)
                     assert isinstance(var.name, str)
-                    val = packed_value.get(var.name) if schema_applied else packed_value.get(i)
+                    val = (
+                        packed_value.get(var.name)
+                        if schema_applied
+                        else packed_value.get(i)
+                    )
                     self.context.env.set(var_name=var.name, value=val)
 
-    def interpret_conditional(self, conditional: nmx_nodes.ConditionBlock) -> tuple[Any, ReturnType]:
+    def interpret_conditional(
+        self, conditional: nmx_nodes.ConditionBlock
+    ) -> tuple[Any, ReturnType]:
         for block in conditional.children:
             if isinstance(block, (nmx_nodes.IfBlock, nmx_nodes.ElifBlock)):
-                assert isinstance(block.condition, nmx_nodes.Expression), \
+                assert isinstance(block.condition, nmx_nodes.Expression), (
                     f"Block condition must be an Expression, got {type(block.condition).__name__}"
+                )
                 self._emit_line(stmt=block.condition)
                 condition = self.interpret_expression(block.condition)
 
                 if condition:
                     if isinstance(block, nmx_nodes.IfBlock):
-                        self._push_scope(scope='if')
+                        self._push_scope(scope="if")
                     else:
-                        self._push_scope(scope='elif')
+                        self._push_scope(scope="elif")
 
                     for statement in block.children or []:
                         return_value, return_type = self.interpret_statement(statement)
@@ -840,7 +1027,7 @@ class Interpreter:
             else:
                 assert isinstance(block, nmx_nodes.ElseBlock)
 
-                self._push_scope(scope='else')
+                self._push_scope(scope="else")
                 for statement in block.children or []:
                     return_value, return_type = self.interpret_statement(statement)
 
@@ -871,8 +1058,10 @@ class Interpreter:
 
             if not isinstance(struct, nmx_runtime.Struct):
                 actual = nmx_runtime.Builtin.type(struct)
-                err_msg = (f'Cannot assign to "[{var_name}]" using a path: '
-                           f'"[{var_name}]" is {actual}, not a collection.')
+                err_msg = (
+                    f'Cannot assign to "[{var_name}]" using a path: '
+                    f'"[{var_name}]" is {actual}, not a collection.'
+                )
                 raise self._runtime_exception(err_msg, statement=assignment)
 
             for field in var_path[:-1]:
@@ -883,12 +1072,14 @@ class Interpreter:
                     struct.set(value=nmx_runtime.Struct(), key=field)
 
                 struct = struct[field]
-                path = f'{path}.{field}'
+                path = f"{path}.{field}"
 
                 if not isinstance(struct, nmx_runtime.Struct):
                     actual = nmx_runtime.Builtin.type(struct)
-                    err_msg = (f'Cannot navigate into "[{path}]": '
-                               f'"[{path}]" is {actual}, not a collection.')
+                    err_msg = (
+                        f'Cannot navigate into "[{path}]": '
+                        f'"[{path}]" is {actual}, not a collection.'
+                    )
                     raise self._runtime_exception(err_msg, statement=assignment)
 
             field = self.unbox_value(var_path[-1])
@@ -920,20 +1111,31 @@ class Interpreter:
             return self.eval_collection(collection=expression)
 
         elif isinstance(expression, nmx_nodes.UnaryOperation):
-            return self.eval_unary_op(operand=expression.operand, operation=expression.operation,
-                                      statement=expression)
+            return self.eval_unary_op(
+                operand=expression.operand,
+                operation=expression.operation,
+                statement=expression,
+            )
 
         elif isinstance(expression, nmx_nodes.BinaryOperation):
-            return self.eval_binary_op(first=expression.first, second=expression.second,
-                                       operation=expression.operation, statement=expression)
+            return self.eval_binary_op(
+                first=expression.first,
+                second=expression.second,
+                operation=expression.operation,
+                statement=expression,
+            )
 
         elif isinstance(expression, nmx_nodes.SimilarityOperation):
-            return self.eval_similarity_op(first=expression.first, second=expression.second,
-                                           operation=expression.operation,
-                                           qualifier=expression.qualifier, statement=expression)
+            return self.eval_similarity_op(
+                first=expression.first,
+                second=expression.second,
+                operation=expression.operation,
+                qualifier=expression.qualifier,
+                statement=expression,
+            )
 
         elif isinstance(expression, nmx_nodes.BuiltinFunction):
-            self._push_scope(scope='builtin')
+            self._push_scope(scope="builtin")
 
             def __call_builtin(fn):
                 value = fn()
@@ -942,44 +1144,61 @@ class Interpreter:
                 return value
 
             if expression.function == BuiltinFunctionEnum.LLM:
+
                 def __llm_call(prompt, *_, **kwargs_):
-                    response = Builtin.ask_llm(self.llm, prompt, **kwargs_)
-                    self._emit_llm(stmt=expression, prompt=prompt, usage=response.usage)
+                    response = Builtin.ask_llm(self.proxies.external, prompt, **kwargs_)
+                    self._emit_llm(
+                        stmt=expression, prompt=prompt, llm_response=response
+                    )
                     return response.text
+
                 function = __llm_call
 
             elif expression.function == BuiltinFunctionEnum.RETRIEVE:
+
                 def __retrieve(knowledge_base, *_, **kwargs):
-                    self._emit_retrieve(stmt=expression, knowledge_base=knowledge_base, **kwargs)
+                    self._emit_retrieve(
+                        stmt=expression, knowledge_base=knowledge_base, **kwargs
+                    )
                     return Builtin.retrieve(knowledge_base, **kwargs)
 
                 function = __retrieve
 
             elif expression.function == BuiltinFunctionEnum.EXPAND:
+
                 def __expand(knowledge_base, *_, **kwargs):
-                    self._emit_expand(stmt=expression, knowledge_base=knowledge_base, **kwargs)
+                    self._emit_expand(
+                        stmt=expression, knowledge_base=knowledge_base, **kwargs
+                    )
                     return Builtin.expand(knowledge_base, **kwargs)
 
                 function = __expand
 
             elif expression.function == BuiltinFunctionEnum.EXTEND:
+
                 def __extend(knowledge_base, *_, **kwargs):
-                    self._emit_extend(stmt=expression, knowledge_base=knowledge_base, **kwargs)
+                    self._emit_extend(
+                        stmt=expression, knowledge_base=knowledge_base, **kwargs
+                    )
                     return Builtin.extend(knowledge_base, **kwargs)
 
                 function = __extend
 
             elif expression.function == BuiltinFunctionEnum.GENERALIZE:
+
                 def __generalize(knowledge_base, *_, **kwargs):
-                    self._emit_generalize(stmt=expression, knowledge_base=knowledge_base, **kwargs)
+                    self._emit_generalize(
+                        stmt=expression, knowledge_base=knowledge_base, **kwargs
+                    )
                     return Builtin.generalize(knowledge_base, **kwargs)
 
                 function = __generalize
             else:
                 function = BUILTIN_FUNCTIONS[expression.function]
 
-            args = [self.interpret_expression(expression=arg) for arg in expression.args]
-
+            args, kwargs = self._extract_args_and_kwargs(
+                expression=expression.args, statement=expression
+            )
             try:
                 _builtin_name = expression.function.name.lower()
                 _builtin_prompt = (
@@ -988,23 +1207,15 @@ class Interpreter:
                     else ""
                 )
                 self._emit_line(stmt=expression, trim=True)
-                self._emit_call_enter(stmt=expression, trim=True, callable_type='builtin',
-                                      callable_name=_builtin_name, callable_prompt=_builtin_prompt)
+                self._emit_call_enter(
+                    stmt=expression,
+                    trim=True,
+                    callable_type="builtin",
+                    callable_name=_builtin_name,
+                    callable_prompt=_builtin_prompt,
+                )
 
-                if len(args) == 0:
-                    return __call_builtin(function)
-
-                if len(args) == 1:
-                    args = args[0]
-
-                    # TODO: should always to args and kwargs on single struct as input?
-                    if isinstance(args, nmx_runtime.Struct) and args.can_be_seen_as_list():
-                        args, _ = args.to_args_and_kwargs()
-                        return __call_builtin(lambda: function(*args))
-                    else:
-                        return __call_builtin(lambda: function(args))
-
-                return __call_builtin(lambda: function(*args))
+                return __call_builtin(lambda: function(*args, **kwargs))
 
             except Exception as e:
                 fn_name = expression.function.name
@@ -1019,14 +1230,17 @@ class Interpreter:
                 raise self._runtime_exception(err_msg, statement=expression)
 
             intentable = self.metadata[label]
-            field = '.'.join(expression.quals[1:])
+            field = ".".join(expression.quals[1:])
             return intentable.get(field, None)
 
-        assert (isinstance(expression, (nmx_nodes.Variable, nmx_nodes.SingleValue))
-                or isinstance(expression, str)
-                or expression is None), \
-            (f"Expression is not of an unboxable type! Expected either Variable, SingleValue, str or None, got "
-             f"{type(expression).__name__} instead.")
+        assert (
+            isinstance(expression, (nmx_nodes.Variable, nmx_nodes.SingleValue))
+            or isinstance(expression, str)
+            or expression is None
+        ), (
+            f"Expression is not of an unboxable type! Expected either Variable, SingleValue, str or None, got "
+            f"{type(expression).__name__} instead."
+        )
 
         return self.unbox_value(expression)
 
@@ -1052,8 +1266,11 @@ class Interpreter:
 
         return None, ReturnType.NONE
 
-    def eval_schemed_collection(self, schemed_collection: nmx_nodes.SchemedCollection,
-                                enclosing_frame: Optional[nmx_runtime.Frame] = None) -> Struct | None:
+    def eval_schemed_collection(
+        self,
+        schemed_collection: nmx_nodes.SchemedCollection,
+        enclosing_frame: Optional[nmx_runtime.Frame] = None,
+    ) -> Struct | None:
         if isinstance(schemed_collection.dataframe, nmx_nodes.Collection):
             frame_name = schemed_collection.value.upper()
             collection = schemed_collection.dataframe
@@ -1066,7 +1283,9 @@ class Interpreter:
             if frame_name in enclosing_frame.frames:
                 frame: nmx_runtime.Frame = enclosing_frame.frames[frame_name]
             else:
-                err_msg = f'Undefined frame "{frame_name}" in frame "{enclosing_frame.name}"!'
+                err_msg = (
+                    f'Undefined frame "{frame_name}" in frame "{enclosing_frame.name}"!'
+                )
                 raise self._runtime_exception(err_msg, statement=schemed_collection)
         else:
             if frame_name not in self.context.frames:
@@ -1082,8 +1301,11 @@ class Interpreter:
 
         return frame.apply_postfix(struct)
 
-    def eval_collection(self, collection: nmx_nodes.Collection,
-                        frame: Optional[nmx_runtime.Frame] = None) -> nmx_runtime.Struct:
+    def eval_collection(
+        self,
+        collection: nmx_nodes.Collection,
+        frame: Optional[nmx_runtime.Frame] = None,
+    ) -> nmx_runtime.Struct:
         inferred_type = collection.inferred_type
         assert inferred_type == VariableTypeEnum.LIST
 
@@ -1096,8 +1318,9 @@ class Interpreter:
             if isinstance(value, dict):
                 for k, v in value.items():
                     if isinstance(v, nmx_nodes.SchemedCollection):
-                        v = self.eval_schemed_collection(schemed_collection=v,
-                                                         enclosing_frame=frame)
+                        v = self.eval_schemed_collection(
+                            schemed_collection=v, enclosing_frame=frame
+                        )
                     elif isinstance(v, nmx_nodes.Collection):
                         v = self.eval_collection(collection=v)
                     else:
@@ -1106,8 +1329,9 @@ class Interpreter:
                     struct.set(value=v, key=k)
             else:
                 if isinstance(value, nmx_nodes.SchemedCollection):
-                    value_ = self.eval_schemed_collection(schemed_collection=value,
-                                                          enclosing_frame=frame)
+                    value_ = self.eval_schemed_collection(
+                        schemed_collection=value, enclosing_frame=frame
+                    )
                 elif isinstance(value, nmx_nodes.Collection):
                     value_ = self.eval_collection(collection=value)
                 else:
@@ -1117,15 +1341,24 @@ class Interpreter:
 
         return struct
 
-    def eval_similarity_op(self, first: nmx_nodes.Expression, second: nmx_nodes.Expression,
-                           operation: SimilarityEnum, qualifier: nmx_types.SimilarityQualifier | None,
-                           statement: nmx_nodes.Statement | None = None):
+    def eval_similarity_op(
+        self,
+        first: nmx_nodes.Expression,
+        second: nmx_nodes.Expression,
+        operation: SimilarityEnum,
+        qualifier: nmx_types.SimilarityQualifier | None,
+        statement: nmx_nodes.Statement | None = None,
+    ):
         a = self.interpret_expression(expression=first)
         b = self.interpret_expression(expression=second)
 
         def __nmx_similarity_exception() -> nmx_ex.NemantixOperationException:
-            error = nmx_ex.NemantixOperationException(operand=(a, b), operation_name=operation.name,
-                                                      statement=statement, script=self._get_global_script())
+            error = nmx_ex.NemantixOperationException(
+                operand=(a, b),
+                operation_name=operation.name,
+                statement=statement,
+                script=self._get_global_script(),
+            )
             self._emit_error(statement, error=error.message)
             return error
 
@@ -1143,8 +1376,9 @@ class Interpreter:
             if isinstance(a, (int, float, bool)) or isinstance(b, (int, float, bool)):
                 raise __nmx_similarity_exception()
 
-            if ((isinstance(a, nmx_runtime.DocRef) and isinstance(b, str)) or
-                    (isinstance(a, str) and isinstance(b, nmx_runtime.DocRef))):
+            if (isinstance(a, nmx_runtime.DocRef) and isinstance(b, str)) or (
+                isinstance(a, str) and isinstance(b, nmx_runtime.DocRef)
+            ):
                 if isinstance(a, nmx_runtime.DocRef):
                     doc = a.content
                     query = b
@@ -1152,16 +1386,26 @@ class Interpreter:
                     doc = b.content
                     query = a
 
-                similarity = self._compute_similarity(a=doc, b=query, statement=statement)
+                similarity = self._compute_similarity(
+                    a=doc, b=query, statement=statement
+                )
 
-            elif isinstance(a, nmx_runtime.DocRef) and isinstance(b, nmx_runtime.DocRef):
-                similarity = self._compute_similarity(a=a.content, b=b.content, statement=statement)
+            elif isinstance(a, nmx_runtime.DocRef) and isinstance(
+                b, nmx_runtime.DocRef
+            ):
+                similarity = self._compute_similarity(
+                    a=a.content, b=b.content, statement=statement
+                )
 
             elif isinstance(a, nmx_runtime.Struct) and isinstance(b, str):
-                return self._filter_by_similarity(struct=a, query=b, qualifier=qualifier)
+                return self._filter_by_similarity(
+                    struct=a, query=b, qualifier=qualifier
+                )
 
             elif isinstance(a, str) and isinstance(b, nmx_runtime.Struct):
-                return self._filter_by_similarity(struct=b, query=a, qualifier=qualifier)
+                return self._filter_by_similarity(
+                    struct=b, query=a, qualifier=qualifier
+                )
             else:
                 assert isinstance(a, str) and isinstance(b, str)
                 similarity = self._compute_similarity(a, b, statement=statement)
@@ -1181,19 +1425,29 @@ class Interpreter:
             inclusion_op = f'"{a}" <~ "{b}"'
 
         user_prompt = SEM_INCL_TEMPLATE.format(inclusion_op)
-        response = self._semantic_inclusion_with_llm(system_prompt, user_prompt,
-                                                     statement=statement)
-        logger.debug(f'Inclusion score of {inclusion_op} is {response.score}')
+        response = self._semantic_inclusion_with_llm(
+            system_prompt, user_prompt, statement=statement
+        )
+        logger.debug(f"Inclusion score of {inclusion_op} is {response.score}")
         return self._apply_semantic_qualifier(response.score, qualifier)
 
-    def eval_binary_op(self, first: nmx_nodes.Expression, second: nmx_nodes.Expression,
-                       operation: BinaryOperationEnum, statement: nmx_nodes.Statement | None = None):
+    def eval_binary_op(
+        self,
+        first: nmx_nodes.Expression,
+        second: nmx_nodes.Expression,
+        operation: BinaryOperationEnum,
+        statement: nmx_nodes.Statement | None = None,
+    ):
         a = self.interpret_expression(expression=first)
         b = self.interpret_expression(expression=second)
 
         def __nmx_operation_exception() -> nmx_ex.NemantixOperationException:
-            error = nmx_ex.NemantixOperationException(operand=(a, b), operation_name=operation.name,
-                                                      statement=statement, script=self._get_global_script())
+            error = nmx_ex.NemantixOperationException(
+                operand=(a, b),
+                operation_name=operation.name,
+                statement=statement,
+                script=self._get_global_script(),
+            )
             self._emit_error(statement, error=error.message)
             return error
 
@@ -1301,17 +1555,22 @@ class Interpreter:
             return a % b
 
         if operation == BinaryOperationEnum.POW:
-            return a ** b
+            return a**b
 
         return None
 
-    def eval_unary_op(self, operand: nmx_nodes.Expression, operation: UnaryOperationEnum,
-                      statement: nmx_nodes.Statement | None = None):
+    def eval_unary_op(
+        self,
+        operand: nmx_nodes.Expression,
+        operation: UnaryOperationEnum,
+        statement: nmx_nodes.Statement | None = None,
+    ):
         value = self.interpret_expression(expression=operand)
 
         def __nmx_operation_exception() -> nmx_ex.NemantixOperationException:
-            error = nmx_ex.NemantixOperationException(operand=value, operation_name=operation.name,
-                                                      statement=statement)
+            error = nmx_ex.NemantixOperationException(
+                operand=value, operation_name=operation.name, statement=statement
+            )
             self._emit_error(statement, error=error.message)
             return error
 
@@ -1385,14 +1644,18 @@ class Interpreter:
 
             elif len(value_path) > 0:
                 actual = nmx_runtime.Builtin.type(var)
-                err_msg = (f'Cannot read "[{value.name}]" using a path: '
-                           f'"[{value.name}]" is {actual}, not a collection.')
+                err_msg = (
+                    f'Cannot read "[{value.name}]" using a path: '
+                    f'"[{value.name}]" is {actual}, not a collection.'
+                )
                 raise self._runtime_exception(err_msg, statement=value)
 
             return var
 
         elif isinstance(value, nmx_nodes.SingleValue):
-            return self.unbox_token(token=value.value, inferred_type=value.inferred_type)
+            return self.unbox_token(
+                token=value.value, inferred_type=value.inferred_type
+            )
 
         return value.value
 
@@ -1423,7 +1686,7 @@ class Interpreter:
 
                 values.append(Builtin.to_str(expr))
 
-            return ''.join(values)
+            return "".join(values)
 
         return str(token)
 
@@ -1432,7 +1695,9 @@ class Interpreter:
         if value is None or isinstance(value, (bool, int, float, str)):
             return value
 
-        if isinstance(value, (nmx_runtime.Struct, nmx_runtime.DocRef, nmx_runtime.Opaque)):
+        if isinstance(
+            value, (nmx_runtime.Struct, nmx_runtime.DocRef, nmx_runtime.Opaque)
+        ):
             # do not box again
             return value
 
@@ -1459,27 +1724,63 @@ class Interpreter:
         # value is a python object
         return nmx_runtime.Opaque(obj=value)
 
-    def _semantic_inclusion_with_llm(self, system_prompt: str, user_prompt: str,
-                                     statement: nmx_nodes.Statement = None) -> SimilaritySchema:
-        messages = self.llm.messages_from(prompts_with_roles=[('system', system_prompt),
-                                                              ('user', user_prompt)])
+    def _semantic_inclusion_with_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        statement: nmx_nodes.Statement | None = None,
+    ) -> SimilaritySchema:
+        messages = self.llm.messages_from(
+            prompts_with_roles=[("system", system_prompt), ("user", user_prompt)]
+        )
 
         result = self.llm.invoke_structured(messages, schema=self.SimilaritySchema)
-        self._emit_llm(stmt=statement, prompt=system_prompt + user_prompt,
-                       internal=True, schema=self.SimilaritySchema, usage=result.usage)
+        self._emit_llm(
+            stmt=statement,
+            prompt=system_prompt + user_prompt,
+            internal=True,
+            schema=self.SimilaritySchema,
+            llm_response=result,
+        )
         response = result.result
 
         assert isinstance(response, self.SimilaritySchema)
         return response
 
+    def update_context(
+        self, script: Script | None = None, deliberate: Deliberate | None = None
+    ):
+        """Updates the interpretation context."""
+        if script is not None:
+            self._discover_actions(script, should_update=True)
+            self.context.add_script(script)
+
+        if deliberate is not None:
+            self._discover_deliberate_actions(deliberate, should_update=True)
+            self.context.add_deliberate(deliberate)
+
     def _build_context(self, script: Script, deliberate: Deliberate):
         self._set_global_deliberate(deliberate)
         self._set_global_script(script)
 
-        self._discover_imported_actions(script)
-        self._discover_actions(script, deliberate=deliberate)
-        self._discover_frames(script)
-        self._discover_toolsets_and_imports(script)
+        # required scripts discover
+        for required_script in self.expertise.get_required_scripts(script):
+            if required_script not in self.context:
+                self.context.add_script(script=required_script)
+                self._discover_actions(script=required_script)
+                self._discover_frames(script=required_script)
+                self._discover_toolsets_and_imports(script=required_script)
+
+        # current script discover
+        if script not in self.context:
+            self._discover_actions(script)
+            self._discover_frames(script)
+            self._discover_toolsets_and_imports(script)
+            self.context.add_script(script=script)
+
+        if deliberate not in self.context:
+            self._discover_deliberate_actions(deliberate)
+            self.context.add_deliberate(deliberate)
 
     def _discover_frames(self, script: Script):
         for frame in script.frames:
@@ -1488,20 +1789,93 @@ class Interpreter:
             if frame_key not in self.context.frames:
                 frame = self.interpret_frame(frame=frame)
                 self.context.frames[frame_key] = frame
-    
+
     def _discover_toolsets_and_imports(self, script: Script):
+        script_loc = script.get_location()
+
         for toolset_decl in script.toolsets_decl:
-            if toolset_decl.name not in self.context.toolsets:
-                self.interpret_tool_declaration(toolset_decl)
-                self.context.toolsets.add(toolset_decl.name)
-            else:
-                logger.info(f'Toolset "{toolset_decl.name}" already defined.')
+            toolset_name = toolset_decl.name
 
-        self.interpret_imports(list(script.toolset_imports.values()))
+            if toolset_name in self.context.toolsets_locations:
+                previous_loc = self.context.toolsets_locations[toolset_name]
 
-    def _get_frame_by_path(self, frame_path: str, statement: nmx_nodes.Statement = None) -> nmx_runtime.Frame:
+                # Collision across different scripts
+                if previous_loc != script_loc:
+                    raise self._runtime_exception(
+                        f"Cross-script collision: Toolset '{toolset_name}' was already declared in "
+                        f"'{previous_loc}'. You cannot overwrite it from '{script_loc}'.",
+                        statement=toolset_decl,
+                    )
+                # Redefined in the same script
+                else:
+                    logger.warning(
+                        f"Toolset '{toolset_name}' is declared multiple times in '{script_loc}'. "
+                        f"The later definition will overwrite the earlier one."
+                    )
+
+            #  Global Process collision
+            elif toolset_name in Toolset._classes:
+                logger.warning(
+                    f"Global toolset collision detected: '{toolset_name}' is already registered globally. "
+                    f"Redeclaring it will overwrite the existing definition and close active instances. "
+                    f"Consider using a unique name."
+                )
+
+            self.interpret_tool_declaration(toolset_decl)
+
+            # Update both the original set and the new map
+            self.context.toolsets.add(toolset_name)
+            self.context.toolsets_locations[toolset_name] = script_loc
+
+        self.interpret_imports(imports=list(script.toolset_imports.values()))
+        imported_names = {imp.name for imp in script.toolset_imports.values()}
+
+        # importing declared toolset (that are not imported via an import statement)
+        for toolset_decl in script.toolsets_decl:
+            toolset_name = toolset_decl.name
+
+            if toolset_name in imported_names:
+                continue
+
+            # Introspect the compiled class to see if it requires __init__ args
+            target_class = Toolset._classes.get(toolset_name)
+            if target_class is not None:
+                try:
+                    sig = inspect.signature(target_class)
+                    requires_args = False
+
+                    for param in sig.parameters.values():
+                        if param.kind in (
+                            inspect.Parameter.VAR_POSITIONAL,
+                            inspect.Parameter.VAR_KEYWORD,
+                        ):
+                            continue
+
+                        if param.default == inspect.Parameter.empty:
+                            requires_args = True
+                            break
+
+                    if requires_args:
+                        raise self._runtime_exception(
+                            f"Declared toolset '{toolset_name}' requires initialization arguments. "
+                            f"You must explicitly import it using: 'from toolset {toolset_name} as ... with [...] use *'",
+                            statement=toolset_decl,
+                        )
+                except ValueError as e:
+                    # Ignore if the signature cannot be introspected (e.g., certain C-bindings or builtins)
+                    logger.warning(f"The signature cannot be introspected: {e}")
+
+            # create an import statement that imports all @tool-annotated methods
+            import_stmt = nmx_nodes.ImportToolsetStatement(
+                name=toolset_name, elements=["*"], args=None, alias=None, meta=dict()
+            )
+            self.interpret_imports(imports=[import_stmt])
+
+    def _get_frame_by_path(
+        self, frame_path: str, statement: nmx_nodes.Statement = None
+    ) -> nmx_runtime.Frame:
         """Navigates the operational environment to fetch a frame by its fully qualified path."""
-        parts = frame_path.upper().split('.')
+        parts = frame_path.upper().split(".")
 
         # 1. Fetch the root frame from the Interpreter's global frames memory
         root_name = parts[0]
@@ -1516,13 +1890,19 @@ class Interpreter:
             rt_frame = rt_frame.frames.get(sub_name)
 
             if not rt_frame:
-                err_msg = f"Undefined subframe referenced: {sub_name} in path {frame_path}"
+                err_msg = (
+                    f"Undefined subframe referenced: {sub_name} in path {frame_path}"
+                )
                 raise self._runtime_exception(err_msg, statement=statement)
 
         return rt_frame
 
-    def _frame_to_pydantic_schema(self, frame_path: str, resolved_frames: dict | None = None,
-                                  statement: nmx_nodes.Statement | None = None) -> Type[BaseModel]:
+    def _frame_to_pydantic_schema(
+        self,
+        frame_path: str,
+        resolved_frames: dict | None = None,
+        statement: nmx_nodes.Statement | None = None,
+    ) -> Type[BaseModel]:
         """
         Dynamically converts a Nemantix Frame (by fully qualified path)
         into a Pydantic BaseModel for structured LLM proxy generation.
@@ -1541,9 +1921,9 @@ class Interpreter:
 
         # Extract slots. In runtime.py, slots are stored in a dict: `self.slots[name.lower()] = dict(types=..., cardinality=...)`
         # We iterate over the items to get both the slot name and its configuration.
-        for s_name, slot_info in getattr(rt_frame, 'slots', {}).items():
-            s_types = slot_info.get('types', [])
-            s_card = slot_info.get('cardinality')
+        for s_name, slot_info in getattr(rt_frame, "slots", {}).items():
+            s_types = slot_info.get("types", [])
+            s_card = slot_info.get("cardinality")
 
             # 1. Map NXS types to Python/Pydantic types
             mapped_types = []
@@ -1561,7 +1941,9 @@ class Interpreter:
                     mapped_types.append(dict | list | tuple)
                 elif kind == SlotTypesEnum.ENUM:
                     # val is expected to be a list of strings for an ENUM
-                    enum_cls = Enum(f"{s_name.capitalize()}Enum", {str(v): str(v) for v in val})
+                    enum_cls = Enum(
+                        f"{s_name.capitalize()}Enum", {str(v): str(v) for v in val}
+                    )
                     mapped_types.append(enum_cls)
                 elif kind == SlotTypesEnum.FRAME:
                     # If a slot is typed as a FRAME, `val` contains the frame name.
@@ -1572,8 +1954,9 @@ class Interpreter:
                     else:
                         nested_path = val
 
-                    nested_schema = self._frame_to_pydantic_schema(nested_path, resolved_frames,
-                                                                   statement=statement)
+                    nested_schema = self._frame_to_pydantic_schema(
+                        nested_path, resolved_frames, statement=statement
+                    )
                     mapped_types.append(nested_schema)
 
             # Resolve Union types (e.g., TEXT | INT)
@@ -1599,44 +1982,67 @@ class Interpreter:
             fields[s_name] = (final_type, default_val)
 
         # Note: pydantic doesn't like dots in model names, so we replace them.
-        safe_model_name = frame_path_upper.replace('.', '_')
+        safe_model_name = frame_path_upper.replace(".", "_")
         pydantic_model = create_model(safe_model_name, **fields)
 
         resolved_frames[frame_path_upper] = pydantic_model
 
         return pydantic_model
 
-    def _parse_do_using(self, do: nmx_nodes.DoStatement) -> tuple[list | Any, dict]:
-        expression = do.using
-
+    def _extract_args_and_kwargs(
+        self,
+        expression: list[Expression] | Expression | None,
+        statement: nmx_nodes.Statement,
+    ) -> tuple[list | Any, dict]:
         if expression is None:
             return (), {}
 
-        if isinstance(expression, nmx_nodes.Assignment):
-            return [], {expression.var.name: self.interpret_expression(expression.value)}
+        # Strip AST list wrappers
+        if isinstance(expression, list):
+            if len(expression) == 0:
+                return [], {}
 
-        if (isinstance(expression, nmx_nodes.Collection) and
-                any(isinstance(stmt, nmx_nodes.Assignment) for stmt in expression.value)):
+            expression = expression[0]
+
+        if isinstance(expression, nmx_nodes.Assignment):
+            return [], {
+                expression.var.name: self.interpret_expression(expression.value)
+            }
+
+        if isinstance(expression, nmx_nodes.Collection):
             args = []
             kwargs = {}
+            keyword_seen = False
 
-            for stmt in expression.value:
+            # Safeguard against single-node values
+            expr_values = expression.value
+            if not isinstance(expr_values, list):
+                expr_values = [expr_values]
+
+            for stmt in expr_values:
                 if isinstance(stmt, nmx_nodes.Assignment):
                     kwargs[stmt.var.name] = self.interpret_expression(stmt.value)
+                    keyword_seen = True
+
+                elif isinstance(stmt, dict):
+                    # Handle struct nominal fields
+                    for k, v in stmt.items():
+                        kwargs[k] = self.interpret_expression(v)
+
+                    keyword_seen = True
                 else:
+                    if keyword_seen:
+                        raise self._runtime_exception(
+                            "Positional argument follows nominal argument in 'using'",
+                            statement=statement,
+                        )
+
                     args.append(self.interpret_expression(expression=stmt))
 
             return args, kwargs
 
         args = self.interpret_expression(expression)
-        if isinstance(args, nmx_runtime.Struct):
-            args, kwargs = args.to_args_and_kwargs()
-            return args, kwargs
-
-        if not isinstance(args, (list, tuple)):
-            args = [args]
-
-        return args, {}
+        return [args], {}
 
     def _apply_frame_schema(self, do: nmx_nodes.DoStatement, result, frame_name: str):
         """
@@ -1652,18 +2058,23 @@ class Interpreter:
         frame_key = frame_name.upper()
         if frame_key not in self.context.frames:
             raise self._runtime_exception(
-                f'Undefined frame "{frame_name}" referenced in producing_schema', statement=do)
+                f'Undefined frame "{frame_name}" referenced in producing_schema',
+                statement=do,
+            )
 
         rt_frame = self.context.frames[frame_key]
-        slot_names = list(getattr(rt_frame, 'slots', {}).keys())
+        slot_names = list(getattr(rt_frame, "slots", {}).keys())
 
         # Collect producing variable names from the AST — no values, for privacy
         producing_expr = do.producing
         if isinstance(producing_expr, nmx_nodes.Variable):
             producing_names = [producing_expr.name]
         elif isinstance(producing_expr, nmx_nodes.Collection):
-            producing_names = [v.name for v in producing_expr.value
-                               if isinstance(v, nmx_nodes.Variable)]
+            producing_names = [
+                v.name
+                for v in producing_expr.value
+                if isinstance(v, nmx_nodes.Variable)
+            ]
         else:
             return result
 
@@ -1679,12 +2090,14 @@ class Interpreter:
 
         # Multiple output variables: ask LLM to map variable names → slot names.
         # Only names are sent, never the actual runtime values.
-        prompt = SCHEMA_APPLY_PROMPT.format(frame_name = frame_name, 
-                                            producing_names = producing_names, 
-                                            slot_names = slot_names)
+        prompt = SCHEMA_APPLY_PROMPT.format(
+            frame_name=frame_name,
+            producing_names=producing_names,
+            slot_names=slot_names,
+        )
 
-        response = Builtin.ask_llm(self.llm, prompt)
-        self._emit_llm(stmt=do, prompt=prompt, usage=response.usage, internal=True)
+        response = Builtin.ask_llm(self.proxies.external, prompt)
+        self._emit_llm(stmt=do, prompt=prompt, llm_response=response, internal=True)
 
         try:
             name_mapping = _ast.literal_eval(response.text.strip())
@@ -1692,8 +2105,10 @@ class Interpreter:
                 raise ValueError("LLM did not return a dict")
         except Exception:
             # Fallback: positional mapping
-            name_mapping = {producing_names[i]: slot_names[i]
-                            for i in range(min(len(producing_names), len(slot_names)))}
+            name_mapping = {
+                producing_names[i]: slot_names[i]
+                for i in range(min(len(producing_names), len(slot_names)))
+            }
 
         # Extract actual values per producing variable from the packed result
         packed = self.pack_return_value(result)
@@ -1713,10 +2128,20 @@ class Interpreter:
             if var_name in actual_values and slot_name in slot_names:
                 frame_struct.set(value=actual_values[var_name], key=slot_name)
 
-        return rt_frame.apply_postfix(frame_struct)
+        validated_struct = rt_frame.apply_postfix(frame_struct)
+
+        # Map the validated values back to the producing variable names
+        # so interpret_do_statement can correctly unpack them
+        final_struct = nmx_runtime.Struct()
+        for var_name, slot_name in name_mapping.items():
+            final_struct.set(value=validated_struct.get(slot_name), key=var_name)
+
+        return final_struct
 
     def _unpack_user_inputs(self, expression: nmx_nodes.Expression | None = None):
-        assert not isinstance(expression, (nmx_nodes.SchemedCollection, nmx_nodes.MetaExpression))
+        assert not isinstance(
+            expression, (nmx_nodes.SchemedCollection, nmx_nodes.MetaExpression)
+        )
         inputs = self.interpret_expression(expression)
 
         if inputs is None:
@@ -1731,62 +2156,71 @@ class Interpreter:
 
         return inputs
 
-    def _discover_imported_actions(self, script: Script):
-        required_locations = self.expertise.requires_map.get(script.get_location(), [])
-
-        for location in required_locations:
-            required_script = self.expertise.script_by_loc[location]
-            self._discover_actions(required_script)
-
-    def _discover_actions(self, script: Script, deliberate: Deliberate | None = None):
+    def _discover_actions(self, script: Script, should_update=False):
         for action in script.actions.values():
-            if action.name not in self.context.actions:
-                self.context.actions[action.name] = dict(closure=self._action_closure(action),
-                                                         is_global=True, imported_by={},
-                                                         action=action)
+            if should_update or action.name not in self.context.actions:
+                self.context.actions[action.name] = dict(
+                    closure=self._action_closure(action),
+                    is_global=True,
+                    imported_by={},
+                    action=action,
+                )
             else:
-                logger.warning(f'Name "{action.name}" already defined in context.actions!')
+                logger.warning(
+                    f'Name "{action.name}" already defined in context.actions!'
+                )
 
-        if deliberate is not None:
-            for action in deliberate.generated_actions:
-                if action.name not in self.context.actions:
-                    action_dict = dict(closure=self._action_closure(action), is_global=False, action=action,
-                                       imported_by={deliberate.name})
+    def _discover_deliberate_actions(self, deliberate: Deliberate, should_update=False):
+        for action in deliberate.generated_actions:
+            if should_update or action.name not in self.context.actions:
+                action_dict = dict(
+                    closure=self._action_closure(action),
+                    is_global=False,
+                    action=action,
+                    imported_by={deliberate.name},
+                )
 
-                    self.context.actions[action.name] = action_dict
-                    self.context.actions[f'{deliberate.name}.{action.name}'] = action_dict
-                else:
-                    logger.warning(f'Private action "{action.name}" shadowed by global action with same name!')
+                self.context.actions[action.name] = action_dict
+                self.context.actions[f"{deliberate.name}.{action.name}"] = action_dict
+            else:
+                logger.warning(
+                    f'Private action "{action.name}" shadowed by global action with same name!'
+                )
 
     def _set_global_deliberate(self, deliberate: nmx_nodes.Deliberate):
-        self.globals['__deliberate'] = deliberate
+        self.globals["__deliberate"] = deliberate
 
     def _get_global_deliberate(self) -> nmx_nodes.Deliberate | None:
-        return self.globals.get('__deliberate', None)
+        return self.globals.get("__deliberate", None)
 
     def _set_global_script(self, script: Script):
-        self.globals['__script'] = script
+        self.globals["__script"] = script
 
     def _get_global_script(self) -> Script | None:
-        return self.globals.get('__script', None)
+        return self.globals.get("__script", None)
 
-    def _set_block_inputs(self, block: nmx_types.PlanOrActionBlock, provided_args: Any,
-                          callee: nmx_nodes.DoStatement | None = None):
+    def _set_block_inputs(
+        self,
+        block: nmx_types.PlanOrActionBlock,
+        provided_args: Any,
+        callee: nmx_nodes.DoStatement | None = None,
+    ):
         pos_args = []
         kw_args = {}
 
         if isinstance(block, nmx_nodes.PlanBlock):
             deliberate = self._get_global_deliberate()
             assert deliberate is not None
-            block_name = f'plan::{deliberate.name}'
+            block_name = f"plan::{deliberate.name}"
         else:
             block_name = f'action "{block.name}"'
 
         # Standardize provided arguments into positional (list) and keyword (dict)
         if isinstance(provided_args, tuple):
             assert len(provided_args) == 2
-            assert (isinstance(provided_args[0], (list, tuple)) and
-                    isinstance(provided_args[1], dict))
+            assert isinstance(provided_args[0], (list, tuple)) and isinstance(
+                provided_args[1], dict
+            )
             pos_args, kw_args = provided_args
 
         elif isinstance(provided_args, (list, tuple)):
@@ -1800,50 +2234,68 @@ class Interpreter:
 
         provided_kw_keys = set(kw_args.keys())
 
+        # Use an independent index tracker for positional arguments
+        pos_idx = 0
+
         # Map provided arguments to the defined action inputs
-        for i, input_arg in enumerate(block.input):
+        for input_arg in block.input:
             arg_name = input_arg.name
             arg_set = False
 
-            if len(arg_name) == 0:
-                logger.warning(f'Skipping micro-prompt input "{input_arg.prompt.prompt}" '
-                               f'for block "{block_name}"!')
+            if not arg_name:
+                logger.warning(
+                    f'Skipping micro-prompt input "{input_arg.prompt.prompt}" '
+                    f'for block "{block_name}"!'
+                )
                 continue
 
-            # Prioritize keyword arguments
-            if arg_name in kw_args:
+            # 1. Consume positional arguments first (Left-to-Right)
+            if pos_idx < len(pos_args):
+                arg_val = pos_args[pos_idx]
+                arg_set = True
+                pos_idx += 1
+
+                # Check for collision: User provided arg positionally AND nominally
+                if arg_name in kw_args:
+                    err_msg = (
+                        f'{block_name} got multiple values for argument "{arg_name}"'
+                    )
+                    raise self._runtime_exception(err_msg, statement=callee)
+
+            # 2. Consume keyword arguments
+            elif arg_name in kw_args:
                 arg_val = kw_args[arg_name]
                 provided_kw_keys.remove(arg_name)
                 arg_set = True
 
-            # Fallback to positional arguments if not provided by keyword
-            elif i < len(pos_args):
-                arg_val = pos_args[i]
-                arg_set = True
+            # 3. Fallback to default or raise missing error
             else:
-                arg_val = None
-
-            # Validate required arguments
-            if not arg_set:
                 if input_arg.required:
                     err_msg = f'Missing required argument "{arg_name}" for action "{block_name}"!'
                     raise self._runtime_exception(err_msg, statement=callee)
                 else:
                     arg_val = self.interpret_expression(input_arg.default)
+                    arg_set = True
 
             # Bind argument to the operational environment
-            self.context.env.set(var_name=arg_name, value=arg_val)
+            if arg_set:
+                self.context.env.set(var_name=arg_name, value=arg_val)
 
         # Validate that NO extra/unknown keyword arguments were provided
         if provided_kw_keys:
             extra_args = ", ".join(provided_kw_keys)
-            err_msg = f'{block_name} received unexpected keyword arguments: {extra_args}'
+            err_msg = (
+                f"{block_name} received unexpected keyword arguments: {extra_args}"
+            )
             raise self._runtime_exception(err_msg, statement=callee)
 
         # Validate that NO extra positional arguments were provided
-        if len(pos_args) > len(block.input):
-            err_msg = (f'{block_name} expects at most {len(block.input)} positional arguments, '
-                       f'but {len(pos_args)} were provided ({pos_args}).')
+        if pos_idx < len(pos_args):
+            expected_pos_max = len([arg for arg in block.input if arg.name])
+            err_msg = (
+                f"{block_name} expects at most {expected_pos_max} positional arguments, "
+                f"but {len(pos_args)} were provided ({pos_args})."
+            )
             raise self._runtime_exception(err_msg, statement=callee)
 
     def _action_closure(self, action: nmx_nodes.ActionBlock):
@@ -1852,21 +2304,31 @@ class Interpreter:
 
             if (callee is not None) and (not isinstance(callee, nmx_nodes.DoStatement)):
                 callee = None
-                logger.warning(f'Ignoring callee argument as it is not a DoStatement but a "{type(callee)}"!')
+                logger.warning(
+                    f'Ignoring callee argument as it is not a DoStatement but a "{type(callee)}"!'
+                )
 
             return self.interpret_block(action, args, callee=callee)
 
         return wrap
 
-    def _event_from_statement(self, stmt: nmx_nodes.Statement | None, event_type: EventType,
-                              scope=None, trim=False, **kwargs):
-        scope = scope or self.globals['__scope']
+    def _event_from_statement(
+        self,
+        stmt: nmx_nodes.Statement | None,
+        event_type: EventType,
+        scope=None,
+        trim=False,
+        **kwargs,
+    ):
+        scope = scope or self.globals["__scope"]
         deliberate = self._get_global_deliberate()
         assert deliberate is not None
-        script = self.expertise.get_script_from_deliberate(deliberate_name=deliberate.name)
+        script = self.expertise.get_script_from_deliberate(
+            deliberate_name=deliberate.name
+        )
 
         if stmt is not None:
-            file_meta = stmt.meta['file_meta']
+            file_meta = stmt.meta["file_meta"]
             assert isinstance(file_meta, nmx_nodes.FileMeta)
 
             start_line, end_line = file_meta.line
@@ -1875,20 +2337,33 @@ class Interpreter:
             content = script.read(read_as_lines_list=True)
 
             if trim:
-                payload = '\n'.join(line[start_column - 1:end_column]
-                                    for line in content[start_line - 1:end_line])
+                payload = "\n".join(
+                    line[start_column - 1 : end_column]
+                    for line in content[start_line - 1 : end_line]
+                )
             else:
-                payload = '\n'.join(content[start_line - 1:end_line])
+                payload = "\n".join(content[start_line - 1 : end_line])
         else:
             start_line, end_line = 0, 0
-            payload = '<empty>'
+            payload = "<empty>"
 
-        event = Event(type=event_type, lines=(start_line, end_line),
-                      scope='::'.join(scope), script=script,
-                      statement=payload.strip(), **kwargs)
+        event = Event(
+            type=event_type,
+            lines=(start_line, end_line),
+            scope="::".join(scope),
+            script=script,
+            statement=payload.strip(),
+            **kwargs,
+        )
         return event
 
-    def _emit_event(self, stmt: nmx_nodes.Statement | None, event_type: EventType, scope=None, **kwargs):
+    def _emit_event(
+        self,
+        stmt: nmx_nodes.Statement | None,
+        event_type: EventType,
+        scope=None,
+        **kwargs,
+    ):
         event_hub = context.event_hub.get()
         if event_hub is None:
             return
@@ -1900,7 +2375,13 @@ class Interpreter:
         event_hub.emit(event)
 
     def _emit_line(self, stmt: nmx_nodes.Statement, scope=None, **kwargs):
-        self._emit_event(stmt, event_type=EventType.LINE, scope=scope, payload=dict(interpreter=self), **kwargs)
+        self._emit_event(
+            stmt,
+            event_type=EventType.LINE,
+            scope=scope,
+            payload=dict(interpreter=self),
+            **kwargs,
+        )
 
     def _emit_call_enter(self, stmt: nmx_nodes.Statement, scope=None, **kwargs):
         payload = dict(
@@ -1908,57 +2389,143 @@ class Interpreter:
             type=kwargs.pop("callable_type"),
             prompt=kwargs.pop("callable_prompt", ""),
         )
-        self._emit_event(stmt, event_type=EventType.CALL_ENTER, scope=scope,
-                         payload=payload, **kwargs)
+        self._emit_event(
+            stmt,
+            event_type=EventType.CALL_ENTER,
+            scope=scope,
+            payload=payload,
+            **kwargs,
+        )
 
     def _emit_call_exit(self, stmt: nmx_nodes.Statement, scope=None, **kwargs):
         self._emit_event(stmt, event_type=EventType.CALL_EXIT, scope=scope, **kwargs)
 
-    def _emit_error(self, stmt: nmx_nodes.Statement | None, error: Exception | str, scope=None, **kwargs):
+    def _emit_error(
+        self,
+        stmt: nmx_nodes.Statement | None,
+        error: Exception | str,
+        scope=None,
+        **kwargs,
+    ):
         if stmt is None:
-            logger.warning(f'Skipping error emit due to None statement. Error: {error}')
+            logger.warning(f"Skipping error emit due to None statement. Error: {error}")
             return
 
-        self._emit_event(stmt, event_type=EventType.ERROR, scope=scope,
-                         payload=dict(error=str(error), interpreter=self), **kwargs)
+        self._emit_event(
+            stmt,
+            event_type=EventType.ERROR,
+            scope=scope,
+            payload=dict(error=str(error), interpreter=self),
+            **kwargs,
+        )
 
-    def _emit_llm(self, stmt: nmx_nodes.Statement | None, prompt: str, schema: type[BaseModel] | None = None,
-                  usage=None, scope=None, internal=False, **kwargs):
-        self._emit_event(stmt, event_type=EventType.LLM, scope=scope,
-                         payload=dict(prompt=prompt, schema=schema, usage=usage,
-                                      internal_usage=bool(internal),
-                                      name=self.llm.get_name()), **kwargs)
+    def _emit_llm(
+        self,
+        stmt: nmx_nodes.Statement | None,
+        prompt: str,
+        llm_response: LLMResponse | StructuredLLMResponse,
+        schema: type[BaseModel] | None = None,
+        scope=None,
+        internal=False,
+        **kwargs,
+    ):
+        self._emit_event(
+            stmt,
+            event_type=EventType.LLM,
+            scope=scope,
+            payload=dict(
+                prompt=prompt,
+                schema=schema,
+                usage=llm_response.usage,
+                internal_usage=bool(internal),
+                name=llm_response.proxy.get_name(),
+            ),
+            **kwargs,
+        )
 
-    def _emit_retrieve(self, stmt: nmx_nodes.Statement, knowledge_base: NemantixKnowledgeBase, scope = None, **kwargs):
-        self._emit_event(stmt, event_type=EventType.RETRIEVE, scope=scope,
-                         payload=dict(knowledge_base=knowledge_base, query=kwargs.pop('query', '')),
-                         **kwargs)
+    def _emit_retrieve(
+        self,
+        stmt: nmx_nodes.Statement,
+        knowledge_base: NemantixKnowledgeBase,
+        scope=None,
+        **kwargs,
+    ):
+        self._emit_event(
+            stmt,
+            event_type=EventType.RETRIEVE,
+            scope=scope,
+            payload=dict(knowledge_base=knowledge_base, query=kwargs.pop("query", "")),
+            **kwargs,
+        )
 
-    def _emit_expand(self, stmt: nmx_nodes.Statement, knowledge_base: NemantixKnowledgeBase, scope = None, **kwargs):
-        self._emit_event(stmt, event_type=EventType.EXPAND, scope=scope,
-                         payload=dict(knowledge_base=knowledge_base,
-                                      query=f'node_id: {kwargs.pop('node_id', None)}'), **kwargs)
+    def _emit_expand(
+        self,
+        stmt: nmx_nodes.Statement,
+        knowledge_base: NemantixKnowledgeBase,
+        scope=None,
+        **kwargs,
+    ):
+        self._emit_event(
+            stmt,
+            event_type=EventType.EXPAND,
+            scope=scope,
+            payload=dict(
+                knowledge_base=knowledge_base,
+                query=f"node_id: {kwargs.pop('node_id', None)}",
+            ),
+            **kwargs,
+        )
 
-    def _emit_extend(self, stmt: nmx_nodes.Statement, knowledge_base: NemantixKnowledgeBase, scope = None, **kwargs):
-        self._emit_event(stmt, event_type=EventType.EXTEND, scope=scope,
-                         payload=dict(knowledge_base=knowledge_base,
-                                      query=f'node_id: {kwargs.pop('node_id', None)}'), **kwargs)
+    def _emit_extend(
+        self,
+        stmt: nmx_nodes.Statement,
+        knowledge_base: NemantixKnowledgeBase,
+        scope=None,
+        **kwargs,
+    ):
+        self._emit_event(
+            stmt,
+            event_type=EventType.EXTEND,
+            scope=scope,
+            payload=dict(
+                knowledge_base=knowledge_base,
+                query=f"node_id: {kwargs.pop('node_id', None)}",
+            ),
+            **kwargs,
+        )
 
-    def _emit_generalize(self, stmt: nmx_nodes.Statement, knowledge_base: NemantixKnowledgeBase, scope = None, **kwargs):
-        self._emit_event(stmt, event_type=EventType.GENERALIZE, scope=scope,
-                         payload=dict(knowledge_base=knowledge_base,
-                                      query=f'node_id: {kwargs.pop('node_id', None)}'), **kwargs)
+    def _emit_generalize(
+        self,
+        stmt: nmx_nodes.Statement,
+        knowledge_base: NemantixKnowledgeBase,
+        scope=None,
+        **kwargs,
+    ):
+        self._emit_event(
+            stmt,
+            event_type=EventType.GENERALIZE,
+            scope=scope,
+            payload=dict(
+                knowledge_base=knowledge_base,
+                query=f"node_id: {kwargs.pop('node_id', None)}",
+            ),
+            **kwargs,
+        )
 
     def _push_scope(self, scope: str):
-        self.globals['__scope'].append(scope)
+        self.globals["__scope"].append(scope)
 
     def _pop_scope(self):
-        if len(self.globals['__scope']) > 0:
-            self.globals['__scope'].pop()
+        if len(self.globals["__scope"]) > 0:
+            self.globals["__scope"].pop()
 
-    def _filter_by_similarity(self, struct: nmx_runtime.Struct, query: Any,
-                              qualifier: SimilarityQualifierEnum | float,
-                              query_emb: npt.NDArray = None) -> nmx_runtime.Struct:
+    def _filter_by_similarity(
+        self,
+        struct: nmx_runtime.Struct,
+        query: Any,
+        qualifier: SimilarityQualifierEnum | float,
+        query_emb: npt.NDArray = None,
+    ) -> nmx_runtime.Struct:
         filtered = nmx_runtime.Struct()
 
         if not isinstance(query_emb, np.ndarray):
@@ -1970,37 +2537,54 @@ class Interpreter:
                 raise NotImplementedError
 
             if isinstance(value, nmx_runtime.Struct):
-                sub_struct = self._filter_by_similarity(struct=value, query=query,
-                                                        qualifier=qualifier, query_emb=query_emb)
+                sub_struct = self._filter_by_similarity(
+                    struct=value, query=query, qualifier=qualifier, query_emb=query_emb
+                )
                 if len(sub_struct) > 0:
                     filtered.set(key=key_, value=sub_struct)
             else:
-                similarity = self._compute_similarity(a=Builtin.to_str(value), b=None, b_emb=query_emb)
+                similarity = self._compute_similarity(
+                    a=Builtin.to_str(value), b=None, b_emb=query_emb
+                )
 
                 if self._apply_similarity_qualifier(similarity, qualifier):
                     filtered.set(key=key_, value=value)
 
         return filtered
 
-    def _compute_similarity(self, a, b, statement: nmx_nodes.Statement | None = None, **kwargs) -> float:
+    def _compute_similarity(
+        self, a, b, statement: nmx_nodes.Statement | None = None, **kwargs
+    ) -> float:
         if self.embedder is None:
             # use LLM to compute similarity between a and b
-            system_prompt = ('You are a multilingual language expert, able to understand '
-                             'whether two words or phrases have a similar semantic meaning. '
-                             'A similarity expression is denoted as ["a" ~ "b"].')
-            user_prompt = (f'Task: Evaluate the similarity expression: ["{a}" ~ "{b}"]. '
-                           f'Return true or false, along with a score in 0-1 range that '
-                           f'quantifies the degree of similarity (0: means dissimilar or opposite, '
-                           f'1: means very similar or identical).')
+            system_prompt = (
+                "You are a multilingual language expert, able to understand "
+                "whether two words or phrases have a similar semantic meaning. "
+                'A similarity expression is denoted as ["a" ~ "b"].'
+            )
+            user_prompt = (
+                f'Task: Evaluate the similarity expression: ["{a}" ~ "{b}"]. '
+                f"Return true or false, along with a score in 0-1 range that "
+                f"quantifies the degree of similarity (0: means dissimilar or opposite, "
+                f"1: means very similar or identical)."
+            )
 
-            messages = self.llm.messages_from(prompts_with_roles=[('system', system_prompt),
-                                                                  ('user', user_prompt)])
+            messages = self.llm.messages_from(
+                prompts_with_roles=[("system", system_prompt), ("user", user_prompt)]
+            )
 
-            response = self.llm.invoke_structured(messages, schema=self.SimilaritySchema)
+            response = self.llm.invoke_structured(
+                messages, schema=self.SimilaritySchema
+            )
             result = response.result
 
-            self._emit_llm(stmt=statement, prompt=system_prompt + user_prompt,
-                           internal=True, schema=self.SimilaritySchema, usage=response.usage)
+            self._emit_llm(
+                stmt=statement,
+                prompt=system_prompt + user_prompt,
+                internal=True,
+                schema=self.SimilaritySchema,
+                llm_response=response,
+            )
 
             logger.debug(f'Similarity score of "{a} ~ {b}" is {result.score}')
             return result.score
@@ -2009,21 +2593,25 @@ class Interpreter:
 
     def _set_special_variables(self):
         # TODO: add semantics to (all/some) variables?
-        self._register_special_var(name='ENV', value=self.external_vars)
-        self._register_special_var(name='STATE', value=self.agent_state, read_only=False)
+        self._register_special_var(name="ENV", value=self.external_vars)
+        self._register_special_var(
+            name="STATE", value=self.agent_state, read_only=False
+        )
 
         # math constants
         # see: https://en.wikipedia.org/wiki/List_of_mathematical_constants
-        self._register_special_var(name='PI', value=math.pi)  # Archimede pi
-        self._register_special_var(name='E', value=math.e)  # Euler number
-        self._register_special_var(name='SQRT_2', value=math.sqrt(2))
-        self._register_special_var(name='SQRT_3', value=math.sqrt(3))
-        self._register_special_var(name='GOLDEN_RATIO', value=(1.0 + math.sqrt(5)) / 2.0)
-        self._register_special_var(name='LN_2', value=math.log(2))
+        self._register_special_var(name="PI", value=math.pi)  # Archimede pi
+        self._register_special_var(name="E", value=math.e)  # Euler number
+        self._register_special_var(name="SQRT_2", value=math.sqrt(2))
+        self._register_special_var(name="SQRT_3", value=math.sqrt(3))
+        self._register_special_var(
+            name="GOLDEN_RATIO", value=(1.0 + math.sqrt(5)) / 2.0
+        )
+        self._register_special_var(name="LN_2", value=math.log(2))
 
         # physics constants
-        self._register_special_var(name='C', value=299_792_458)  # speed of light in m/s
-        self._register_special_var(name='G', value=9.80665)  # Earth's gravity in m/s^2
+        self._register_special_var(name="C", value=299_792_458)  # speed of light in m/s
+        self._register_special_var(name="G", value=9.80665)  # Earth's gravity in m/s^2
 
     def _register_special_var(self, name: str, value, read_only=True):
         self.context.env.set(var_name=name, value=value)
@@ -2031,8 +2619,9 @@ class Interpreter:
         if read_only:
             self._SPECIAL_VARS.add(name)
 
-    def _wrap_callable_with_try_except(self, fn: Callable,
-                                       statement: nmx_nodes.Statement) -> Callable:
+    def _wrap_callable_with_try_except(
+        self, fn: Callable, statement: nmx_nodes.Statement
+    ) -> Callable:
         assert callable(fn)
 
         def inner(*args, **kwargs):
@@ -2040,14 +2629,23 @@ class Interpreter:
                 return fn(*args, **kwargs)
             except Exception as e:
                 self._log_exception(e)
-                fn_name = 'functools.partial' if type(fn) is functools.partial else fn.__name__
+                fn_name = (
+                    "functools.partial"
+                    if type(fn) is functools.partial
+                    else fn.__name__
+                )
 
-                raise self._runtime_exception(f'Exception in execution of "{fn_name}". '
-                                              f'Error: {e}', statement=statement)
+                raise self._runtime_exception(
+                    f'Exception in execution of "{fn_name}". Error: {e}',
+                    statement=statement,
+                )
+
         return inner
 
     @staticmethod
-    def _apply_similarity_qualifier(similarity: float, qualifier: SimilarityQualifierEnum | float) -> bool:
+    def _apply_similarity_qualifier(
+        similarity: float, qualifier: SimilarityQualifierEnum | float
+    ) -> bool:
         if qualifier == SimilarityQualifierEnum.FAR:
             return similarity <= 0.4
 
@@ -2068,7 +2666,9 @@ class Interpreter:
         return similarity >= qualifier
 
     @staticmethod
-    def _apply_semantic_qualifier(similarity: float, qualifier: SimilarityQualifierEnum | float) -> bool:
+    def _apply_semantic_qualifier(
+        similarity: float, qualifier: SimilarityQualifierEnum | float
+    ) -> bool:
         if qualifier == SimilarityQualifierEnum.FAR:
             return similarity <= 0.45
 
@@ -2090,30 +2690,42 @@ class Interpreter:
 
     @staticmethod
     def _is_arithmetic_op(operation: BinaryOperationEnum) -> bool:
-        return operation in [BinaryOperationEnum.ADD, BinaryOperationEnum.SUB,
-                             BinaryOperationEnum.MUL, BinaryOperationEnum.DIV,
-                             BinaryOperationEnum.MOD, BinaryOperationEnum.POW]
+        return operation in [
+            BinaryOperationEnum.ADD,
+            BinaryOperationEnum.SUB,
+            BinaryOperationEnum.MUL,
+            BinaryOperationEnum.DIV,
+            BinaryOperationEnum.MOD,
+            BinaryOperationEnum.POW,
+        ]
 
     @staticmethod
     def _is_logical_op(operation: BinaryOperationEnum) -> bool:
-        return operation in [BinaryOperationEnum.LOGICAL_OR, BinaryOperationEnum.LOGICAL_AND,
-                             BinaryOperationEnum.LOGICAL_XOR]
+        return operation in [
+            BinaryOperationEnum.LOGICAL_OR,
+            BinaryOperationEnum.LOGICAL_AND,
+            BinaryOperationEnum.LOGICAL_XOR,
+        ]
 
     @staticmethod
     def _is_comparison_op(operation: BinaryOperationEnum) -> bool:
-        return operation in [BinaryOperationEnum.LT, BinaryOperationEnum.GT,
-                             BinaryOperationEnum.LTE, BinaryOperationEnum.GTE]
+        return operation in [
+            BinaryOperationEnum.LT,
+            BinaryOperationEnum.GT,
+            BinaryOperationEnum.LTE,
+            BinaryOperationEnum.GTE,
+        ]
 
-    def _runtime_exception(self, *args, cls=nmx_ex.NemantixRuntimeException,
-                           emit=True, **kwargs) -> nmx_ex.NemantixRuntimeException:
-        kwargs['script'] = self._get_global_script()
+    def _runtime_exception(
+        self, *args, cls=nmx_ex.NemantixRuntimeException, emit=True, **kwargs
+    ) -> nmx_ex.NemantixRuntimeException:
+        kwargs["script"] = self._get_global_script()
 
         if emit:
-            self._emit_error(stmt=kwargs.get('statement', None),
-                             error=args[0])
+            self._emit_error(stmt=kwargs.get("statement", None), error=args[0])
 
         return cls(*args, **kwargs)
 
     @staticmethod
     def _log_exception(exception: Exception):
-        logger.error(f'[{exception.__class__.__name__}]: {exception}', exc_info=True)
+        logger.error(f"[{exception.__class__.__name__}]: {exception}", exc_info=True)

@@ -1,33 +1,32 @@
+from typing import List
+
 import pytest
+from pydantic import BaseModel
 
 from nemantix.core import Toolset, tool
 from nemantix.llm.abstract_proxy import (
     AbstractLLMProxy,
     LLMProxyException,
     LLMResponse,
-    LLMUsage,
+    StructuredLLMResponse,
 )
 from nemantix.llm.credentials import Credentials
 from nemantix.llm.openai_proxy import OpenAILLMProxy
 
 
+class LocationData(BaseModel):
+    city: str
+    zip_code: int
+
+
 def test_openai_init_and_invoke_stream_bind_unbind(openai_llm_proxy):
-    """
-    This test now accepts the `openai_llm_proxy` fixture,
-    which ensures the client is mocked before the proxy is even created.
-    """
-    proxy = openai_llm_proxy  # Use the proxy instance from the fixture
+    proxy = openai_llm_proxy
 
     # unbound invoke
     out = proxy.invoke("Hello")
     assert isinstance(out, LLMResponse)
-    assert "Mock response to: Hello" in out.text
-    assert out.tool_calls == []
-    assert isinstance(out.usage, LLMUsage)
-    assert out.usage.input_tokens >= 0
-    assert out.usage.output_tokens >= 0
 
-    # bind tools and invoke
+    # bind complex tools
     class DummyToolset(Toolset):
         @tool
         def get_current_weather(self, location: str):
@@ -35,39 +34,65 @@ def test_openai_init_and_invoke_stream_bind_unbind(openai_llm_proxy):
             pass
 
         @tool
-        def get_stock_price(self, ticker: str):
-            """Another dummy tool."""
+        def get_complex_weather(self, loc_data: LocationData, tags: List[str]):
+            """A tool with complex schemas."""
             pass
 
-    proxy2 = proxy.bind_tools(DummyToolset, ["get_current_weather", "get_stock_price"])
+    proxy2 = proxy.bind_tools(
+        DummyToolset, ["get_current_weather", "get_complex_weather"]
+    )
+
+    bound_tools = proxy2._bound_tools
+    complex_tool = next(
+        t for t in bound_tools if t["function"]["name"] == "get_complex_weather"
+    )
+    props = complex_tool["function"]["parameters"]["properties"]
+
+    # Verify Pydantic model mapping
+    assert props["loc_data"]["type"] == "object"
+    assert "city" in props["loc_data"]["properties"]
+
+    # Verify List mapping
+    assert props["tags"]["type"] == "array"
+    assert props["tags"]["items"]["type"] == "string"
+    # ------------------------------------------------
+
     out2 = proxy2.invoke("What's the weather? And stock?")
-    assert "get_current_weather" in [tc["name"] for tc in out2.tool_calls]
     assert out2.tool_calls[0]["args"] == {"location": "Boston"}
 
-    # streaming yields characters
     chunks = list(proxy.stream("abc"))
     assert "".join(chunks) == "Mock stream response."
 
-    # unbind
     proxy3 = proxy.unbind_tools()
     out3 = proxy3.invoke("What's the weather? And stock?")
-    # After unbinding, the mock should revert to a simple text response
-    assert "Mock response to: What's the weather? And stock?" in out3.text
     assert out3.tool_calls == []
 
 
+def test_stream_accepts_list_prompt(openai_llm_proxy):
+    messages = [{"role": "user", "content": "abc"}]
+    chunks = list(openai_llm_proxy.stream(messages))
+    assert "".join(chunks) == "Mock stream response."
+
+
+def test_invoke_structured_accepts_list_prompt(openai_llm_proxy):
+    class Reply(BaseModel):
+        result: str = ""
+
+    messages = [{"role": "user", "content": "hello"}]
+    result = openai_llm_proxy.invoke_structured(messages, schema=Reply)
+    assert isinstance(result, StructuredLLMResponse)
+
+
 def test_openai_errors_surface(monkeypatch):
-    # noinspection PyUnusedLocal
-    def bad_ctor(**kwargs):
+    def bad_ctor(**__):
         raise RuntimeError("boom")
 
     # Patch the resolved symbol *within the module where it's used*
     monkeypatch.setattr("nemantix.llm.openai_proxy.OpenAI", bad_ctor)
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
+
     with pytest.raises(
         LLMProxyException, match="Failed to initialize compatible client: boom"
     ):

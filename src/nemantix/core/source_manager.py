@@ -1,12 +1,11 @@
 import os
-
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from nemantix.core.exceptions import NemantixException
-from nemantix.core.custom_types import PathLike
 from nemantix.common.logger import get_package_logger
+from nemantix.core.custom_types import PathLike
+from nemantix.core.exceptions import NemantixException
 
 logger = get_package_logger(__name__)
 
@@ -75,10 +74,14 @@ class LocalSourceManager(SourceManager):
         self._open_files_content: list[Any] = []  # FIFO queue
         self.max_file_cache = max_file_cache
         self.default_export_location = default_export_path
-        if self.default_export_location is not None and not isinstance(self.default_export_location, Path):
+        if self.default_export_location is not None and not isinstance(
+            self.default_export_location, Path
+        ):
             self.default_export_location = Path(self.default_export_location)
         if not self.default_export_location:
-            logger.warning("Default export path not provided, using default export path to './coding_output'")
+            logger.warning(
+                "Default export path not provided, using default export path to './coding_output'"
+            )
             self.default_export_location = Path("./coding_output")
 
     def empty_file_cache(self):
@@ -116,7 +119,9 @@ class LocalSourceManager(SourceManager):
             path = Path(path)
 
         if path.exists():
-            logger.warning(f"Output directory already exists, will be overwritten: {path}")
+            logger.warning(
+                f"Output directory already exists, will be overwritten: {path}"
+            )
         os.makedirs(path.parent, exist_ok=True)
 
         if isinstance(content, list):
@@ -146,7 +151,9 @@ class LocalSourceManager(SourceManager):
             path = str(path)
 
         if os.path.isdir(path):
-            raise NemantixException(f"The path '{path}' is a directory. Please provide a file path.")
+            raise NemantixException(
+                f"The path '{path}' is a directory. Please provide a file path."
+            )
 
         return path.split(".")[-1]
 
@@ -154,14 +161,18 @@ class LocalSourceManager(SourceManager):
         if not isinstance(location, Path):
             location = Path(location)
         if os.path.isdir(location):
-            raise NemantixException(f"The path '{location}' is a directory. Please provide a file path.")
+            raise NemantixException(
+                f"The path '{location}' is a directory. Please provide a file path."
+            )
         return location.stem
 
     def get_file_name_with_extension(self, location: PathLike) -> str:
         if not isinstance(location, Path):
             location = Path(location)
         if os.path.isdir(location):
-            raise NemantixException(f"The path '{location}' is a directory. Please provide a file path.")
+            raise NemantixException(
+                f"The path '{location}' is a directory. Please provide a file path."
+            )
         return location.stem + "." + self.get_file_extension(location)
 
     def get_default_export_location(self):
@@ -190,14 +201,14 @@ class LocalSourceManager(SourceManager):
 
     def location_to_str(self, location: PathLike) -> str:
         location = Path(location) if not isinstance(location, Path) else location
-        location = location.as_posix()
+        location = location.resolve().as_posix()
         return str(location)
 
     def change_file_extension(self, location: PathLike, ext: str) -> PathLike:
         location = Path(location) if not isinstance(location, Path) else location
 
-        if ext[0] != '.':
-            ext = f'.{ext}'
+        if ext[0] != ".":
+            ext = f".{ext}"
 
         return location.with_suffix(ext)
 
@@ -212,3 +223,28 @@ class LocalSourceManager(SourceManager):
         if not isinstance(location, Path):
             location = Path(location)
         return location.is_dir()
+
+
+class MultiSourceResolver:
+    def __init__(self, search_environments: list[tuple[PathLike, SourceManager]]):
+        self.search_environments = search_environments
+
+    def resolve(self, require_string: str) -> str:
+        """Searches for the script across all environments using their respective SourceManagers."""
+        searched = []
+
+        for location, source_manager in self.search_environments:
+            candidate = source_manager.join(location, require_string)
+
+            if source_manager.exists(candidate):
+                return source_manager.location_to_str(candidate)
+
+            # Keep track of where we looked for debugging
+            searched.append(
+                f"{source_manager.__class__.__name__} at {source_manager.location_to_str(location)}"
+            )
+
+        searched_locations = "\n  - ".join(searched)
+        raise NemantixException(
+            f"Required script '{require_string}' not found. \nSearched in:\n  - {searched_locations}"
+        )

@@ -11,7 +11,9 @@ class MessagingToolset(Toolset):
     Allows sending messages to specific users via their unique Chat ID.
     """
 
-    def __init__(self, config_path: Optional[str] = None, bot_token: Optional[str] = None):
+    def __init__(
+        self, config_path: Optional[str] = None, bot_token: Optional[str] = None
+    ):
         """
         Initializes the MessagingToolset. It can load the token directly or from a JSON file.
 
@@ -40,7 +42,8 @@ class MessagingToolset(Toolset):
         # Ensure we actually have a token before proceeding
         if not bot_token:
             raise ValueError(
-                "A bot_token must be provided either directly or via a valid config_path JSON.")
+                "A bot_token must be provided either directly or via a valid config_path JSON."
+            )
 
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
 

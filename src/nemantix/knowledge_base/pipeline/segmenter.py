@@ -4,7 +4,10 @@ from nemantix.common.logger import get_package_logger
 from nemantix.core.exceptions import NemantixException
 from nemantix.knowledge_base.document_plugins.base import BaseDocumentPlugin
 from nemantix.knowledge_base.document_structure.document import Document
-from nemantix.knowledge_base.document_structure.schemas import DocumentHierarchyModel, NodeModel
+from nemantix.knowledge_base.document_structure.schemas import (
+    DocumentHierarchyModel,
+    NodeModel,
+)
 
 logger = get_package_logger(__name__)
 
@@ -39,7 +42,7 @@ class DocumentSegmenter:
        * Vector DB Compatibility: Unrolls the complex 3D JSON/dictionary tree into a flat
          array of independent records, which is the exact format required by vector search
          engines like Qdrant or Pinecone.
-        """
+    """
 
     def __init__(self, document: Document, plugin: BaseDocumentPlugin):
         """
@@ -52,7 +55,9 @@ class DocumentSegmenter:
         self.document = document
         self.plugin = plugin
 
-    def extract_tree(self, schema: Union[DocumentHierarchyModel, str]) -> Dict[str, Any]:
+    def extract_tree(
+        self, schema: Union[DocumentHierarchyModel, str]
+    ) -> Dict[str, Any]:
         """
         Recursively traverses the hierarchy schema and enriches each node with actual content.
 
@@ -80,7 +85,7 @@ class DocumentSegmenter:
         result = {
             "title": schema.title,
             "document_type": schema.document_type,
-            "nodes": [self._process_node(node) for node in schema.nodes]
+            "nodes": [self._process_node(node) for node in schema.nodes],
         }
 
         return result
@@ -104,10 +109,12 @@ class DocumentSegmenter:
             "label": node.label,
             "coordinates": node.coordinates,
             "text": extracted_text,
-            "children": [self._process_node(child) for child in node.children]
+            "children": [self._process_node(child) for child in node.children],
         }
 
-    def extract_flat_segments(self, schema: Union[DocumentHierarchyModel, str]) -> List[Dict[str, Any]]:
+    def extract_flat_segments(
+        self, schema: Union[DocumentHierarchyModel, str]
+    ) -> List[Dict[str, Any]]:
         """
         Flattens the document hierarchy into a linear list of segments.
 
@@ -148,16 +155,19 @@ class DocumentSegmenter:
                     gap_text = self.plugin.extract_content(self.document, gap_coords)
 
                     if gap_text.strip():
+                        gap_suffix = (
+                            "(Intro)" if index == 0 else f"(Middle Part {index})"
+                        )
 
-                        gap_suffix = "(Intro)" if index == 0 else f"(Middle Part {index})"
-
-                        flat_segments.append({
-                            "node_id": f"{base_id}_chunk_{current_cursor}",
-                            "kind": kind,
-                            "label": f"{label} {gap_suffix}",
-                            "text": gap_text,
-                            "coordinates": gap_coords
-                        })
+                        flat_segments.append(
+                            {
+                                "node_id": f"{base_id}_chunk_{current_cursor}",
+                                "kind": kind,
+                                "label": f"{label} {gap_suffix}",
+                                "text": gap_text,
+                                "coordinates": gap_coords,
+                            }
+                        )
 
                 _flatten_with_gaps(child)
 
@@ -173,13 +183,15 @@ class DocumentSegmenter:
                 gap_text = self.plugin.extract_content(self.document, gap_coords)
 
                 if gap_text.strip():
-                    flat_segments.append({
-                        "node_id": f"{base_id}_chunk_end",
-                        "kind": kind,
-                        "label": f"{label} (Outro)",
-                        "text": gap_text,
-                        "coordinates": gap_coords
-                    })
+                    flat_segments.append(
+                        {
+                            "node_id": f"{base_id}_chunk_end",
+                            "kind": kind,
+                            "label": f"{label} (Outro)",
+                            "text": gap_text,
+                            "coordinates": gap_coords,
+                        }
+                    )
 
         for root_node in tree.get("nodes", []):
             _flatten_with_gaps(root_node)

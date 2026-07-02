@@ -1,6 +1,7 @@
 import abc
 from dataclasses import dataclass
-from typing import Any, Iterator, Optional, Dict, List, Type, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type, Union
+
 from pydantic import BaseModel
 
 from nemantix.llm.credentials import Credentials
@@ -22,16 +23,19 @@ class LLMResponse:
     text: str
     tool_calls: List[Dict[str, Any]]
     usage: LLMUsage
+    proxy: "AbstractLLMProxy"
 
 
 @dataclass
 class StructuredLLMResponse:
     result: BaseModel
     usage: LLMUsage
+    proxy: "AbstractLLMProxy"
 
 
 class LLMProxyException(Exception):
     """Custom exception for LLM proxy-related errors."""
+
     pass
 
 
@@ -41,6 +45,7 @@ class AbstractLLMProxy(abc.ABC):
     Defines a common interface for interacting with different LLM vendors.
     Manages a static Credentials manager for all proxy instances.
     """
+
     _credentials_manager: Optional[Credentials] = None
 
     @abc.abstractmethod
@@ -55,7 +60,10 @@ class AbstractLLMProxy(abc.ABC):
         This should be called once at the application's startup.
         """
         AbstractLLMProxy._credentials_manager = manager
-        # print("Credentials manager set for AbstractLLMProxy.")
+
+    @classmethod
+    def is_credential_manager_set(cls) -> bool:
+        return cls._credentials_manager is not None
 
     @staticmethod
     def _get_api_key(
@@ -82,7 +90,7 @@ class AbstractLLMProxy(abc.ABC):
         Raises:
             LLMProxyException: If the credentials manager has not been initialized.
             LLMProxyException: If `required` is True and the API key is not found
-                in kwargs, the credentials file, or environment variables.
+                in kwargs or environment variables.
         """
         if AbstractLLMProxy._credentials_manager is None:
             raise LLMProxyException(
@@ -91,19 +99,17 @@ class AbstractLLMProxy(abc.ABC):
 
         # 1) explicit kwargs
         api_key = kwargs.pop("api_key", None)
-        vendor_key_param = kwargs.pop(
-            key_name, None
-        )
+        vendor_key_param = kwargs.pop(key_name, None)
         if not api_key:
             api_key = vendor_key_param
 
-        # 2) credentials manager (file/env)
+        # 2) credentials manager (env / .env file)
         if not api_key:
             api_key = AbstractLLMProxy._credentials_manager.get_api_key(key_name)
 
         if required and not api_key:
             raise LLMProxyException(
-                f"{key_name.replace('_', ' ').title()} is required but not found in parameters, credentials file, or environment variables."
+                f"{key_name.replace('_', ' ').title()} is required but not found in parameters or environment variables."
             )
         return api_key
 
@@ -123,7 +129,9 @@ class AbstractLLMProxy(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def invoke_structured(self, prompt: str | list, schema: Type[BaseModel], **kwargs) -> StructuredLLMResponse:
+    def invoke_structured(
+        self, prompt: str | list, schema: Type[BaseModel], **kwargs
+    ) -> StructuredLLMResponse:
         """
         Invokes the LLM with structured output using vendor-specific implementations.
 
@@ -142,7 +150,9 @@ class AbstractLLMProxy(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def invoke_grammar_based(self, prompt: Union[str, list], **kwargs: Any) -> LLMResponse:
+    def invoke_grammar_based(
+        self, prompt: Union[str, list], **kwargs: Any
+    ) -> LLMResponse:
         """
         Invokes the LLM with a grammar-based tool to process the input prompt using a custom grammar.
 
@@ -159,7 +169,7 @@ class AbstractLLMProxy(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def stream(self, prompt: str, **kwargs: Any) -> Iterator[str]:
+    def stream(self, prompt: str | list, **kwargs: Any) -> Iterator[str]:
         """
         Streams the LLM's response token by token.
         This method is primarily for text-only streaming.
@@ -211,7 +221,8 @@ class AbstractLLMProxy(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def messages_from(self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]) -> list[dict]:
+    def messages_from(
+        self, prompts_with_roles: list[dict[str, str] | tuple[str, str]]
+    ) -> list[dict]:
         """Formats the prompts (and roles) according to the specific message format"""
         pass
-

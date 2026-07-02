@@ -11,18 +11,29 @@ if TYPE_CHECKING:
     from nemantix.hub.observer import Observer
     from nemantix.hub.storage import EventLogModel
 
-__all__ = ["EventHub", "Event", "EventType", "Debugger", "Profiler", "Tracer",
-           "Observer", "EventLogModel", "Storable"]
+__all__ = [
+    "EventHub",
+    "Event",
+    "EventType",
+    "Debugger",
+    "Profiler",
+    "Tracer",
+    "Observer",
+    "EventLogModel",
+    "Storable",
+]
 
 
 def __getattr__(name):
     if name == "Observer":
         from nemantix.hub.observer import Observer
+
         globals()["Observer"] = Observer
         return Observer
 
     if name == "ObserverLogModel":
         from nemantix.hub.storage import EventLogModel
+
         globals()["ObserverLogModel"] = EventLogModel
         return EventLogModel
 

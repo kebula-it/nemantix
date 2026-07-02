@@ -31,7 +31,6 @@ class StopReason(Enum):
 
 
 class BaseDebugger(Observable):
-
     def __init__(self):
         self.call_stack: list[CallNode] = []
         self._skip_all = False
@@ -135,7 +134,7 @@ class BaseDebugger(Observable):
 
 class Debugger(BaseDebugger):
     """CLI REPL debugger (ndb).
-       Blocks execution in a ``while True / input()`` loop.
+    Blocks execution in a ``while True / input()`` loop.
     """
 
     def __init__(self):

@@ -11,7 +11,10 @@ from nemantix.llm.abstract_proxy import LLMUsage
 # Event helpers
 # =============================================================================
 
-def make_enter_event(name: str, type_: str, timestamp: float, scope: str = "test") -> Event:
+
+def make_enter_event(
+    name: str, type_: str, timestamp: float, scope: str = "test"
+) -> Event:
     return Event(
         type=EventType.CALL_ENTER,
         lines=(1, 1),
@@ -58,7 +61,9 @@ def make_coding_start_event(scope: str, type_: str, timestamp: float) -> Event:
     )
 
 
-def make_coding_end_event(scope: str, type_: str, timestamp: float, attempts: int) -> Event:
+def make_coding_end_event(
+    scope: str, type_: str, timestamp: float, attempts: int
+) -> Event:
     return Event(
         type=EventType.CODING_END,
         lines=(1, 1),
@@ -73,6 +78,7 @@ def make_coding_end_event(scope: str, type_: str, timestamp: float, attempts: in
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def hub() -> EventHub:
@@ -94,6 +100,7 @@ def subscribed_profiler(hub) -> Profiler:
 # =============================================================================
 # Group 1: CallNode properties
 # =============================================================================
+
 
 def test_call_node_total_time():
     """total_time is end_time minus start_time."""
@@ -120,7 +127,7 @@ def test_call_node_inner_time_with_children():
     child2 = CallNode(name="c2", type="builtin", start_time=4.0, end_time=7.0)
     parent.children = [child1, child2]
 
-    assert parent.inner_time == pytest.approx(5.0)   # 2.0 + 3.0
+    assert parent.inner_time == pytest.approx(5.0)  # 2.0 + 3.0
 
 
 def test_call_node_self_time_basic():
@@ -147,10 +154,12 @@ def test_call_node_self_time_clamped_to_zero():
 # Group 2: CodingNode
 # =============================================================================
 
+
 def test_coding_node_inherits_time_properties():
     """CodingNode total_time behaves the same as CallNode."""
-    node = CodingNode(name="MyDeliberate", type="deliberate",
-                      start_time=0.0, end_time=88.0)
+    node = CodingNode(
+        name="MyDeliberate", type="deliberate", start_time=0.0, end_time=88.0
+    )
     assert node.total_time == pytest.approx(88.0)
 
 
@@ -170,6 +179,7 @@ def test_coding_node_attempts_settable():
 # Group 3: Profiler subscription
 # =============================================================================
 
+
 def test_profiler_subscribes_to_expected_events(hub, profiler):
     """After subscribe(), CALL_ENTER, CALL_EXIT, CODING_START, CODING_END are all wired."""
     profiler.subscribe(hub)
@@ -188,6 +198,7 @@ def test_profiler_does_not_subscribe_to_breakpoint(hub, profiler):
 # =============================================================================
 # Group 4: on_call_enter / on_call_exit
 # =============================================================================
+
 
 def test_single_call_creates_root(hub, subscribed_profiler):
     """A balanced ENTER/EXIT pair produces exactly one completed root."""
@@ -274,10 +285,13 @@ def test_three_level_nesting(hub, subscribed_profiler):
 # Group 5: on_coding_start / on_coding_end
 # =============================================================================
 
+
 def test_coding_task_tracked(hub, subscribed_profiler):
     """CODING_START + CODING_END produces a CodingNode with correct fields."""
     hub.emit(make_coding_start_event("MyDeliberate", "deliberate", timestamp=0.0))
-    hub.emit(make_coding_end_event("MyDeliberate", "deliberate", timestamp=88.0, attempts=2))
+    hub.emit(
+        make_coding_end_event("MyDeliberate", "deliberate", timestamp=88.0, attempts=2)
+    )
 
     assert len(subscribed_profiler.coding_stack) == 1
     node = subscribed_profiler.coding_stack[0]
@@ -318,12 +332,15 @@ def test_coding_end_mismatch_raises(hub, subscribed_profiler):
     hub.emit(make_coding_start_event("D1", "deliberate", timestamp=0.0))
 
     with pytest.raises(AssertionError):
-        hub.emit(make_coding_end_event("D_WRONG", "deliberate", timestamp=5.0, attempts=1))
+        hub.emit(
+            make_coding_end_event("D_WRONG", "deliberate", timestamp=5.0, attempts=1)
+        )
 
 
 # =============================================================================
 # Group 6: Profiler.print() output
 # =============================================================================
+
 
 def test_print_empty_profiler(capsys):
     """An untouched profiler prints sentinel messages for both sections."""
@@ -346,9 +363,14 @@ def test_print_with_single_call(capsys, hub, subscribed_profiler):
 
 def test_print_shows_coding_section(capsys, hub, subscribed_profiler):
     """After a coding start/end, the deliberate name appears in the coding section."""
-    hub.emit(make_coding_start_event("SummarizeSupportTicket", "deliberate", timestamp=0.0))
-    hub.emit(make_coding_end_event("SummarizeSupportTicket", "deliberate",
-                                   timestamp=88.0, attempts=2))
+    hub.emit(
+        make_coding_start_event("SummarizeSupportTicket", "deliberate", timestamp=0.0)
+    )
+    hub.emit(
+        make_coding_end_event(
+            "SummarizeSupportTicket", "deliberate", timestamp=88.0, attempts=2
+        )
+    )
 
     # Also add a dummy execution call so print() doesn't return early
     hub.emit(make_enter_event("dummy", "action", timestamp=0.0))
@@ -386,6 +408,7 @@ def test_print_nested_calls_shows_tree(capsys, hub, subscribed_profiler):
 # Group 7: on_profile_mark and annotated mode
 # =============================================================================
 
+
 def test_profiler_subscribes_to_profile_mark(hub, profiler):
     """After subscribe(), PROFILE_MARK is wired."""
     profiler.subscribe(hub)
@@ -408,7 +431,9 @@ def test_profile_mark_does_not_tag_mismatched_stack_top(hub, subscribed_profiler
     assert subscribed_profiler.call_stack[-1].is_annotated is False
 
 
-def test_profile_mark_adds_name_to_annotated_set_only_on_match(hub, subscribed_profiler):
+def test_profile_mark_adds_name_to_annotated_set_only_on_match(
+    hub, subscribed_profiler
+):
     """_annotated_call_names is populated only when the mark name matches the stack top."""
     hub.emit(make_enter_event("my_action", "action", timestamp=0.0))
     hub.emit(make_profile_mark_event(name="my_action"))
@@ -416,7 +441,9 @@ def test_profile_mark_adds_name_to_annotated_set_only_on_match(hub, subscribed_p
     assert "my_action" in subscribed_profiler._annotated_call_names
 
 
-def test_profile_mark_mismatched_name_not_added_to_annotated_set(hub, subscribed_profiler):
+def test_profile_mark_mismatched_name_not_added_to_annotated_set(
+    hub, subscribed_profiler
+):
     """A mark whose name doesn't match the stack top must not pollute _annotated_call_names."""
     hub.emit(make_enter_event("outer", "action", timestamp=0.0))
     hub.emit(make_profile_mark_event(name="some_inner_stmt"))
@@ -431,7 +458,9 @@ def test_profile_mark_empty_stack_is_safe(hub, subscribed_profiler):
     assert "x" not in subscribed_profiler._annotated_call_names
 
 
-def test_profile_mark_name_mismatch_does_not_tag_enclosing_node(hub, subscribed_profiler):
+def test_profile_mark_name_mismatch_does_not_tag_enclosing_node(
+    hub, subscribed_profiler
+):
     """A PROFILE_MARK whose name does not match the stack-top node must not tag it.
     Guards against a regression where any mark fired while a node was on the stack
     would incorrectly annotate the enclosing action/deliberate."""
@@ -446,7 +475,7 @@ def test_profile_mark_name_mismatch_does_not_tag_enclosing_node(hub, subscribed_
 
 def test_annotated_mode_shows_only_annotated_action(hub):
     """In annotated mode only the @profile-tagged action appears as a display root."""
-    p = Profiler(profile_mode='annotated')
+    p = Profiler(profile_mode="annotated")
     p.subscribe(hub)
 
     # annotated action: CALL_ENTER then PROFILE_MARK (name matches → tagged)
@@ -465,15 +494,25 @@ def test_annotated_mode_shows_only_annotated_action(hub):
 
 def test_annotated_mode_deliberate_is_display_root_with_children(hub):
     """A @profile-annotated deliberate becomes the sole display root containing its actions."""
-    p = Profiler(profile_mode='annotated')
+    p = Profiler(profile_mode="annotated")
     p.subscribe(hub)
 
     # Mirrors interpreter order: CALL_ENTER for the deliberate, then PROFILE_MARK
-    hub.emit(make_enter_event("my_delib", "deliberate", timestamp=0.0, scope="my_delib"))
+    hub.emit(
+        make_enter_event("my_delib", "deliberate", timestamp=0.0, scope="my_delib")
+    )
     hub.emit(make_profile_mark_event(name="my_delib", scope="my_delib"))
-    hub.emit(make_enter_event("action_a", "action", timestamp=0.1, scope="my_delib::action_a"))
+    hub.emit(
+        make_enter_event(
+            "action_a", "action", timestamp=0.1, scope="my_delib::action_a"
+        )
+    )
     hub.emit(make_exit_event(timestamp=0.5))
-    hub.emit(make_enter_event("action_b", "action", timestamp=0.6, scope="my_delib::action_b"))
+    hub.emit(
+        make_enter_event(
+            "action_b", "action", timestamp=0.6, scope="my_delib::action_b"
+        )
+    )
     hub.emit(make_exit_event(timestamp=1.0))
     hub.emit(make_exit_event(timestamp=1.1))  # my_delib exit
 
@@ -490,19 +529,25 @@ def test_annotated_mode_plan_is_display_root_with_children(hub):
     The plan node is named '<deliberate>::plan' so the output clearly identifies
     which deliberate it belongs to while avoiding scope-collision with the deliberate node.
     """
-    p = Profiler(profile_mode='annotated')
+    p = Profiler(profile_mode="annotated")
     p.subscribe(hub)
 
     plan_name = "my_delib::plan"
 
     # Deliberate wraps the plan but is NOT annotated
-    hub.emit(make_enter_event("my_delib", "deliberate", timestamp=0.0, scope="my_delib"))
+    hub.emit(
+        make_enter_event("my_delib", "deliberate", timestamp=0.0, scope="my_delib")
+    )
     # Plan: CALL_ENTER then PROFILE_MARK (mirrors interpreter order)
     hub.emit(make_enter_event(plan_name, "plan", timestamp=0.05, scope="my_delib"))
     hub.emit(make_profile_mark_event(name=plan_name, scope="my_delib"))
-    hub.emit(make_enter_event("action_a", "action", timestamp=0.1, scope="my_delib::action_a"))
+    hub.emit(
+        make_enter_event(
+            "action_a", "action", timestamp=0.1, scope="my_delib::action_a"
+        )
+    )
     hub.emit(make_exit_event(timestamp=0.5))
-    hub.emit(make_exit_event(timestamp=0.6))   # plan exit
+    hub.emit(make_exit_event(timestamp=0.6))  # plan exit
     hub.emit(make_exit_event(timestamp=0.65))  # deliberate exit
 
     roots = p._get_display_roots()
@@ -516,7 +561,7 @@ def test_annotated_mode_plan_is_display_root_with_children(hub):
 
 def test_annotated_mode_no_annotations_empty_display(hub):
     """In annotated mode, calls with no @profile produce an empty display root list."""
-    p = Profiler(profile_mode='annotated')
+    p = Profiler(profile_mode="annotated")
     p.subscribe(hub)
 
     hub.emit(make_enter_event("foo", "action", timestamp=0.0))
@@ -527,7 +572,7 @@ def test_annotated_mode_no_annotations_empty_display(hub):
 
 def test_print_annotated_mode_sentinel(capsys, hub):
     """In annotated mode with no @profile calls the sentinel message is printed."""
-    p = Profiler(profile_mode='annotated')
+    p = Profiler(profile_mode="annotated")
     p.subscribe(hub)
     hub.emit(make_enter_event("foo", "action", timestamp=0.0))
     hub.emit(make_exit_event(timestamp=1.0))
@@ -539,7 +584,7 @@ def test_print_annotated_mode_sentinel(capsys, hub):
 
 def test_print_annotated_label_shown_for_annotated_node(capsys, hub):
     """[@profile] label appears in the print output next to the annotated node."""
-    p = Profiler(profile_mode='annotated')
+    p = Profiler(profile_mode="annotated")
     p.subscribe(hub)
 
     hub.emit(make_enter_event("my_action", "action", timestamp=0.0))
@@ -552,7 +597,9 @@ def test_print_annotated_label_shown_for_annotated_node(capsys, hub):
     assert "my_action" in out
 
 
-def test_print_annotated_label_absent_for_unannotated_node(capsys, hub, subscribed_profiler):
+def test_print_annotated_label_absent_for_unannotated_node(
+    capsys, hub, subscribed_profiler
+):
     """[@profile] label does not appear when no node is annotated (default 'all' mode)."""
     hub.emit(make_enter_event("plain", "action", timestamp=0.0))
     hub.emit(make_exit_event(timestamp=1.0))
@@ -565,6 +612,7 @@ def test_print_annotated_label_absent_for_unannotated_node(capsys, hub, subscrib
 # =============================================================================
 # Token usage tracking
 # =============================================================================
+
 
 def make_llm_event(usage: LLMUsage, scope: str = "test") -> Event:
     return Event(
@@ -601,7 +649,12 @@ def test_token_usage_cache_fields(hub):
     profiler = Profiler()
     profiler.subscribe(hub)
 
-    usage = LLMUsage(input_tokens=200, output_tokens=80, cache_read_tokens=50, cache_creation_tokens=10)
+    usage = LLMUsage(
+        input_tokens=200,
+        output_tokens=80,
+        cache_read_tokens=50,
+        cache_creation_tokens=10,
+    )
 
     hub.emit(make_enter_event("llm", "builtin", 1.0))
     hub.emit(make_llm_event(usage))
@@ -624,7 +677,11 @@ def test_token_usage_accumulates_across_multiple_calls(hub):
     hub.emit(make_exit_event(2.0))
 
     hub.emit(make_enter_event("llm", "builtin", 3.0))
-    hub.emit(make_llm_event(LLMUsage(input_tokens=200, output_tokens=75, cache_read_tokens=30)))
+    hub.emit(
+        make_llm_event(
+            LLMUsage(input_tokens=200, output_tokens=75, cache_read_tokens=30)
+        )
+    )
     hub.emit(make_exit_event(4.0))
 
     assert profiler.total_input_tokens == 300
@@ -651,7 +708,11 @@ def test_token_usage_displayed_in_report(hub, capsys):
     profiler.subscribe(hub)
 
     hub.emit(make_enter_event("llm", "builtin", 1.0))
-    hub.emit(make_llm_event(LLMUsage(input_tokens=312, output_tokens=187, cache_read_tokens=50)))
+    hub.emit(
+        make_llm_event(
+            LLMUsage(input_tokens=312, output_tokens=187, cache_read_tokens=50)
+        )
+    )
     hub.emit(make_exit_event(2.0))
 
     profiler.print()
@@ -680,9 +741,10 @@ def test_token_usage_not_displayed_when_zero(hub, capsys):
 # Hierarchical attribution of LLM events onto coding / executor-phase / call stacks
 # =============================================================================
 
+
 def make_executor_phase_start_event(phase: str, timestamp: float) -> Event:
     return Event(
-        type=EventType.EXECUTOR_PHASE_START,
+        type=EventType.PHASE_START,
         lines=(0, 0),
         scope="executor",
         script=None,
@@ -694,7 +756,7 @@ def make_executor_phase_start_event(phase: str, timestamp: float) -> Event:
 
 def make_executor_phase_end_event(phase: str, timestamp: float) -> Event:
     return Event(
-        type=EventType.EXECUTOR_PHASE_END,
+        type=EventType.PHASE_END,
         lines=(0, 0),
         scope="executor",
         script=None,
@@ -711,7 +773,11 @@ def test_coding_node_tokens_from_llm_event(hub):
 
     hub.emit(make_coding_start_event(scope="my_action", type_="action", timestamp=1.0))
     hub.emit(make_llm_event(usage))
-    hub.emit(make_coding_end_event(scope="my_action", type_="action", timestamp=2.0, attempts=1))
+    hub.emit(
+        make_coding_end_event(
+            scope="my_action", type_="action", timestamp=2.0, attempts=1
+        )
+    )
 
     node = profiler.coding_stack[-1]
     assert node.input_tokens == 120
@@ -746,7 +812,9 @@ def test_coding_stack_takes_precedence_over_executor_phase(hub):
     hub.emit(make_executor_phase_start_event(phase="code_deliberate", timestamp=1.0))
     hub.emit(make_coding_start_event(scope="d", type_="deliberate", timestamp=1.5))
     hub.emit(make_llm_event(LLMUsage(input_tokens=10, output_tokens=5)))
-    hub.emit(make_coding_end_event(scope="d", type_="deliberate", timestamp=2.0, attempts=1))
+    hub.emit(
+        make_coding_end_event(scope="d", type_="deliberate", timestamp=2.0, attempts=1)
+    )
     hub.emit(make_executor_phase_end_event(phase="code_deliberate", timestamp=2.5))
 
     assert profiler.coding_stack[-1].input_tokens == 10
@@ -774,9 +842,15 @@ def test_coding_tokens_displayed_in_report(hub, capsys):
     profiler.subscribe(hub)
     usage = LLMUsage(input_tokens=200, output_tokens=90, cache_read_tokens=25)
 
-    hub.emit(make_coding_start_event(scope="my_delib", type_="deliberate", timestamp=1.0))
+    hub.emit(
+        make_coding_start_event(scope="my_delib", type_="deliberate", timestamp=1.0)
+    )
     hub.emit(make_llm_event(usage))
-    hub.emit(make_coding_end_event(scope="my_delib", type_="deliberate", timestamp=2.0, attempts=2))
+    hub.emit(
+        make_coding_end_event(
+            scope="my_delib", type_="deliberate", timestamp=2.0, attempts=2
+        )
+    )
 
     profiler.print()
     out = capsys.readouterr().out
@@ -814,7 +888,11 @@ def test_coding_tokens_accumulated_with_llm_event_tokens(hub):
     # LLM event emitted inside a coding session (e.g. by the coder)
     hub.emit(make_coding_start_event(scope="my_action", type_="action", timestamp=3.0))
     hub.emit(make_llm_event(LLMUsage(input_tokens=200, output_tokens=80)))
-    hub.emit(make_coding_end_event(scope="my_action", type_="action", timestamp=4.0, attempts=1))
+    hub.emit(
+        make_coding_end_event(
+            scope="my_action", type_="action", timestamp=4.0, attempts=1
+        )
+    )
 
     assert profiler.total_input_tokens == 300
     assert profiler.total_output_tokens == 120
@@ -823,6 +901,7 @@ def test_coding_tokens_accumulated_with_llm_event_tokens(hub):
 # =============================================================================
 # _coding_stack / coding_stack split and label tests
 # =============================================================================
+
 
 def test_active_coding_stack_cleared_after_coding_end(hub):
     """After CODING_END, _coding_stack (active) is empty and coding_stack (completed) has the node."""
@@ -833,7 +912,9 @@ def test_active_coding_stack_cleared_after_coding_end(hub):
     assert len(profiler._coding_stack) == 1
     assert len(profiler.coding_stack) == 0
 
-    hub.emit(make_coding_end_event(scope="D", type_="deliberate", timestamp=2.0, attempts=1))
+    hub.emit(
+        make_coding_end_event(scope="D", type_="deliberate", timestamp=2.0, attempts=1)
+    )
     assert len(profiler._coding_stack) == 0
     assert len(profiler.coding_stack) == 1
     assert profiler.coding_stack[0].name == "D"
@@ -846,12 +927,14 @@ def test_on_llm_after_coding_end_falls_back_to_call_stack(hub):
 
     hub.emit(make_enter_event("outer", "action", timestamp=0.0))
     hub.emit(make_coding_start_event(scope="D", type_="deliberate", timestamp=1.0))
-    hub.emit(make_coding_end_event(scope="D", type_="deliberate", timestamp=2.0, attempts=1))
+    hub.emit(
+        make_coding_end_event(scope="D", type_="deliberate", timestamp=2.0, attempts=1)
+    )
     # LLM fires after coding session is complete — _coding_stack is empty
     hub.emit(make_llm_event(LLMUsage(input_tokens=50, output_tokens=20)))
     hub.emit(make_exit_event(timestamp=3.0))
 
-    assert profiler.coding_stack[0].input_tokens == 0      # completed coding node untouched
+    assert profiler.coding_stack[0].input_tokens == 0  # completed coding node untouched
     assert profiler.completed_roots[0].input_tokens == 50  # attributed to call node
 
 

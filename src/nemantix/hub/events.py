@@ -19,8 +19,8 @@ class EventType(Enum):
     ERROR = auto()
     BREAKPOINT = auto()
     LLM = auto()
-    EXECUTOR_PHASE_START = auto()
-    EXECUTOR_PHASE_END = auto()
+    PHASE_START = auto()
+    PHASE_END = auto()
     PROFILE_MARK = auto()
     LOG_EVENT = auto()
     USER_REQUEST = auto()
@@ -38,7 +38,7 @@ class Event:
     type: EventType
     lines: tuple[int, int]
     scope: str
-    script: 'Script | None'
+    script: "Script | None"
     statement: str
     payload: Any = None
     timestamp: float = field(default_factory=time.time)

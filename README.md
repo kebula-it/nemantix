@@ -147,8 +147,7 @@ verifier = Verifier(public_key_path='path-your-key')  # for production
 
 # see: docs/06 - Agents.md for full instantiation options
 exp = Expertise.from_local_scripts(paths=['examples/ticket.nxs'],
-                                   verifier=verifier,
-                                   credentials_path='credentials.json')
+                                   verifier=verifier)
 
 # NXV verification occurs on agent instantiation
 agent = Agent(expertise=exp, build_on_start=True)
@@ -269,11 +268,10 @@ profiler = Profiler()
 
 # Attaching the event-hub to the expertise enables 
 # automatic debugging on breakpoints and raised errors
-# NOTE: insert "do breakpoint" in your script at relevant lines
+# NOTE: annotate relevant lines with @breakpoint
 exp = Expertise.from_local_scripts(paths=['examples/ticket.nxs'],
                                    verifier=DebugVerifier(),
-                                   observers=[debugger, profiler],
-                                   credentials_path='credentials.json')
+                                   observers=[debugger, profiler])
 
 # same as before
 agent = Agent(expertise=exp, build_on_start=True)
@@ -285,6 +283,12 @@ profiler.print()
 
 ### 📑 Documentation
 Read the full documentation in [docs/](docs/00%20-%20Welcome%20to%20Nemantix.md).
+
+### 📚 Tutorials
+
+Ready to build with Nemantix? Check out our step-by-step guides:
+
+* 👉 **[Nemantix Tutorials](./tutorials/README.md)** – Find the complete hands-on learning path, including the environment setup guide, the LLM Proxy configuration, and end-to-end practical tutorials.
 
 ---
 ## ⚖️ License and Owner

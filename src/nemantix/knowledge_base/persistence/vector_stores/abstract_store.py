@@ -18,7 +18,12 @@ class VectorStore(ABC):
     """
 
     @abstractmethod
-    def add(self, vectors: npt.NDArray, metadata: List[Dict[str, Any]] | Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    def add(
+        self,
+        vectors: npt.NDArray,
+        metadata: List[Dict[str, Any]] | Dict[str, Any],
+        **kwargs,
+    ) -> Dict[str, Any]:
         """
         Inserts vectors and their associated metadata into the underlying store.
 
@@ -37,11 +42,11 @@ class VectorStore(ABC):
 
     @abstractmethod
     def search(
-            self,
-            query_vectors: npt.NDArray,
-            k: int = 5,
-            filters: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-            **kwargs
+        self,
+        query_vectors: npt.NDArray,
+        k: int = 5,
+        filters: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        **kwargs,
     ) -> List[Dict[str, Any]]:
         """
         Executes an Approximate Nearest Neighbors (ANN) search.
@@ -67,7 +72,9 @@ class VectorStore(ABC):
         raise NotImplementedError("Subclasses must implement the 'search' method.")
 
     @abstractmethod
-    def delete(self, ids: Optional[List] = None, filter_expr: Optional[Any] = None) -> Dict[str, Any]:
+    def delete(
+        self, ids: Optional[List] = None, filter_expr: Optional[Any] = None
+    ) -> Dict[str, Any]:
         """
         Removes specific items from the vector store based on their IDs or a filter expression.
 
@@ -97,7 +104,9 @@ class VectorStore(ABC):
         Raises:
             NotImplementedError: If the subclass does not implement this method.
         """
-        raise NotImplementedError("Subclasses must implement the 'delete_collection' method.")
+        raise NotImplementedError(
+            "Subclasses must implement the 'delete_collection' method."
+        )
 
     @abstractmethod
     def count(self) -> int:
@@ -113,7 +122,9 @@ class VectorStore(ABC):
         raise NotImplementedError("Subclasses must implement the 'count' method.")
 
     @staticmethod
-    def _add_preprocess(vectors: npt.NDArray, metadata: Any) -> Tuple[npt.NDArray, List[Dict[str, Any]]]:
+    def _add_preprocess(
+        vectors: npt.NDArray, metadata: Any
+    ) -> Tuple[npt.NDArray, List[Dict[str, Any]]]:
         """
         Shared utility to sanitize and align inputs (numpy arrays and metadata lists)
         before they are passed to the specific database clients.
@@ -135,12 +146,20 @@ class VectorStore(ABC):
             vectors = vectors.reshape(1, -1)
 
         if not (len(vectors) == len(metadata)):
-            logger.error("Dimension mismatch: %d vectors vs %d metadata entries.", len(vectors), len(metadata))
-            raise ValueError(f"Dimension mismatch: found {len(vectors)} vectors and {len(metadata)} metadata entries!")
+            logger.error(
+                "Dimension mismatch: %d vectors vs %d metadata entries.",
+                len(vectors),
+                len(metadata),
+            )
+            raise ValueError(
+                f"Dimension mismatch: found {len(vectors)} vectors and {len(metadata)} metadata entries!"
+            )
 
         return vectors, metadata
 
-    def add_items(self, items: List[Item], embeddings: npt.NDArray, **kwargs) -> List[str]:
+    def add_items(
+        self, items: List[Item], embeddings: npt.NDArray, **kwargs
+    ) -> List[str]:
         """
         Universal helper method to insert Item objects directly.
         It standardizes the metadata extracted from the Items and delegates
@@ -158,12 +177,16 @@ class VectorStore(ABC):
             ValueError: If the lengths of items and embeddings do not match.
         """
         if len(items) != len(embeddings):
-            raise ValueError("The number of items must exactly match the number of embeddings.")
+            raise ValueError(
+                "The number of items must exactly match the number of embeddings."
+            )
 
         metadata = []
         for item in items:
             raw_id = str(item.item_id)
-            base_node_id = raw_id.split("_chunk_")[0].split("_intro")[0].split("_outro")[0]
+            base_node_id = (
+                raw_id.split("_chunk_")[0].split("_intro")[0].split("_outro")[0]
+            )
 
             meta = {
                 "item_id": raw_id,
@@ -174,7 +197,11 @@ class VectorStore(ABC):
                 "hierarchy": getattr(item, "hierarchy_ref", ""),
             }
 
-            if hasattr(item, "doc_ref") and item.doc_ref and hasattr(item.doc_ref, "doc_id"):
+            if (
+                hasattr(item, "doc_ref")
+                and item.doc_ref
+                and hasattr(item.doc_ref, "doc_id")
+            ):
                 meta["doc_id"] = item.doc_ref.doc_id
 
             if hasattr(item, "metadata") and isinstance(item.metadata, dict):

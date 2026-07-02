@@ -51,41 +51,139 @@ class NemantixPasteProcessor : CopyPastePostProcessor<TextBlockTransferableData>
 
         val originalText = document.getText(TextRange(start, end))
 
-        // 1. Heuristic Cleanup: Replace sequences of 3+ spaces with a newline
-        var cleanedText = originalText.replace(Regex("\\s{3,}"), "\n")
+        val startLine = document.getLineNumber(start)
+        val lineStartOffset = document.getLineStartOffset(startLine)
+        val prefix = document.getText(TextRange(lineStartOffset, start))
 
-        // 2. Fix jammed keywords
+        // No math! Just extract the exact literal string of spaces/tabs that exists at the start.
+        val baseIndentString = if (start == lineStartOffset) {
+            originalText.takeWhile { it == ' ' || it == '\t' }
+        } else {
+            prefix.takeWhile { it == ' ' || it == '\t' }
+        }
+
+        var cleanedText = originalText
+
+        // 1. Shield Python Blocks safely using @@@
+        val pythonBlocks = mutableListOf<String>()
+        cleanedText = Regex(">>>[\\s\\S]*?<<<").replace(cleanedText) { match ->
+            pythonBlocks.add(match.value)
+            "@@@PYTHON_BLOCK_${pythonBlocks.size - 1}@@@"
+        }
+
+        // 2. Heuristic Cleanup
+        cleanedText = cleanedText.replace(Regex("(?<=\\S)\\s{3,}"), "\n")
         cleanedText = cleanedText.replace(Regex("(__[a-zA-Z0-9]*)"), "\n$1\n")
-        // Use a negative lookbehind (?<!_) so it ignores '__deliberate'
         cleanedText = cleanedText.replace(Regex("(?<!_)(deliberate\\s+)"), "\n$1")
 
-        // 3. Process line by line to calculate proper indentation
+        // 3. Process line by line
         val lines = cleanedText.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         val formattedText = StringBuilder()
-        var indentLevel = 0
-        val tab = "    " // Standard 4 spaces indentation
+        val tab = "    "
+        var isFirstOutputLine = true
+
+        var relativeIndentLevel = 0
+        val containerIndentStack = mutableListOf<Int>() // Tracks visual depth of nested () and []
+
+        fun appendFormatted(text: String, currentTotalIndent: Int, isRaw: Boolean = false) {
+            if (isRaw) {
+                formattedText.append(text).append("\n")
+            } else {
+                if (isFirstOutputLine && start > lineStartOffset) {
+                    formattedText.append(text).append("\n")
+                } else {
+                    formattedText.append(baseIndentString)
+                        .append(tab.repeat(currentTotalIndent))
+                        .append(text)
+                        .append("\n")
+                }
+            }
+            isFirstOutputLine = false
+        }
 
         val startBlockRegex = Regex("^(?:@[a-zA-Z0-9_:-]+\\s*)*(?:(?:frozen|drafted|undefined)\\s+)?(?:plan:|action\\b|body:|in:|out:|guidelines:|deliberate\\b|toolset\\b|use:|if\\b|elif\\b|else\\b|repeat\\b|while\\b|until\\b|for\\b|>>>)")
 
-        for (line in lines) {
-            // A. Decrease indent BEFORE writing the line if it's an end block
-            if (line.startsWith("__") || line.startsWith("<<<")) {
-                indentLevel = maxOf(0, indentLevel - 1)
+        // Helper function to process standard lines and boundary lines identically
+        fun processLineFormatting(textLine: String) {
+            if (textLine.startsWith("__") || textLine.startsWith("<<<")) {
+                relativeIndentLevel = maxOf(0, relativeIndentLevel - 1)
             }
 
-            // Write the line with current indentation
-            formattedText.append(tab.repeat(indentLevel)).append(line).append("\n")
+            // Strip strings so we don't count brackets inside text like "Ticket-[ID]"
+            val codeOnly = textLine.replace(Regex("\"[^\"]*\""), "")
 
-            // B. Increase indent AFTER writing the line if it's a start block
-            if (startBlockRegex.containsMatchIn(line)) {
-                indentLevel++
+            val opens = codeOnly.count { it == '(' || it == '[' }
+            val closes = codeOnly.count { it == ')' || it == ']' }
+
+            // Count how many brackets close at the very beginning of the line
+            val closesAtStart = codeOnly.takeWhile { it == ')' || it == ']' || it.isWhitespace() }
+                .count { it == ')' || it == ']' }
+
+            // Pull indentation back out immediately if the line starts with closing brackets
+            for (i in 0 until closesAtStart) {
+                if (containerIndentStack.isNotEmpty()) containerIndentStack.removeLast()
+            }
+
+            val currentContainerIndent = containerIndentStack.lastOrNull() ?: 0
+
+            // Print the line with both structural and container indentation combined
+            appendFormatted(textLine, relativeIndentLevel + currentContainerIndent)
+
+            if (startBlockRegex.containsMatchIn(textLine)) {
+                relativeIndentLevel++
+            }
+
+            // Process the net bracket change for the REST of the line
+            val remainingCloses = closes - closesAtStart
+            val netChangeAfterStart = opens - remainingCloses
+
+            if (netChangeAfterStart > 0) {
+                // If a line opens multiple containers, they all share the SAME visual indent increase
+                val nextVisualIndent = currentContainerIndent + 1
+                for (i in 0 until netChangeAfterStart) {
+                    containerIndentStack.add(nextVisualIndent)
+                }
+            } else if (netChangeAfterStart < 0) {
+                // Pop containers if there are trailing closures at the end of the line (e.g., `] )`)
+                for (i in 0 until -netChangeAfterStart) {
+                    if (containerIndentStack.isNotEmpty()) containerIndentStack.removeLast()
+                }
             }
         }
 
-        val finalText = formattedText.toString().trimEnd()
+        for (line in lines) {
+            // Restore Python blocks safely
+            if (line.contains("@@@PYTHON_BLOCK_")) {
+                val resolvedText = line.replace(Regex("@@@PYTHON_BLOCK_(\\d+)@@@")) { match ->
+                    val index = match.groupValues[1].toInt()
+                    pythonBlocks[index]
+                }
 
-        // 4. Run text replacements inside a Write Action
-        WriteCommandAction.runWriteCommandAction(project) {
+                val pyLines = resolvedText.split("\n")
+
+                for ((i, pLine) in pyLines.withIndex()) {
+                    if (i == 0 || i == pyLines.size - 1) {
+                        // Process the bounds (>>> and <<<) as standard Nemantix lines
+                        processLineFormatting(pLine.trim())
+                    } else {
+                        // Internal Python lines remain raw
+                        appendFormatted(pLine, 0, isRaw = true)
+                    }
+                }
+                continue
+            }
+
+            // Standard line processing
+            processLineFormatting(line)
+        }
+
+        // 4. Final Polish: Keep trailing newline if it existed
+        var finalText = formattedText.toString().trimEnd()
+        if (originalText.endsWith("\n")) {
+            finalText += "\n"
+        }
+
+        WriteCommandAction.writeCommandAction(project).run<Throwable> {
             document.replaceString(start, end, finalText)
         }
     }

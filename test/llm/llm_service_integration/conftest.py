@@ -1,7 +1,5 @@
 import pytest
 
-CREDENTIALS_PATH = "credentials.json"
-
 
 def pytest_addoption(parser):
     parser.addoption(

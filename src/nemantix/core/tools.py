@@ -1,9 +1,11 @@
 import functools
 import inspect
-
-from typing import Callable, Any
+import pkgutil
+from importlib import import_module
+from typing import Any, Callable
 
 from nemantix.common.logger import get_package_logger
+from nemantix.core.exceptions import NemantixException
 
 logger = get_package_logger(__name__)
 
@@ -34,21 +36,36 @@ class Toolset:
     _classes: dict[Any, Any] = {}
     REGISTRY: dict[Any, Any] = {}
 
+    # Lazy import-path registry.
+    # Keys: ClassName → import_path string (unresolved) or type (cached after first load).
+    # "*" → list of import paths scanned on cache-miss, in priority order;
+    #        "nemantix.stl" is always last (built-in fallback).
+    _module_paths: dict[str, type["Toolset"] | str | list[str]] = {
+        "*": ["nemantix.stl"]
+    }
+
     def __init__(self):
         # common state across tools
         self.state = dict()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        class_name = cls.__name__
+
+        # If redefining an existing toolset, clean up the old one first.
+        if class_name in cls._classes:
+            logger.warning(
+                f"Toolset '{class_name}' is being redefined. Purging old registration and closing instances."
+            )
+            cls.unregister(class_name)
 
         for attr_name, attr_value in cls.__dict__.items():
             original_func = getattr(attr_value, "__wrapped__", attr_value)
 
             if getattr(original_func, "__is_tool", False):
-                tool_name = f"{cls.__name__}.{attr_name}"
+                tool_name = f"{class_name}.{attr_name}"
                 logger.debug(f"Registering tool: {tool_name}")
 
-                # Extract parameters, ignoring 'self'
                 sig = inspect.signature(original_func)
                 parameters = {
                     name: param
@@ -58,20 +75,159 @@ class Toolset:
 
                 cls.REGISTRY[tool_name] = dict(
                     cls=cls,
-                    cls_name=cls.__name__,
+                    cls_name=class_name,
                     fn_name=attr_name,
                     fn=original_func,
                     docstring=attr_value.__doc__,
                     parameters=parameters,
                 )
 
-        cls._classes[cls.__name__] = cls
+        cls._classes[class_name] = cls
+
+    @staticmethod
+    def _find_class_in(path: str, class_name: str) -> "type[Toolset] | None":
+        """Return *class_name* from *path* (module or package, no recursion)."""
+        mod = import_module(path)
+        cls = getattr(mod, class_name, None)
+        if cls is not None:
+            return cls
+        if hasattr(mod, "__path__"):
+            for _, name, _ in pkgutil.iter_modules(mod.__path__):
+                sub = import_module(f"{path}.{name}")
+                cls = getattr(sub, class_name, None)
+                if cls is not None:
+                    return cls
+        return None
+
+    @classmethod
+    def register(cls, import_path: str, class_name: str | None = None) -> None:
+        """Register a toolset import path (module or package).
+
+        If *class_name* is omitted (or ``"*"``), prepends *import_path* to the
+        wildcard lookup list so it is scanned on cache-miss before the built-in
+        nemantix.stl fallback.  Otherwise, stores a lazy direct mapping for the
+        given class name — no import happens at registration time.
+        """
+        if not import_path or not all(
+            part.isidentifier() for part in import_path.split(".")
+        ):
+            raise ValueError(f"'{import_path}' is not a valid dotted import path")
+
+        if class_name is None:
+            class_name = "*"
+
+        if class_name != "*" and not class_name.isidentifier():
+            raise ValueError(f"'{class_name}' is not a valid Python class name")
+
+        if class_name == "*":
+            lookup = cls._module_paths["*"]
+            if not isinstance(lookup, list):
+                raise NemantixException(
+                    "_module_paths['*'] must be a list of import paths"
+                )
+            lookup.insert(0, import_path)
+        else:
+            cls._module_paths[class_name] = import_path
+
+    @classmethod
+    def unregister(cls, registry_key: str):
+        """Purges a class and its registered tools from all global caches,
+        and closes active instances.
+        """
+        if registry_key in cls._classes:
+            target_cls = cls._classes.pop(registry_key)
+
+            # Purge from REGISTRY (tools)
+            keys_to_delete = [
+                k for k, v in cls.REGISTRY.items() if v["cls"] == target_cls
+            ]
+            for k in keys_to_delete:
+                del cls.REGISTRY[k]
+
+            # Track unique instances to avoid calling close() multiple times on the same object
+            instances_to_close = set()
+
+            # Purge from global singletons
+            if target_cls in cls._instances:
+                instances_to_close.add(cls._instances[target_cls])
+                del cls._instances[target_cls]
+
+            # Purge from named/aliased instances
+            aliases_to_delete = [
+                k for k, v in cls._named_instances.items() if v["class"] == target_cls
+            ]
+            for k in aliases_to_delete:
+                instances_to_close.add(cls._named_instances[k]["instance"])
+                del cls._named_instances[k]
+
+            # close all collected instances
+            for instance in instances_to_close:
+                try:
+                    if hasattr(instance, "close") and callable(instance.close):
+                        instance.close()
+                except Exception as e:
+                    logger.error(
+                        f"Error closing toolset instance of {target_cls.__name__}: {e}",
+                        exc_info=True,
+                    )
+
+            logger.debug(
+                f"Unregistered toolset '{registry_key}' and closed {len(instances_to_close)} instances."
+            )
+
+    @classmethod
+    def load(cls, class_name: str) -> "Toolset":
+        """Instantiate a toolset by class name, importing its module lazily.
+
+        Resolution order:
+        1. _classes — already imported (via __init_subclass__ or a prior load)
+        2. _module_paths[class_name] — explicit lazy path (module or package)
+        3. _module_paths["*"] — lookup packages, left-to-right; nemantix.stl last
+        """
+        # 1. already imported
+        if class_name in cls._classes:
+            return cls._classes[class_name]()
+
+        # 2. explicit entry — may be a cached type or an unresolved path string
+        entry = cls._module_paths.get(class_name)
+        if entry is not None:
+            if isinstance(entry, type):
+                return entry()
+            if isinstance(entry, str):
+                tool_cls = cls._find_class_in(entry, class_name)
+                if tool_cls is None:
+                    raise NemantixException(
+                        f"Class '{class_name}' not found in '{entry}'."
+                    )
+                cls._module_paths[class_name] = tool_cls
+                return tool_cls()
+
+        # 3. lookup packages
+        lookup = cls._module_paths["*"]
+        if not isinstance(lookup, list):
+            raise NemantixException(
+                "_module_paths['*'] must be a list of package paths"
+            )
+        for pkg_path in lookup:
+            tool_cls = cls._find_class_in(pkg_path, class_name)
+            if tool_cls is not None:
+                cls._module_paths[class_name] = tool_cls
+                return tool_cls()
+
+        raise NemantixException(f"Toolset '{class_name}' not registered.")
 
     def update_state(self, **kwargs):
         self.state.update(kwargs)
 
     def reset_state(self):
         self.state.clear()
+
+    def close(self):
+        """
+        Releases external resources (e.g., database connections, file handles)
+        when the toolset is unregistered.
+        """
+        pass
 
     @classmethod
     def register_alias(cls, tool_class: str, tool_name: str, alias: str) -> bool:
@@ -135,44 +291,89 @@ class Toolset:
     def get_tool_names(cls) -> list[str]:
         tool_names = []
         for info in Toolset.REGISTRY.values():
-            if info['cls'] == cls:
-                tool_names.append(info['fn_name'])
+            if info["cls"] == cls:
+                tool_names.append(info["fn_name"])
 
         return tool_names
 
     @classmethod
-    def get_instance(cls, target_class, alias: str | None = None, args=None):
-        """Returns an existing instance from cache or creates a new one."""
+    def get_instance(
+        cls, target_class, alias: str | None = None, args=None, kwargs=None
+    ):
+        args = args or []
+        kwargs = kwargs or {}
+
+        # Normalize arguments using the target class's signature
+        try:
+            sig = inspect.signature(target_class)
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            normalized_args = dict(bound_args.arguments)
+        except TypeError as e:
+            raise NemantixException(
+                f"Failed to bind arguments for '{target_class.__name__}'. "
+                f"Provided args: {args}, kwargs: {kwargs}. Error: {e}"
+            )
+
         if alias is not None:
             if alias not in cls._named_instances:
                 logger.debug(
                     f"Instantiating {target_class.__name__} with alias: {alias} ..."
                 )
 
-                if args is not None:
-                    instance = target_class(*args)
-                else:
-                    instance = target_class()
+                try:
+                    instance = target_class(*args, **kwargs)
+                except TypeError as e:
+                    raise NemantixException(
+                        f"Failed to initialize '{target_class.__name__}': {e}"
+                    )
 
-                cls._named_instances[alias] = instance
+                cls._named_instances[alias] = {
+                    "instance": instance,
+                    "normalized_args": normalized_args,
+                    "class": target_class,
+                }
+                return instance
             else:
-                return cls._named_instances[alias]
+                cached = cls._named_instances[alias]
 
-        elif target_class not in cls._instances:
-            logger.debug(f"Instantiating new {target_class.__name__} object ...")
-            if args is None:
-                instance = target_class()
-            else:
-                instance = target_class(*args)
+                if cached["class"] != target_class:
+                    raise NemantixException(
+                        f"Alias '{alias}' is already assigned to Toolset '{cached['class'].__name__}'. "
+                        f"Cannot reuse it for '{target_class.__name__}'."
+                    )
 
-            cls._instances[target_class] = instance
+                if cached["normalized_args"] != normalized_args:
+                    raise NemantixException(
+                        f"Toolset alias '{alias}' was already instantiated with different configuration. "
+                        f"Original parameters: {cached['normalized_args']}. "
+                        f"New parameters: {normalized_args}."
+                    )
+
+                return cached["instance"]
         else:
-            instance = cls._instances[target_class]
+            if args or kwargs:
+                raise NemantixException(
+                    f"Arguments were provided for Toolset '{target_class.__name__}' without an alias. "
+                    "Use the 'as <alias>' syntax to instantiate toolsets with arguments."
+                )
 
-        return instance
+            if target_class not in cls._instances:
+                logger.debug(f"Instantiating new {target_class.__name__} object ...")
+                instance = target_class()
+                cls._instances[target_class] = instance
+            else:
+                instance = cls._instances[target_class]
+
+            return instance
 
     @staticmethod
-    def get_tool(tool_name: str, instance_alias: str | None = None, instance_args=None):
+    def get_tool(
+        tool_name: str,
+        instance_alias: str | None = None,
+        instance_args=None,
+        instance_kwargs=None,
+    ):
         """Retrieves a tool by name"""
         assert tool_name in Toolset.REGISTRY
 
@@ -181,18 +382,21 @@ class Toolset:
         func = tool_["fn"]
 
         instance = Toolset.get_instance(
-            target_class, alias=instance_alias, args=instance_args
+            target_class,
+            alias=instance_alias,
+            args=instance_args,
+            kwargs=instance_kwargs,
         )
 
         return lambda *args, **kwargs: func(instance, *args, **kwargs)
 
     @staticmethod
     def run_tool(
-            tool_name: str,
-            *args,
-            instance_alias: str | None = None,
-            instance_args=None,
-            **kwargs,
+        tool_name: str,
+        *args,
+        instance_alias: str | None = None,
+        instance_args=None,
+        **kwargs,
     ):
         """Executes a tool by name"""
         if tool_name not in Toolset.REGISTRY:

@@ -196,11 +196,12 @@ class _FakeDeliberate:
 
 
 @pytest.fixture
-def interpreter_with_hub(hub):
+def interpreter_with_hub(hub, dummy_llm_proxy_config_class):
     exp = DummyExpertise(event_hub=hub)
     emb = DummyEmbedder()
     llm = DummyLLM()
-    interp = Interpreter(expertise=exp, llm=llm, embedder=emb)
+    proxies = dummy_llm_proxy_config_class(llm)
+    interp = Interpreter(expertise=exp, llm=llm, embedder=emb, proxy_config=proxies)
     # _event_from_statement requires a deliberate in globals to resolve the script
     interp.globals["__deliberate"] = _FakeDeliberate()
     return interp
@@ -242,10 +243,16 @@ def test_non_breakpoint_intentable_does_not_emit_event(interpreter_with_hub, hub
     assert len(events_received) == 0
 
 
-def test_breakpoint_not_emitted_without_event_hub():
+def test_breakpoint_not_emitted_without_event_hub(dummy_llm_proxy_config_class):
     """When event_hub is None, should_emit=False — no crash, no event."""
     exp = DummyExpertise(event_hub=None)
-    interp = Interpreter(expertise=exp, llm=DummyLLM(), embedder=DummyEmbedder())
+    llm = DummyLLM()
+    interp = Interpreter(
+        expertise=exp,
+        llm=llm,
+        embedder=DummyEmbedder(),
+        proxy_config=dummy_llm_proxy_config_class(llm),
+    )
 
     meta = make_meta_with_breakpoint()
     stmt = make_node(
@@ -626,7 +633,9 @@ def test_list_lines_marks_current_line():
 def test_observers_api_creates_hub_automatically():
     """`observers=[Debugger()]` causes Expertise to use the context EventHub."""
     coder = MagicMock()
-    _ = Expertise(script_list=[], coder=coder, verifier=DebugVerifier(), observers=[Debugger()])
+    _ = Expertise(
+        script_list=[], coder=coder, verifier=DebugVerifier(), observers=[Debugger()]
+    )
     assert isinstance(context.event_hub.get(), EventHub)
 
 
@@ -637,7 +646,9 @@ def test_observers_api_subscribes_each_observer(monkeypatch, hub):
     invocations = []
     monkeypatch.setattr(dbg, "on_breakpoint", lambda e: invocations.append(e))
 
-    _ = Expertise(script_list=[], coder=coder, verifier=DebugVerifier(), observers=[dbg])
+    _ = Expertise(
+        script_list=[], coder=coder, verifier=DebugVerifier(), observers=[dbg]
+    )
 
     event = Event(
         type=EventType.BREAKPOINT,

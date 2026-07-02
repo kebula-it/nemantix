@@ -23,11 +23,11 @@ class HierarchyPlanner:
     """
 
     def __init__(
-            self,
-            llm_proxy: Any,
-            window_lines: int = 1000,
-            overlap_lines: int = 200,
-            plugin_registry: Optional[DocumentPluginRegistry] = None,
+        self,
+        llm_proxy: Any,
+        window_lines: int = 1000,
+        overlap_lines: int = 200,
+        plugin_registry: Optional[DocumentPluginRegistry] = None,
     ):
         """
         Initializes the HierarchyPlanner.
@@ -41,7 +41,9 @@ class HierarchyPlanner:
         self.llm = llm_proxy
         self.window_lines = window_lines
         self.overlap_lines = overlap_lines
-        self.plugin_registry = plugin_registry or DocumentPluginRegistry.get_available_plugins()
+        self.plugin_registry = (
+            plugin_registry or DocumentPluginRegistry.get_available_plugins()
+        )
 
     def _assign_ids(self, nodes: List[NodeModel], plugin: BaseDocumentPlugin) -> None:
         """
@@ -75,15 +77,21 @@ class HierarchyPlanner:
         lines = document.get_content().splitlines()
 
         if len(lines) <= self.window_lines:
-            logger.info("Processing small document in a single pass (Lines: %d)", len(lines))
+            logger.info(
+                "Processing small document in a single pass (Lines: %d)", len(lines)
+            )
             messages = [
                 {
                     "role": "developer",
-                    "content": self._developer_instructions(plugin, document.doc_format),
+                    "content": self._developer_instructions(
+                        plugin, document.doc_format
+                    ),
                 },
                 {
                     "role": "user",
-                    "content": self._single_pass_prompt(lines, plugin, document.doc_format),
+                    "content": self._single_pass_prompt(
+                        lines, plugin, document.doc_format
+                    ),
                 },
             ]
             response = self.llm.invoke_structured(
@@ -93,9 +101,14 @@ class HierarchyPlanner:
             result = response.result
 
         else:
-            logger.info("Processing large document using windowed mode (Lines: %d)", len(lines))
+            logger.info(
+                "Processing large document using windowed mode (Lines: %d)", len(lines)
+            )
             result = self._extract_window_nodes(lines, plugin, document.doc_format)
-            logger.info("Extracted %d root nodes after merging large document.", len(result.nodes))
+            logger.info(
+                "Extracted %d root nodes after merging large document.",
+                len(result.nodes),
+            )
 
         if result and result.nodes:
             self._assign_ids(result.nodes, plugin)
@@ -103,10 +116,10 @@ class HierarchyPlanner:
         return result
 
     def _extract_window_nodes(
-            self,
-            lines: List[str],
-            plugin: BaseDocumentPlugin,
-            doc_format: str,
+        self,
+        lines: List[str],
+        plugin: BaseDocumentPlugin,
+        doc_format: str,
     ) -> DocumentHierarchyModel:
         """
         Splits the document into overlapping windows and extracts nodes concurrently.
@@ -150,7 +163,9 @@ class HierarchyPlanner:
 
         # Execute concurrently (e.g., 5-10 workers depending on LLM rate limits)
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(process_window, i, w) for i, w in enumerate(windows)]
+            futures = [
+                executor.submit(process_window, i, w) for i, w in enumerate(windows)
+            ]
             for future in concurrent.futures.as_completed(futures):
                 try:
                     index, data = future.result()
@@ -173,7 +188,9 @@ class HierarchyPlanner:
 
         return self._merge_window_results(valid_results, plugin)
 
-    def _developer_instructions(self, plugin: BaseDocumentPlugin, doc_format: str) -> str:
+    def _developer_instructions(
+        self, plugin: BaseDocumentPlugin, doc_format: str
+    ) -> str:
         """Builds the developer/system prompt instructions for the LLM."""
         coord = plugin.get_coordinate_extraction_guidelines(doc_format=doc_format)
 
@@ -193,7 +210,9 @@ class HierarchyPlanner:
             "IMPORTANT: DO NOT create artificial wrapper nodes like 'main_text', 'body', 'document', or 'content' to group other nodes. "
         )
 
-    def _single_pass_prompt(self, lines: List[str], plugin: BaseDocumentPlugin, doc_format: str) -> str:
+    def _single_pass_prompt(
+        self, lines: List[str], plugin: BaseDocumentPlugin, doc_format: str
+    ) -> str:
         """Builds the user prompt for a single-pass extraction."""
         coord = plugin.get_coordinate_extraction_guidelines(doc_format=doc_format)
         numbered = self._number_lines(lines)
@@ -226,12 +245,12 @@ class HierarchyPlanner:
         """.strip()
 
     def _window_prompt(
-            self,
-            lines: List[str],
-            plugin: BaseDocumentPlugin,
-            start_line: int,
-            end_line: int,
-            total_lines: int,
+        self,
+        lines: List[str],
+        plugin: BaseDocumentPlugin,
+        start_line: int,
+        end_line: int,
+        total_lines: int,
     ) -> str:
         """Builds the user prompt for a specific window of a large document."""
         coord = plugin.get_coordinate_extraction_guidelines()
@@ -287,11 +306,13 @@ class HierarchyPlanner:
         while start <= len(lines):
             end = min(start + self.window_lines - 1, len(lines))
 
-            windows.append({
-                "start_line": start,
-                "end_line": end,
-                "lines": lines[start - 1:end],
-            })
+            windows.append(
+                {
+                    "start_line": start,
+                    "end_line": end,
+                    "lines": lines[start - 1 : end],
+                }
+            )
 
             if end == len(lines):
                 break
@@ -300,8 +321,9 @@ class HierarchyPlanner:
 
         return windows
 
-    def _merge_window_results(self, partial_results: List[DocumentHierarchyModel],
-                              plugin: BaseDocumentPlugin) -> DocumentHierarchyModel:
+    def _merge_window_results(
+        self, partial_results: List[DocumentHierarchyModel], plugin: BaseDocumentPlugin
+    ) -> DocumentHierarchyModel:
         """
         Consolidates the hierarchical trees from multiple overlapping windows into a single tree.
 
@@ -320,7 +342,11 @@ class HierarchyPlanner:
             if not title and result.title and result.title != "Unknown":
                 title = result.title
 
-            if not document_type and result.document_type and result.document_type != "document":
+            if (
+                not document_type
+                and result.document_type
+                and result.document_type != "document"
+            ):
                 document_type = result.document_type
 
             # Flatten the nested tree of each window into a 1D list
@@ -335,7 +361,7 @@ class HierarchyPlanner:
         return DocumentHierarchyModel(
             title=title or "Unknown",
             document_type=document_type or "document",
-            nodes=final_tree
+            nodes=final_tree,
         )
 
     def _flatten_nodes(self, nodes: List[NodeModel]) -> List[NodeModel]:
@@ -359,7 +385,9 @@ class HierarchyPlanner:
                 flat.extend(self._flatten_nodes(node.children))
         return flat
 
-    def _deduplicate_flat_nodes(self, flat_nodes: List[NodeModel], plugin: BaseDocumentPlugin) -> List[NodeModel]:
+    def _deduplicate_flat_nodes(
+        self, flat_nodes: List[NodeModel], plugin: BaseDocumentPlugin
+    ) -> List[NodeModel]:
         """
         Deduplicates flat nodes by merging contiguous or overlapping ones of the same kind.
 
@@ -375,8 +403,7 @@ class HierarchyPlanner:
 
         # Sort by start coordinate. If ties occur, the largest node comes first.
         sorted_nodes = sorted(
-            flat_nodes,
-            key=lambda n: plugin.get_coordinate_sort_key(n.coordinates)
+            flat_nodes, key=lambda n: plugin.get_coordinate_sort_key(n.coordinates)
         )
 
         merged: List[NodeModel] = []
@@ -388,13 +415,18 @@ class HierarchyPlanner:
             is_merged = False
             # Look backwards through the already merged nodes to find a continuation
             for prev_node in reversed(merged):
-
                 # If they touch, are the same kind, and have the same label, fuse them
-                if (node.kind == prev_node.kind and
-                        self._labels_match(node.label, prev_node.label) and
-                        plugin.can_merge_coordinates(prev_node.coordinates, node.coordinates)):
+                if (
+                    node.kind == prev_node.kind
+                    and self._labels_match(node.label, prev_node.label)
+                    and plugin.can_merge_coordinates(
+                        prev_node.coordinates, node.coordinates
+                    )
+                ):
                     # Ask the plugin to calculate the new bounding box/range
-                    prev_node.coordinates = plugin.get_bounding_coordinates(prev_node.coordinates, node.coordinates)
+                    prev_node.coordinates = plugin.get_bounding_coordinates(
+                        prev_node.coordinates, node.coordinates
+                    )
                     is_merged = True
                     break
 
@@ -408,7 +440,9 @@ class HierarchyPlanner:
 
         return merged
 
-    def _build_tree_from_flat(self, flat_nodes: List[NodeModel], plugin: BaseDocumentPlugin) -> List[NodeModel]:
+    def _build_tree_from_flat(
+        self, flat_nodes: List[NodeModel], plugin: BaseDocumentPlugin
+    ) -> List[NodeModel]:
         """
         Reconstructs the hierarchical tree based exclusively on start/end coordinates.
 
@@ -421,8 +455,7 @@ class HierarchyPlanner:
         """
         # Strictly reorder (Parents MUST appear before children)
         sorted_nodes = sorted(
-            flat_nodes,
-            key=lambda n: plugin.get_coordinate_sort_key(n.coordinates)
+            flat_nodes, key=lambda n: plugin.get_coordinate_sort_key(n.coordinates)
         )
 
         # Ensure children lists are empty before starting
@@ -470,8 +503,8 @@ class HierarchyPlanner:
         Returns:
             bool: True if labels match semantically.
         """
-        l1 = re.sub(r'\(continued\)', '', label1, flags=re.IGNORECASE).strip().lower()
-        l2 = re.sub(r'\(continued\)', '', label2, flags=re.IGNORECASE).strip().lower()
+        l1 = re.sub(r"\(continued\)", "", label1, flags=re.IGNORECASE).strip().lower()
+        l2 = re.sub(r"\(continued\)", "", label2, flags=re.IGNORECASE).strip().lower()
         return l1 == l2
 
     def _number_lines(self, lines: List[str], start: int = 1) -> str:

@@ -21,7 +21,7 @@ class LlamaProxy(OpenAICompatibleProxy):
         **kwargs: Any,
     ):
         # Ensure the host is properly formatted with the OpenAI /v1 compatibility suffix
-        base_url = (host or '').rstrip("/")
+        base_url = (host or "").rstrip("/")
         if not base_url.endswith("/v1"):
             base_url += "/v1"
 

@@ -26,8 +26,9 @@ class RequestsToolset(Toolset):
 
     # --- Helper: Auth Logic ---
 
-    def _apply_auth(self, auth_params: Optional[Dict[str, str]],
-                    headers: Dict[str, str]) -> Optional[Any]:
+    def _apply_auth(
+        self, auth_params: Optional[Dict[str, str]], headers: Dict[str, str]
+    ) -> Optional[Any]:
         """
         Parses the 'auth' dictionary and returns the requests.auth object
         OR updates the headers dict in-place.
@@ -164,12 +165,9 @@ class RequestsToolset(Toolset):
 
     # --- Internal Request Handler ---
 
-    def _make_request(self,
-                      method: str,
-                      url: str,
-                      params=None,
-                      json_data=None,
-                      auth_config=None) -> str:
+    def _make_request(
+        self, method: str, url: str, params=None, json_data=None, auth_config=None
+    ) -> str:
         # Prepare headers (copy existing session headers to avoid mutation)
         req_headers = dict(self.session.headers)
 
@@ -193,9 +191,11 @@ class RequestsToolset(Toolset):
             except json.JSONDecodeError:
                 content_str = response.text
 
-            return (f"Status: {response.status_code}\n"
-                    f"URL: {response.url}\n"
-                    f"Response:\n{content_str}")
+            return (
+                f"Status: {response.status_code}\n"
+                f"URL: {response.url}\n"
+                f"Response:\n{content_str}"
+            )
 
         except Exception as e:
             return f"Error executing {method} request: {str(e)}"

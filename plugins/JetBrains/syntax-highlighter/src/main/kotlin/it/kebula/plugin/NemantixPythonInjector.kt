@@ -39,25 +39,36 @@ class NemantixPythonInjector : MultiHostInjector {
             sibling = sibling.prevSibling
         }
 
-        // 2. If we are inside a toolset, inject Python!
+        // 2. If we are inside a toolset, check if the content actually looks like Python
         if (isInsideToolset) {
-            val python = Language.findLanguageByID("Python")
-
-            // Critical check: Does the testing Sandbox actually have Python installed?
-            if (python == null) {
-                println("NEMANTIX DEBUG: Python language not found in this IDE Sandbox!")
-                return
-            }
-
-            // Safely calculate the inner content range (between >>> and <<<)
             val contentStart = startIndex + 3
             val contentEnd = endIndex
 
             if (contentEnd > contentStart) {
-                val contentRange = TextRange(contentStart, contentEnd)
-                registrar.startInjecting(python)
-                registrar.addPlace(null, null, context as NemantixPromptInjectionHost, contentRange)
-                registrar.doneInjecting()
+                // Extract only the text between >>> and <<<
+                val innerText = text.substring(contentStart, contentEnd)
+
+                // Heuristic: Does it look like Python code?
+                // Checks for standard python definitions or decorators.
+                val isPython = innerText.contains("class ") ||
+                        innerText.contains("def ") ||
+                        innerText.contains("import ") ||
+                        innerText.contains("@")
+
+                if (isPython) {
+                    val python = Language.findLanguageByID("Python")
+
+                    // Critical check: Does the testing Sandbox actually have Python installed?
+                    if (python == null) {
+                        println("NEMANTIX DEBUG: Python language not found in this IDE Sandbox!")
+                        return
+                    }
+
+                    val contentRange = TextRange(contentStart, contentEnd)
+                    registrar.startInjecting(python)
+                    registrar.addPlace(null, null, context as NemantixPromptInjectionHost, contentRange)
+                    registrar.doneInjecting()
+                }
             }
         }
     }

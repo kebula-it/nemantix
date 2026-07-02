@@ -1,14 +1,14 @@
 from argparse import Namespace
 from dataclasses import dataclass
-from typing import Any, List, Iterator
+from typing import Any, Iterator, List
 
 import pytest
 from google import genai
 
 from nemantix.llm import AbstractLLMProxy, Credentials
+from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
 from nemantix.llm.google_proxy import GoogleLLMProxy
 from nemantix.llm.openai_proxy import OpenAILLMProxy
-from nemantix.llm.anthropic_proxy import AnthropicLLMProxy
 
 
 class MockMessage:
@@ -21,6 +21,7 @@ class MockMessage:
         if exclude_none:
             d = {k: v for k, v in d.items() if v is not None}
         return d
+
 
 @pytest.fixture
 def mock_google_client():
@@ -40,14 +41,27 @@ def mock_google_client():
             if self.usage_metadata is None:
                 self.usage_metadata = MockUsageMetadata()
 
-    # noinspection PyUnusedLocal
     class MockModels:
         @staticmethod
         def generate_content(*args, **kwargs):
-            if contents := kwargs.get("contents"):
+            contents = kwargs.get("contents")
+
+            # --- Safely extract plain text from the normalized messages list ---
+            prompt_text = ""
+            if isinstance(contents, list):
+                for msg in contents:
+                    for part in msg.get("parts", []):
+                        prompt_text += part.get("text", "")
+            elif isinstance(contents, str):
+                prompt_text = contents
+            # -------------------------------------------------------------------
+
+            if prompt_text:
                 config = kwargs.get("config", {})
                 tools = getattr(config, "tools", [])
-                if "tempo" in contents and tools:
+
+                # Check the extracted string instead of the raw list
+                if "tempo" in prompt_text and tools:
                     return MockResponse(
                         "",
                         [
@@ -58,7 +72,7 @@ def mock_google_client():
                             )
                         ],
                     )
-                return MockResponse(contents, [])
+                return MockResponse(prompt_text, [])
             return MockResponse("", [])
 
         @staticmethod
@@ -83,9 +97,7 @@ def google_llm_proxy(mock_google_client, monkeypatch):
 
     # Optionally, mock the API key if needed
     monkeypatch.setenv("GOOGLE_API_KEY", "mock-api-key")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
 
     # Return the proxy instance
     return GoogleLLMProxy(
@@ -155,6 +167,11 @@ def mock_openai_client():
         prompt = kwargs.get("messages", [{}])[0].get("content", "")
         tools = kwargs.get("tools")
 
+        # Structured output: return valid JSON so json.loads() succeeds
+        if kwargs.get("response_format"):
+            message = MockMessage(content='{"result": "mocked"}', tool_calls=[])
+            return MockResponse(choices=[MockChoice(message=message)])
+
         # Check for tool call trigger
         if tools and ("weather" in prompt.lower() or "stock" in prompt.lower()):
             tool_call = Namespace(
@@ -185,9 +202,7 @@ def openai_llm_proxy(mock_openai_client, monkeypatch):
     # Patch the OpenAI class that OpenAILLMProxy imports and uses
     monkeypatch.setattr("nemantix.llm.openai_proxy.OpenAI", mock_openai_client)
     monkeypatch.setenv("OPENAI_API_KEY", "mock-api-key")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
     return OpenAILLMProxy("gpt-4o-mini", temperature=0.2, max_output_tokens=42)
 
 
@@ -275,9 +290,7 @@ def anthropic_llm_proxy(mock_anthropic_client, monkeypatch):
         "nemantix.llm.anthropic_proxy.anthropic.Anthropic", mock_anthropic_client
     )
     monkeypatch.setenv("ANTHROPIC_API_KEY", "mock-api-key")
-    AbstractLLMProxy.set_credentials_manager(
-        Credentials.load_from_file(file_path="nonexistent.json")
-    )
+    AbstractLLMProxy.set_credentials_manager(Credentials())
     return AnthropicLLMProxy(
         "claude-3-5-sonnet-20241022", temperature=0.2, max_output_tokens=42
     )

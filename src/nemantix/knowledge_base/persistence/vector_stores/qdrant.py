@@ -2,7 +2,15 @@ import uuid
 import numpy.typing as npt
 from qdrant_client import QdrantClient
 from typing import List, Dict, Any, Optional, Union
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchAny, MatchValue
+from qdrant_client.models import (
+    Distance,
+    VectorParams,
+    PointStruct,
+    Filter,
+    FieldCondition,
+    MatchAny,
+    MatchValue,
+)
 
 from nemantix.knowledge_base.persistence.vector_stores.abstract_store import VectorStore
 from nemantix.common.logger import get_package_logger
@@ -16,7 +24,7 @@ class QdrantVectorStore(VectorStore):
     Supports dynamic collection creation and advanced payload filtering.
     """
 
-    def __init__(self, db_path_or_url: str, collection_name: str, metric='COSINE'):
+    def __init__(self, db_path_or_url: str, collection_name: str, metric="COSINE"):
         """
         Initializes the Qdrant client and prepares the distance metric.
 
@@ -25,13 +33,13 @@ class QdrantVectorStore(VectorStore):
             collection_name (str): The target collection name.
             metric (str): The distance metric ('COSINE', 'L2', 'IP'). Defaults to 'COSINE'.
         """
-        assert metric.upper() in ['COSINE', 'L2', 'IP']
+        assert metric.upper() in ["COSINE", "L2", "IP"]
         self.collection_name = collection_name
 
         metric_map = {
-            'COSINE': Distance.COSINE,
-            'L2': Distance.EUCLID,
-            'IP': Distance.DOT
+            "COSINE": Distance.COSINE,
+            "L2": Distance.EUCLID,
+            "IP": Distance.DOT,
         }
         self.distance = metric_map[metric.upper()]
 
@@ -42,7 +50,12 @@ class QdrantVectorStore(VectorStore):
         else:
             self.client = QdrantClient(path=db_path_or_url)
 
-    def add(self, vectors: npt.NDArray, metadata: List[Dict[str, Any]] | Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    def add(
+        self,
+        vectors: npt.NDArray,
+        metadata: List[Dict[str, Any]] | Dict[str, Any],
+        **kwargs,
+    ) -> Dict[str, Any]:
         """
         Inserts vectors and payloads into Qdrant. Creates the collection dynamically if it doesn't exist.
         """
@@ -51,12 +64,15 @@ class QdrantVectorStore(VectorStore):
         if not self.client.collection_exists(self.collection_name):
             # Dynamically deduce the embedding dimension from the first vector
             detected_size = vectors.shape[1]
-            logger.info("Collection '%s' not found. Creating it dynamically with dimension %d...",
-                        self.collection_name, detected_size)
+            logger.info(
+                "Collection '%s' not found. Creating it dynamically with dimension %d...",
+                self.collection_name,
+                detected_size,
+            )
 
             self.client.create_collection(
                 collection_name=self.collection_name,
-                vectors_config=VectorParams(size=detected_size, distance=self.distance)
+                vectors_config=VectorParams(size=detected_size, distance=self.distance),
             )
 
         points = []
@@ -80,26 +96,19 @@ class QdrantVectorStore(VectorStore):
             else:
                 point_id = str(uuid.uuid4())
 
-            points.append(PointStruct(
-                id=point_id,
-                vector=vec.tolist(),
-                payload=meta
-            ))
+            points.append(PointStruct(id=point_id, vector=vec.tolist(), payload=meta))
             added_ids.append(point_id)
 
-        self.client.upsert(
-            collection_name=self.collection_name,
-            points=points
-        )
+        self.client.upsert(collection_name=self.collection_name, points=points)
 
         return {"ids": added_ids}
 
     def search(
-            self,
-            query_vectors: npt.NDArray,
-            k: int = 5,
-            filters: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-            **kwargs
+        self,
+        query_vectors: npt.NDArray,
+        k: int = 5,
+        filters: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        **kwargs,
     ) -> List[Dict[str, Any]]:
         """
         Searches the Qdrant collection using vector similarity and optional metadata filters.
@@ -110,14 +119,12 @@ class QdrantVectorStore(VectorStore):
         # Translate agnostic filter into Qdrant DSL
         qdrant_filter = None
         if filters:
-
             if isinstance(filters, dict):
                 filters = [filters]
 
             must_conditions = []
 
             for f in filters:
-
                 field = f.get("field")
                 op = f.get("operator")
                 val = f.get("value")
@@ -140,33 +147,31 @@ class QdrantVectorStore(VectorStore):
                 collection_name=self.collection_name,
                 query=qv.tolist(),
                 limit=k,
-                query_filter=qdrant_filter
+                query_filter=qdrant_filter,
             )
 
             parsed_results = []
             for hit in response.points:
-                parsed_results.append({
-                    "id": hit.id,
-                    "score": hit.score,
-                    "metadata": hit.payload
-                })
+                parsed_results.append(
+                    {"id": hit.id, "score": hit.score, "metadata": hit.payload}
+                )
             results.append(parsed_results)
 
         return results[0] if len(results) == 1 else results
 
-    def delete(self, ids: Optional[List] = None, filter_expr: Optional[Any] = None) -> Dict[str, Any]:
+    def delete(
+        self, ids: Optional[List] = None, filter_expr: Optional[Any] = None
+    ) -> Dict[str, Any]:
         """Deletes specified points by ID or Qdrant filter expression."""
         if ids:
             logger.info("Deleting specific IDs from Qdrant: %s", ids)
             self.client.delete(
-                collection_name=self.collection_name,
-                points_selector=ids
+                collection_name=self.collection_name, points_selector=ids
             )
         elif filter_expr:
             logger.info("Deleting points by filter from Qdrant.")
             self.client.delete(
-                collection_name=self.collection_name,
-                points_selector=filter_expr
+                collection_name=self.collection_name, points_selector=filter_expr
             )
         else:
             logger.warning("No IDs or Filter provided. Nothing deleted.")
@@ -181,7 +186,9 @@ class QdrantVectorStore(VectorStore):
             logger.info("Collection '%s' deleted successfully.", collection_name)
             return True
         except Exception as e:
-            logger.error("Qdrant error while deleting collection '%s': %s", collection_name, e)
+            logger.error(
+                "Qdrant error while deleting collection '%s': %s", collection_name, e
+            )
             return False
 
     def count(self):

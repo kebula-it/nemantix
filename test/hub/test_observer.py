@@ -14,7 +14,9 @@ from nemantix.hub.observer import (
 
 
 class MockEvent:
-    def __init__(self, type_: EventType, payload=None, lines=None, timestamp=1600000000.0):
+    def __init__(
+        self, type_: EventType, payload=None, lines=None, timestamp=1600000000.0
+    ):
         self.type = type_
         self.script = None
         self.payload = payload or {}
@@ -25,6 +27,7 @@ class MockEvent:
 # ==========================================
 # FIXTURES
 # ==========================================
+
 
 @pytest.fixture
 def mock_connector():
@@ -39,8 +42,10 @@ def mock_connector():
 @pytest.fixture
 def observer(mock_connector):
     """Provides a fresh Observer instance with mocked psutil to prevent system noise."""
-    with patch('psutil.Process') as mock_process, \
-            patch('psutil.net_io_counters') as mock_net:
+    with (
+        patch("psutil.Process") as mock_process,
+        patch("psutil.net_io_counters") as mock_net,
+    ):
         # Setup fake initial hardware states
         mock_proc_instance = mock_process.return_value
         mock_proc_instance.io_counters.return_value.read_count = 100
@@ -55,6 +60,7 @@ def observer(mock_connector):
 # ==========================================
 # OBSERVER TESTS
 # ==========================================
+
 
 def test_observer_initialization(observer, mock_connector):
     """Ensures metrics are initialized and DB tables are created if a connector is passed."""
@@ -80,7 +86,7 @@ def test_hardware_tracking_calculates_deltas(observer):
     observer.process.io_counters.return_value = new_io_mock
 
     # Simulate Network advancing
-    with patch('psutil.net_io_counters') as mock_net:
+    with patch("psutil.net_io_counters") as mock_net:
         mock_net.return_value.bytes_recv = 2048  # Delta: 1024 bytes (1 KB)
         mock_net.return_value.bytes_sent = 4096  # Delta: 2048 bytes (2 KB)
 
@@ -100,28 +106,39 @@ def test_hardware_tracking_calculates_deltas(observer):
 def test_agent_metrics_accumulation(observer):
     """Tests if the observer correctly accumulates cognitive metrics."""
     # Simulate LLM calls (1 internal, 2 external)
-    observer.on_llm(MockEvent(EventType.LLM, {'name': 'gpt-4', 'internal_usage': True}))
-    observer.on_llm(MockEvent(EventType.LLM, {'name': 'gpt-4', 'internal_usage': False}))
-    observer.on_llm(MockEvent(EventType.LLM, {'name': 'gpt-4', 'internal_usage': False}))
+    observer.on_llm(MockEvent(EventType.LLM, {"name": "gpt-4", "internal_usage": True}))
+    observer.on_llm(
+        MockEvent(EventType.LLM, {"name": "gpt-4", "internal_usage": False})
+    )
+    observer.on_llm(
+        MockEvent(EventType.LLM, {"name": "gpt-4", "internal_usage": False})
+    )
 
     # Simulate Tool Calls
-    observer.on_tool_call(MockEvent(EventType.CALL_ENTER, {'type': 'tool', 'name': 'search'}))
-    observer.on_tool_call(MockEvent(EventType.CALL_ENTER, {'type': 'tool', 'name': 'search'}))
     observer.on_tool_call(
-        MockEvent(EventType.CALL_ENTER, {'type': 'action', 'name': 'ignore_me'}))  # Should be ignored
+        MockEvent(EventType.CALL_ENTER, {"type": "tool", "name": "search"})
+    )
+    observer.on_tool_call(
+        MockEvent(EventType.CALL_ENTER, {"type": "tool", "name": "search"})
+    )
+    observer.on_tool_call(
+        MockEvent(EventType.CALL_ENTER, {"type": "action", "name": "ignore_me"})
+    )  # Should be ignored
 
     # Simulate User Request & Runtime Coding
     observer.on_user_request(MockEvent(EventType.USER_REQUEST))
-    observer.on_runtime_coding(MockEvent(EventType.EXECUTOR_PHASE_START, {'phase': 'code_deliberate'}))
+    observer.on_runtime_coding(
+        MockEvent(EventType.PHASE_START, {"phase": "code_deliberate"})
+    )
 
     # Simulate Errors
     observer.on_error(MockEvent(EventType.ERROR, "Syntax Error", lines=(5, 5)))
 
     # Assertions
-    assert observer.agent.llm_calls['gpt-4']['internal'] == 1
-    assert observer.agent.llm_calls['gpt-4']['external'] == 2
-    assert observer.agent.tool_frequencies['search'] == 2
-    assert 'ignore_me' not in observer.agent.tool_frequencies
+    assert observer.agent.llm_calls["gpt-4"]["internal"] == 1
+    assert observer.agent.llm_calls["gpt-4"]["external"] == 2
+    assert observer.agent.tool_frequencies["search"] == 2
+    assert "ignore_me" not in observer.agent.tool_frequencies
     assert observer.agent.user_requests == 1
     assert observer.agent.runtime_codings == 1
     assert observer.agent.errors == 1
@@ -133,10 +150,12 @@ def test_on_log_saves_to_db(observer, mock_connector):
 
     # We must patch the inline import inside `_save_to_db`
     mock_log_model = MagicMock()
-    modules_patch = {'nemantix.hub.storage': MagicMock(ObserverLogModel=mock_log_model)}
+    modules_patch = {"nemantix.hub.storage": MagicMock(ObserverLogModel=mock_log_model)}
 
-    with patch.dict('sys.modules', modules_patch):
-        event = MockEvent(EventType.LOG_EVENT, payload="System starting up", timestamp=1600000000.0)
+    with patch.dict("sys.modules", modules_patch):
+        event = MockEvent(
+            EventType.LOG_EVENT, payload="System starting up", timestamp=1600000000.0
+        )
         observer.on_log(event)
 
     # Check in-memory list
@@ -152,7 +171,8 @@ def test_on_log_saves_to_db(observer, mock_connector):
 # LOG HANDLER TESTS
 # ==========================================
 
-@patch('nemantix.hub.observer.context')
+
+@patch("nemantix.hub.observer.context")
 def test_observer_log_handler_emits_event(mock_context):
     """Tests if the custom logging handler correctly pipes Python logs into the EventHub."""
 
@@ -167,8 +187,13 @@ def test_observer_log_handler_emits_event(mock_context):
 
     # Create a fake log record
     record = logging.LogRecord(
-        name="test_logger", level=logging.INFO, pathname="test.py", lineno=42,
-        msg="Hello from logger", args=(), exc_info=None
+        name="test_logger",
+        level=logging.INFO,
+        pathname="test.py",
+        lineno=42,
+        msg="Hello from logger",
+        args=(),
+        exc_info=None,
     )
 
     # Execute
@@ -179,16 +204,23 @@ def test_observer_log_handler_emits_event(mock_context):
     emitted_event = mock_hub.emit.call_args[0][0]
 
     assert emitted_event.type == EventType.LOG_EVENT
-    assert emitted_event.payload['message'] == "Hello from logger"
-    assert emitted_event.payload['line'] == 42
+    assert emitted_event.payload["message"] == "Hello from logger"
+    assert emitted_event.payload["line"] == 42
 
 
-@patch('nemantix.hub.observer.context')
+@patch("nemantix.hub.observer.context")
 def test_observer_log_handler_ignores_if_no_hub_or_subscribers(mock_context):
     """Ensures the handler gracefully drops logs if observability is turned off."""
     handler = ObserverLogHandler()
-    record = logging.LogRecord(name="test", level=logging.INFO, pathname="", lineno=1, msg="test", args=(),
-                               exc_info=None)
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="",
+        lineno=1,
+        msg="test",
+        args=(),
+        exc_info=None,
+    )
 
     # Scenario 1: No hub found in context
     mock_context.event_hub.get.return_value = None

@@ -4,7 +4,7 @@ import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
@@ -25,6 +25,8 @@ from nemantix.core.node import (
     VariableTypeEnum,
 )
 from nemantix.core.parser import AsFrame
+from nemantix.core.script import Script
+from nemantix.core.tools import Toolset
 
 HERE = Path(__file__).parent
 
@@ -39,6 +41,12 @@ class DummyExpertise:
         self.script_by_loc = {}
         self.event_hub = None
         self.deliberate_to_script_loc = {}
+        self.requires_map = {}
+
+    def get_required_scripts(self, script):
+        loc = script.get_location()
+        req_locs = self.requires_map.get(loc, [])
+        return [self.script_by_loc[r_loc] for r_loc in req_locs]
 
 
 # =============================================================================
@@ -162,6 +170,14 @@ class DummyLLM:
     def messages_from(self, prompts_with_roles: list):
         return prompts_with_roles
 
+    def invoke(self, prompt: str, **kwargs):
+        self.calls.append((prompt, None))
+        return SimpleNamespace(
+            text="dummy text",
+            usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            proxy=self,
+        )
+
     def invoke_structured(self, prompt: str, schema: type[BaseModel]):
         self.calls.append((prompt, schema))
 
@@ -192,16 +208,19 @@ class DummyLLM:
             result = dummy_data
 
         return SimpleNamespace(
-            result=result, usage=SimpleNamespace(input_tokens=0, output_tokens=0)
+            result=result,
+            usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            proxy=self,
         )
 
 
 @pytest.fixture
-def interpreter_instance():
+def interpreter_instance(dummy_llm_proxy_config_class):
     exp = DummyExpertise()
     emb = DummyEmbedder()
     llm = DummyLLM()
-    return Interpreter(expertise=exp, llm=llm, embedder=emb)
+    llm_proxies = dummy_llm_proxy_config_class(dummy_llm=llm)
+    return Interpreter(expertise=exp, llm=llm, embedder=emb, proxy_config=llm_proxies)
 
 
 # =============================================================================
@@ -1017,6 +1036,7 @@ class DummyActionInput:
     name: str
     required: bool = True
     default: object = None  # Expression or None
+    prompt: object = None  # MicroPrompt or None
 
 
 @dataclass
@@ -1214,6 +1234,43 @@ def test_do_llm_unsupported_generative_schema(interpreter_instance):
         match=r"Generative schema blocks are not yet supported",
     ):
         interpreter_instance.interpret_do_statement(do_stmt)
+
+
+def test_do_tool_structured_output_applies_frame(interpreter_instance):
+    """
+    Tests that removing the 'fn_name == "llm"' check allows standard tools
+    to have their outputs validated and type-cast by a producing_schema.
+    """
+    # frame with an optional 'age' field
+    person = nmx_runtime.Frame("PERSON")
+    person.add_slot("name", cardinality="1", types=[{"name": SlotTypesEnum.TEXT}])
+    person.add_slot("age", cardinality="0..1", types=[{"name": SlotTypesEnum.INT}])
+    interpreter_instance.context.frames["PERSON"] = person
+
+    # A dummy tool that returns a raw dict (missing the 'age' field)
+    interpreter_instance.context.tools["get_person"] = lambda: {"name": "Mario"}
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="get_person",
+        callable_type=nmx_nodes.CallableTypeEnum.TOOL,
+        using=None,
+        prompt=None,
+        producing=make_var("output_var"),
+        producing_schema="PERSON",
+        meta=make_meta(),
+    )
+
+    interpreter_instance.interpret_do_statement(do_stmt)
+
+    # Verify the output was cast through the frame
+    out = interpreter_instance.context.env.get("output_var")
+
+    assert isinstance(out, nmx_runtime.Struct)
+    assert out.get("name") == "Mario"
+    # Proof that the frame was applied! The tool didn't return 'age',
+    # but apply_postfix safely defaulted it to 0.
+    assert out.get("age") == 0
 
 
 # =============================================================================
@@ -1491,3 +1548,1970 @@ def test_eval_schemed_collection_missing_subframe_raises(interpreter_instance):
         interpreter_instance.eval_schemed_collection(
             schemed_col, enclosing_frame=enclosing_frame
         )
+
+
+# =============================================================================
+# interpret_imports — toolset resolution error propagation
+# =============================================================================
+
+
+def _make_import(name: str, elements) -> nmx_nodes.ImportToolsetStatement:
+    return nmx_nodes.ImportToolsetStatement(
+        name=name,
+        elements=elements,
+        args=None,
+        alias=None,
+        meta=make_meta(),
+    )
+
+
+def test_interpret_imports_wildcard_unknown_toolset_raises_with_original_message(
+    interpreter_instance,
+):
+    """from _GhostToolset import * — load() failure must surface as RuntimeException."""
+    stmt = _make_import("_GhostToolset", "*")
+    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"_GhostToolset"):
+        interpreter_instance.interpret_imports([stmt])
+
+
+def test_interpret_imports_direct_unknown_toolset_raises_with_original_message(
+    interpreter_instance,
+):
+    """from _GhostToolset import some_tool — load() failure must surface as RuntimeException."""
+    stmt = _make_import("_GhostToolset", ["some_tool"])
+    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"_GhostToolset"):
+        interpreter_instance.interpret_imports([stmt])
+
+
+# =============================================================================
+# Tests for _set_block_inputs
+# =============================================================================
+
+
+def test_set_block_inputs_mixed_args_correct_order(interpreter_instance):
+    """Test valid mixed arguments (positional followed by keyword)."""
+    action = DummyAction(
+        name="mixed_action",
+        input=[
+            DummyActionInput("pos1", True),
+            DummyActionInput("kw1", True),
+            DummyActionInput("kw2", False, default=make_value("default_val")),
+        ],
+        output=[],
+        children=[],
+        meta=make_meta(),
+    )
+    # Provided: 1 positional, 1 keyword, 1 omitted (should use default)
+    provided = ([100], {"kw1": 200})
+
+    interpreter_instance._set_block_inputs(action, provided)
+    assert interpreter_instance.context.env.get("pos1") == 100
+    assert interpreter_instance.context.env.get("kw1") == 200
+    assert interpreter_instance.context.env.get("kw2") == "default_val"
+
+
+def test_set_block_inputs_collision_raises(interpreter_instance):
+    """Test that providing the same argument positionally and nominally raises an error."""
+    action = DummyAction(
+        name="collision_action",
+        input=[DummyActionInput("foo", True), DummyActionInput("bar", True)],
+        output=[],
+        children=[],
+        meta=make_meta(),
+    )
+
+    # User tries: `do collision_action using [10, foo=20]`
+    provided = ([10], {"foo": 20})
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r'got multiple values for argument "foo"'
+    ):
+        interpreter_instance._set_block_inputs(action, provided)
+
+
+def test_set_block_inputs_skips_unnamed_microprompt(interpreter_instance):
+    """Test that unnamed inputs (microprompts) are safely skipped and don't consume positional args."""
+    action = DummyAction(
+        name="microprompt_action",
+        input=[
+            DummyActionInput(
+                "",
+                True,
+                prompt=nmx_nodes.MicroPrompt(prompt="Do a thing", meta=make_meta()),
+            ),
+            DummyActionInput("real_arg", True),
+        ],
+        output=[],
+        children=[],
+        meta=make_meta(),
+    )
+
+    # Even though there are 2 inputs in the block, only 1 is named.
+    # Passing 1 positional arg should map to 'real_arg'.
+    interpreter_instance._set_block_inputs(action, [42])
+    assert interpreter_instance.context.env.get("real_arg") == 42
+
+
+def test_set_block_inputs_too_many_positionals_with_microprompts(interpreter_instance):
+    """Test that max positional bounds check correctly ignores unnamed microprompt inputs."""
+    action = DummyAction(
+        name="microprompt_action_err",
+        input=[
+            DummyActionInput(
+                "",
+                True,
+                prompt=nmx_nodes.MicroPrompt(prompt="Do a thing", meta=make_meta()),
+            ),
+            DummyActionInput("real_arg", True),
+        ],
+        output=[],
+        children=[],
+        meta=make_meta(),
+    )
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r"expects at most 1 positional arguments"
+    ):
+        interpreter_instance._set_block_inputs(action, [42, 99])
+
+
+# =============================================================================
+# Tests for interpret_expression
+# =============================================================================
+
+
+def test_interpret_expression_list_unwrap(interpreter_instance):
+    """Test that outer list wrappers are stripped (simulating parser artifacts)."""
+    inner_val = make_value(100)
+    # The parser sometimes wraps nodes in a list: [SingleValue(100)]
+    result = interpreter_instance.interpret_expression([inner_val])
+    assert result == 100
+
+
+def test_interpret_expression_collection_to_struct(interpreter_instance):
+    """Test that a Collection of values evaluates to a Struct."""
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[
+            make_value(1),
+            make_value(2),
+            {"c": make_value(3)},
+        ],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    result = interpreter_instance.interpret_expression(collection)
+
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get(0) == 1
+    assert result.get(1) == 2
+    assert result.get("c") == 3
+
+
+def test_interpret_expression_builtin_function(interpreter_instance):
+    """Test builtin function execution within an expression."""
+    builtin_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=nmx_nodes.BuiltinFunctionEnum.SIZE,
+        args=[make_value("hello world", _STRING_TYPE)],
+        meta=make_meta(),
+    )
+    result = interpreter_instance.interpret_expression(builtin_expr)
+    assert result == 11  # len("hello world")
+
+
+def test_interpret_expression_meta_expression(interpreter_instance):
+    """Test retrieval of intentables via MetaExpression."""
+    # Setup intentable in metadata memory
+    intentable = nmx_runtime.Metadata()
+    intentable["goal"] = "Test Goal"
+    interpreter_instance.metadata["my_intent"] = intentable
+
+    meta_expr = make_node(
+        nmx_nodes.MetaExpression, quals=["my_intent", "goal"], meta=make_meta()
+    )
+    result = interpreter_instance.interpret_expression(meta_expr)
+    assert result == "Test Goal"
+
+
+def test_interpret_expression_meta_expression_missing_raises(interpreter_instance):
+    """Test missing intentable label raises exception."""
+    meta_expr = make_node(
+        nmx_nodes.MetaExpression, quals=["ghost_intent"], meta=make_meta()
+    )
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r'Intentable "ghost_intent" not defined!'
+    ):
+        interpreter_instance.interpret_expression(meta_expr)
+
+
+# =============================================================================
+# Tests for interpret_do_statement
+# =============================================================================
+
+
+def test_do_statement_action_call(interpreter_instance):
+    """Test execution of a global Action call."""
+    # Mock an action closure in context
+    called_args = None
+
+    def mock_closure(args, callee=None):
+        nonlocal called_args
+        called_args = args
+        return "action_success"
+
+    interpreter_instance.context.actions["my_global_action"] = {
+        "closure": mock_closure,
+        "is_global": True,
+        "imported_by": set(),
+    }
+
+    # Create do statement: do action my_global_action using [42] producing [out_var]
+    using_col = make_node(
+        nmx_nodes.Collection,
+        value=[make_value(42)],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="my_global_action",
+        callable_type=nmx_nodes.CallableTypeEnum.ACTION,
+        using=using_col,
+        producing=make_var("out_var"),
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    # Use make_node to safely instantiate Deliberate regardless of __init__ signature
+    dummy_deliberate = make_node(
+        nmx_nodes.Deliberate, name="dummy_delib", meta=make_meta()
+    )
+    interpreter_instance._set_global_deliberate(dummy_deliberate)
+
+    interpreter_instance.interpret_do_statement(do_stmt)
+
+    # Assert closure was called with positional 42 and empty kwargs
+    assert called_args == ([42], {})
+    # Assert environment was updated with output
+    assert interpreter_instance.context.env.get("out_var") == "action_success"
+
+
+def test_do_statement_private_action_cross_call_raises(interpreter_instance):
+    """Test calling a private action from a deliberate that didn't import/own it."""
+    interpreter_instance.context.actions["private_act"] = {
+        "closure": lambda args, callee: None,
+        "is_global": False,
+        "imported_by": {"other_deliberate"},
+    }
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="private_act",
+        callable_type=nmx_nodes.CallableTypeEnum.ACTION,
+        using=None,
+        producing=None,
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    my_deliberate = make_node(nmx_nodes.Deliberate, name="my_delib", meta=make_meta())
+    interpreter_instance._set_global_deliberate(my_deliberate)
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r'Private action "private_act" cannot be called from deliberate "my_delib"',
+    ):
+        interpreter_instance.interpret_do_statement(do_stmt)
+
+
+def test_do_statement_tool_call_unboxes_opaques(interpreter_instance):
+    """Test Tool calls properly unbox Opaque objects and Structs before passing to Python functions."""
+    called_kwargs = None
+
+    def mock_tool(**kwargs):
+        nonlocal called_kwargs
+        called_kwargs = kwargs
+        return "tool_success"
+
+    interpreter_instance.context.tools["my_tool"] = mock_tool
+
+    # Create an Opaque object and put it directly in the operational environment
+    opaque_obj = nmx_runtime.Opaque(obj="hidden_secret_string")
+    interpreter_instance.context.env.set(var_name="secret_var", value=opaque_obj)
+
+    # Assignment: [data] = secret_var
+    using_assign = make_node(
+        nmx_nodes.Assignment,
+        var=make_var("data"),
+        value=make_var("secret_var"),  # Use a Variable node to look it up
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="my_tool",
+        callable_type=nmx_nodes.CallableTypeEnum.TOOL,
+        using=using_assign,
+        producing=None,
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    interpreter_instance.interpret_do_statement(do_stmt)
+
+    # Assert the tool received the UNBOXED string, not the Opaque wrapper
+    assert called_kwargs == {"data": "hidden_secret_string"}
+
+
+def test_do_statement_builtin_print(interpreter_instance, capsys):
+    """Test execution of builtin print."""
+    using_col = make_node(
+        nmx_nodes.Collection,
+        value=[make_value("Hello Builtin")],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="print",
+        callable_type=None,
+        using=using_col,
+        producing=None,
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    interpreter_instance.interpret_do_statement(do_stmt)
+    captured = capsys.readouterr()
+    assert "Hello Builtin\n" in captured.out
+
+
+def test_do_statement_tool_exception_wraps_in_nemantix_exception(interpreter_instance):
+    """Test that a crashing Python tool is caught and wrapped in a NemantixRuntimeException."""
+
+    def crashing_tool():
+        raise ValueError("Critical Python Error")
+
+    interpreter_instance.context.tools["crash_tool"] = crashing_tool
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="crash_tool",
+        callable_type=nmx_nodes.CallableTypeEnum.TOOL,
+        using=None,
+        producing=None,
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r'Exception in execution of "crashing_tool". Error: Critical Python Error',
+    ):
+        interpreter_instance.interpret_do_statement(do_stmt)
+
+
+def test_do_statement_multiple_outputs_with_producing_schema(interpreter_instance):
+    """
+    Test that mapping multiple producing variables through a producing_schema
+    correctly triggers the LLM schema mapping logic.
+    """
+    # 1. Setup frame in context
+    person_frame = nmx_runtime.Frame("PERSON")
+    person_frame.add_slot("name", cardinality="1", types=[{"name": SlotTypesEnum.TEXT}])
+    person_frame.add_slot("age", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
+    interpreter_instance.context.frames["PERSON"] = person_frame
+
+    # 2. Set up a tool that returns a raw list
+    interpreter_instance.context.tools["get_data"] = lambda: ["Luigi", 42]
+
+    # 3. Setup LLM to mock the schema mapping dict response
+    # The prompt asks to map producing variable names to schema slot names.
+    interpreter_instance.llm.invoke = MagicMock(
+        return_value=SimpleNamespace(
+            text="{'var_n': 'name', 'var_a': 'age'}",
+            usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            proxy=interpreter_instance.llm,
+        )
+    )
+
+    # 4. AST Nodes
+    producing_col = make_node(
+        nmx_nodes.Collection,
+        value=[make_var("var_n"), make_var("var_a")],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="get_data",
+        callable_type=nmx_nodes.CallableTypeEnum.TOOL,
+        using=None,
+        prompt=None,
+        producing=producing_col,
+        producing_schema="PERSON",
+        meta=make_meta(),
+    )
+
+    # Execute
+    interpreter_instance.interpret_do_statement(do_stmt)
+
+    # Assert variables were set in the environment correctly based on LLM mapping + Frame casting
+    assert interpreter_instance.context.env.get("var_n") == "Luigi"
+    assert interpreter_instance.context.env.get("var_a") == 42
+
+
+# =============================================================================
+# SchemedCollection & AsFrame Integration Tests
+# =============================================================================
+
+
+def test_interpret_expression_schemed_collection_as_frame(interpreter_instance):
+    """
+    Tests that a SchemedCollection using an AsFrame dataframe successfully
+    routes through interpret_expression and applies real Frame typing/defaults.
+    """
+    # 1. Set up a real frame
+    point_frame = nmx_runtime.Frame("POINT")
+    point_frame.add_slot("x", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
+    point_frame.add_slot("y", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
+    interpreter_instance.context.frames["POINT"] = point_frame
+
+    # 2. Build AsFrame and SchemedCollection
+    # AST equivalent of: {POINT}[prefix]: [x: 10, y: 20]
+    as_frame = AsFrame(value="point", meta=make_meta())
+
+    inner_dict = {"x": make_value(10), "y": make_value(20)}
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[inner_dict],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    schemed_col = make_node(
+        nmx_nodes.SchemedCollection,
+        value=collection,
+        dataframe=as_frame,
+        apply_type=nmx_nodes.FrameApplyEnum.PRE,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    # 3. Interpret via the main expression evaluator
+    result = interpreter_instance.interpret_expression(schemed_col)
+
+    # 4. Assert it returns a Struct correctly cast by the real Frame
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("x") == 10
+    assert result.get("y") == 20
+
+
+def test_eval_collection_with_nested_schemed_collection(interpreter_instance):
+    """
+    Tests the recursive nature of eval_collection by nesting a
+    SchemedCollection inside a standard Collection.
+    """
+    # 1. Set up a real frame
+    point_frame = nmx_runtime.Frame("POINT")
+    point_frame.add_slot("x", cardinality="1", types=[{"name": SlotTypesEnum.INT}])
+    interpreter_instance.context.frames["POINT"] = point_frame
+
+    # 2. Build nested SchemedCollection
+    # AST equivalent of: [ "some_string", {POINT}[prefix]: [x: 42] ]
+    as_frame = AsFrame(value="point", meta=make_meta())
+
+    inner_col = make_node(
+        nmx_nodes.Collection,
+        value=[{"x": make_value(42)}],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    schemed_col = make_node(
+        nmx_nodes.SchemedCollection,
+        value=inner_col,
+        dataframe=as_frame,
+        apply_type=nmx_nodes.FrameApplyEnum.PRE,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    outer_col = make_node(
+        nmx_nodes.Collection,
+        value=[make_value("some_string", _STRING_TYPE), schemed_col],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    # 3. Execute
+    result = interpreter_instance.eval_collection(outer_col)
+
+    # 4. Assert outer collection and nested SchemedCollection Struct
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get(0) == "some_string"
+
+    nested_struct = result.get(1)
+    assert isinstance(nested_struct, nmx_runtime.Struct)
+    assert nested_struct.get("x") == 42
+
+
+# =============================================================================
+# Tests for _discover_toolsets_and_imports (Fail-Fast & Collision Logic)
+# =============================================================================
+
+
+def test_discover_toolsets_synthesizes_import_for_no_arg_toolset(interpreter_instance):
+    """Test that a toolset requiring no args gets an automatic import synthesized."""
+
+    class NoArgTool(Toolset):
+        def __init__(self):
+            super().__init__()
+
+    Toolset._classes["NoArgTool"] = NoArgTool
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration, name="NoArgTool", prompt=None, meta=make_meta()
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+    interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+    assert "NoArgTool" in interpreter_instance.context.toolsets
+
+
+def test_discover_toolsets_fail_fast_on_required_args(interpreter_instance):
+    """Test that a toolset requiring explicit args halts execution if not explicitly imported."""
+
+    class RequiredArgTool(Toolset):
+        def __init__(self, api_key):
+            super().__init__()
+            self.api_key = api_key
+
+    Toolset._classes["RequiredArgTool"] = RequiredArgTool
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="RequiredArgTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Declared toolset 'RequiredArgTool' requires initialization arguments",
+    ):
+        interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+
+def test_discover_toolsets_synthesizes_import_with_defaults_and_kwargs(
+    interpreter_instance,
+):
+    """Test that a toolset with defaults or *args/**kwargs is deemed safe and doesn't fail-fast."""
+
+    class ForgivingTool(Toolset):
+        def __init__(self, default_val=10, *args, **kwargs):
+            super().__init__()
+
+    Toolset._classes["ForgivingTool"] = ForgivingTool
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="ForgivingTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+    interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+    assert "ForgivingTool" in interpreter_instance.context.toolsets
+
+
+def test_discover_toolsets_warns_on_global_collision(interpreter_instance):
+    """Test that redeclaring an existing global toolset emits a warning."""
+
+    class CollisionTool(Toolset):
+        pass
+
+    Toolset._classes["CollisionTool"] = CollisionTool
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="CollisionTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    with patch("nemantix.core.interpreter.logger.warning") as mock_warning:
+        interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+        warning_emitted = any(
+            "Global toolset collision detected: 'CollisionTool'" in call_args[0][0]
+            for call_args in mock_warning.call_args_list
+        )
+        assert warning_emitted is True, "Expected a global collision warning."
+
+    assert "CollisionTool" in interpreter_instance.context.toolsets
+    assert (
+        interpreter_instance.context.toolsets_locations["CollisionTool"] == "main.nxs"
+    )
+
+
+def test_discover_toolsets_warns_on_same_script_collision(interpreter_instance):
+    """Test that declaring the same toolset twice in the same script emits a warning, but proceeds."""
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+
+    mock_decl_1 = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="RepeatTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+    mock_decl_2 = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="RepeatTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl_1, mock_decl_2]
+    mock_script.toolset_imports = {}
+
+    # SIMULATE THE COMPILER: When the interpreter processes the declaration,
+    # it normally executes Python code that places the class in Toolset._classes
+    def mock_compile_toolset(decl):
+        class RepeatToolClass(Toolset):
+            pass
+
+        Toolset._classes[decl.name] = RepeatToolClass
+
+    interpreter_instance.interpret_tool_declaration = MagicMock(
+        side_effect=mock_compile_toolset
+    )
+
+    with patch("nemantix.core.interpreter.logger.warning") as mock_warning:
+        interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+        warning_emitted = any(
+            "Toolset 'RepeatTool' is declared multiple times in 'main.nxs'"
+            in call_args[0][0]
+            for call_args in mock_warning.call_args_list
+        )
+        assert warning_emitted is True, "Expected a same-script collision warning."
+
+    assert "RepeatTool" in interpreter_instance.context.toolsets
+    assert interpreter_instance.context.toolsets_locations["RepeatTool"] == "main.nxs"
+
+    # Cleanup global state
+    Toolset._classes.pop("RepeatTool", None)
+
+
+def test_discover_toolsets_raises_on_cross_script_collision(interpreter_instance):
+    """Test that declaring a toolset already declared in an imported script raises a hard error."""
+
+    # Simulate that 'shared.nxs' was already processed and added to the context
+    interpreter_instance.context.toolsets.add("SharedTool")
+    interpreter_instance.context.toolsets_locations["SharedTool"] = "shared.nxs"
+
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "main.nxs"
+
+    mock_decl = make_node(
+        nmx_nodes.PythonToolDeclaration,
+        name="SharedTool",
+        prompt=None,
+        meta=make_meta(),
+    )
+
+    mock_script.toolsets_decl = [mock_decl]
+    mock_script.toolset_imports = {}
+
+    interpreter_instance.interpret_tool_declaration = MagicMock()
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Cross-script collision: Toolset 'SharedTool' was already declared in 'shared.nxs'",
+    ):
+        interpreter_instance._discover_toolsets_and_imports(mock_script)
+
+
+# =============================================================================
+# Tests for _parse_do_using (Strict Argument Passing Rules)
+# =============================================================================
+
+
+def test_parse_do_using_naked_variable_no_unpacking(interpreter_instance):
+    """
+    Rule: A single variable (even holding a Struct) passed without brackets
+    is treated as exactly ONE positional argument. No implicit unpacking.
+    Syntax: do action using my_struct
+    """
+    my_struct = nmx_runtime.Struct()
+    my_struct.set(key="a", value=1)
+    interpreter_instance.context.env.set("my_struct", my_struct)
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement, using=make_var("my_struct"), meta=make_meta()
+    )
+
+    args, kwargs = interpreter_instance._extract_args_and_kwargs(do_stmt.using, do_stmt)
+
+    assert len(args) == 1
+    assert isinstance(args[0], nmx_runtime.Struct)
+    assert args[0].get("a") == 1
+    assert len(kwargs) == 0
+
+
+def test_parse_do_using_list_wrapper_stripped(interpreter_instance):
+    """
+    Rule: Outer Python lists wrapping the AST node (a parser quirk) must be stripped.
+    """
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[make_value(42)],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    # Notice `using` is a Python list containing the Collection
+    do_stmt = make_node(nmx_nodes.DoStatement, using=[collection], meta=make_meta())
+
+    args, kwargs = interpreter_instance._extract_args_and_kwargs(do_stmt.using, do_stmt)
+    assert args == [42]
+    assert len(kwargs) == 0
+
+
+def test_parse_do_using_explicit_positional_collection(interpreter_instance):
+    """
+    Rule: [...] brackets define an explicit argument list.
+    Syntax: do action using [1, 2, 3]
+    """
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[make_value(1), make_value(2), make_value(3)],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(nmx_nodes.DoStatement, using=collection, meta=make_meta())
+
+    args, kwargs = interpreter_instance._extract_args_and_kwargs(do_stmt.using, do_stmt)
+    assert args == [1, 2, 3]
+    assert len(kwargs) == 0
+
+
+def test_parse_do_using_explicit_nominal_assignments(interpreter_instance):
+    """
+    Rule: Assignment nodes inside the collection become kwargs.
+    Syntax: do action using [[x] = 1, [y] = 2]
+    """
+    assign_x = make_node(
+        nmx_nodes.Assignment, var=make_var("x"), value=make_value(1), meta=make_meta()
+    )
+    assign_y = make_node(
+        nmx_nodes.Assignment, var=make_var("y"), value=make_value(2), meta=make_meta()
+    )
+
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[assign_x, assign_y],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(nmx_nodes.DoStatement, using=collection, meta=make_meta())
+
+    args, kwargs = interpreter_instance._extract_args_and_kwargs(do_stmt.using, do_stmt)
+    assert args == []
+    assert kwargs == {"x": 1, "y": 2}
+
+
+def test_parse_do_using_mixed_valid_order(interpreter_instance):
+    """
+    Rule: Positional arguments before keyword arguments is perfectly valid.
+    Syntax: do action using [1, [x] = 2]
+    """
+    assign_x = make_node(
+        nmx_nodes.Assignment, var=make_var("x"), value=make_value(2), meta=make_meta()
+    )
+
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[make_value(1), assign_x],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(nmx_nodes.DoStatement, using=collection, meta=make_meta())
+
+    args, kwargs = interpreter_instance._extract_args_and_kwargs(do_stmt.using, do_stmt)
+    assert args == [1]
+    assert kwargs == {"x": 2}
+
+
+def test_parse_do_using_mixed_invalid_order_raises(interpreter_instance):
+    """
+    Rule: Positional arguments following keyword arguments triggers a strict Pythonic error.
+    Syntax: do action using [[x] = 1, 2]
+    """
+    assign_x = make_node(
+        nmx_nodes.Assignment, var=make_var("x"), value=make_value(1), meta=make_meta()
+    )
+
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[assign_x, make_value(2)],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(nmx_nodes.DoStatement, using=collection, meta=make_meta())
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Positional argument follows nominal argument",
+    ):
+        interpreter_instance._extract_args_and_kwargs(do_stmt.using, do_stmt)
+
+
+def test_parse_do_using_bare_dicts_mapped_to_kwargs(interpreter_instance):
+    """
+    Rule: Bare Python dictionaries within the collection (representing `a: "a"`)
+    are properly mapped to kwargs to prevent AttributeError during AST meta lookup.
+    Syntax: do action using [a: "a", b: "b"]
+    """
+    # The parser emits nominal struct fields as bare dicts
+    dict_item = {"a": make_value("val_a"), "b": make_value("val_b")}
+
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[dict_item],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(nmx_nodes.DoStatement, using=collection, meta=make_meta())
+
+    args, kwargs = interpreter_instance._extract_args_and_kwargs(do_stmt.using, do_stmt)
+    assert args == []
+    assert kwargs == {"a": "val_a", "b": "val_b"}
+
+
+def test_parse_do_using_bare_dicts_followed_by_positional_raises(interpreter_instance):
+    """
+    Rule: Even bare dictionary struct fields trigger the strict ordering exception
+    if followed by a positional argument.
+    Syntax: do action using [a: "a", 2]
+    """
+    dict_item = {"a": make_value("val_a")}
+
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[dict_item, make_value(2)],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(nmx_nodes.DoStatement, using=collection, meta=make_meta())
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Positional argument follows nominal argument",
+    ):
+        interpreter_instance._extract_args_and_kwargs(do_stmt.using, do_stmt)
+
+
+# =============================================================================
+# Tests for Builtin Function Execution in interpret_expression
+# =============================================================================
+
+
+def test_builtin_strict_no_implicit_unpacking(interpreter_instance):
+    """
+    Rule: A Struct passed via a variable must be passed as exactly ONE
+    positional argument, without implicit unboxing.
+    AST equivalent:
+        [my_struct] = (10, 20)
+        size([my_struct])
+    """
+    mock_fn = MagicMock(return_value="mock_success")
+
+    with patch.dict(
+        "nemantix.core.interpreter.BUILTIN_FUNCTIONS",
+        {nmx_nodes.BuiltinFunctionEnum.SIZE: mock_fn},
+    ):
+        # 1. Set the struct in the environment
+        my_struct = nmx_runtime.Struct()
+        my_struct.set(10)
+        my_struct.set(20)
+        interpreter_instance.context.env.set("my_struct", my_struct)
+
+        # 2. Pass the variable to the builtin
+        builtin_expr = make_node(
+            nmx_nodes.BuiltinFunction,
+            function=nmx_nodes.BuiltinFunctionEnum.SIZE,
+            args=[make_var("my_struct")],
+            meta=make_meta(),
+        )
+
+        interpreter_instance.interpret_expression(builtin_expr)
+
+        # Verify strict *args passing
+        assert mock_fn.call_count == 1
+        call_args, call_kwargs = mock_fn.call_args
+
+        # It must receive exactly ONE argument (the intact Struct)
+        assert len(call_args) == 1
+        assert len(call_kwargs) == 0
+        passed_struct = call_args[0]
+        assert isinstance(passed_struct, nmx_runtime.Struct)
+        assert passed_struct.get(0) == 10
+        assert passed_struct.get(1) == 20
+
+
+def test_builtin_zero_arguments(interpreter_instance):
+    """Test that builtins calling with zero arguments (e.g. `size()`) pass safely."""
+    mock_fn = MagicMock(return_value="mock_success")
+
+    with patch.dict(
+        "nemantix.core.interpreter.BUILTIN_FUNCTIONS",
+        {nmx_nodes.BuiltinFunctionEnum.SIZE: mock_fn},
+    ):
+        builtin_expr = make_node(
+            nmx_nodes.BuiltinFunction,
+            function=nmx_nodes.BuiltinFunctionEnum.SIZE,
+            args=[],
+            meta=make_meta(),
+        )
+
+        interpreter_instance.interpret_expression(builtin_expr)
+
+        assert mock_fn.call_count == 1
+        call_args = mock_fn.call_args[0]
+        assert len(call_args) == 0
+
+
+def test_builtin_multiple_arguments(interpreter_instance):
+    """Test that standard multi-argument functions receive all positional args untouched."""
+    mock_fn = MagicMock(return_value="mock_success")
+
+    with patch.dict(
+        "nemantix.core.interpreter.BUILTIN_FUNCTIONS",
+        {nmx_nodes.BuiltinFunctionEnum.SUBSTRING: mock_fn},
+    ):
+        # Mirror the parser: encapsulate arguments in a Collection
+        collection = make_node(
+            nmx_nodes.Collection,
+            value=[make_value("hello", _STRING_TYPE), make_value(0), make_value(2)],
+            inferred_type=VariableTypeEnum.LIST,
+            meta=make_meta(),
+        )
+        builtin_expr = make_node(
+            nmx_nodes.BuiltinFunction,
+            function=nmx_nodes.BuiltinFunctionEnum.SUBSTRING,
+            args=[collection],
+            meta=make_meta(),
+        )
+
+        interpreter_instance.interpret_expression(builtin_expr)
+
+        assert mock_fn.call_count == 1
+        call_args = mock_fn.call_args[0]
+        assert len(call_args) == 3
+        assert call_args == ("hello", 0, 2)
+
+
+def test_builtin_llm_prompt_extraction_string(interpreter_instance):
+    """
+    Test that the LLM telemetry logic correctly extracts the prompt
+    string when the builtin is LLM and the first arg is a string.
+    """
+    with patch.object(interpreter_instance, "_emit_call_enter") as mock_emit:
+        builtin_expr = make_node(
+            nmx_nodes.BuiltinFunction,
+            function=nmx_nodes.BuiltinFunctionEnum.LLM,
+            args=[make_value("Summarize this text", _STRING_TYPE)],
+            meta=make_meta(),
+        )
+
+        # The llm proxy is already dummied out in our fixture to not crash
+        interpreter_instance.interpret_expression(builtin_expr)
+
+        mock_emit.assert_called_once()
+        _, kwargs = mock_emit.call_args
+
+        # Ensure the string was mapped to the telemetry payload
+        assert kwargs["callable_type"] == "builtin"
+        assert kwargs["callable_name"] == "llm"
+        assert kwargs["callable_prompt"] == "Summarize this text"
+
+
+def test_builtin_llm_prompt_extraction_non_string_fallback(interpreter_instance):
+    """
+    Test that if the LLM receives a complex payload (like a Struct) instead of a string,
+    the telemetry prompt payload safely falls back to an empty string.
+    """
+    with patch.object(interpreter_instance, "_emit_call_enter") as mock_emit:
+        # Pass a Struct to the LLM
+        collection = make_node(
+            nmx_nodes.Collection,
+            value=[make_value(42)],
+            inferred_type=VariableTypeEnum.LIST,
+            meta=make_meta(),
+        )
+
+        builtin_expr = make_node(
+            nmx_nodes.BuiltinFunction,
+            function=nmx_nodes.BuiltinFunctionEnum.LLM,
+            args=[collection],
+            meta=make_meta(),
+        )
+
+        # Mock ask_llm so it doesn't crash internally trying to parse a Struct as a string prompt
+        with patch(
+            "nemantix.core.runtime.Builtin.ask_llm",
+            return_value=MagicMock(text="dummy"),
+        ):
+            interpreter_instance.interpret_expression(builtin_expr)
+
+        mock_emit.assert_called_once()
+        _, kwargs = mock_emit.call_args
+
+        # Ensure fallback to empty string triggered
+        assert kwargs["callable_prompt"] == ""
+
+
+def test_builtin_exception_wrapped_in_runtime_exception(interpreter_instance):
+    """
+    Test that raw Python Exceptions thrown by builtins are securely caught,
+    wrapped in a NemantixRuntimeException, and format the error string correctly.
+    """
+
+    def crashing_builtin(*args):
+        raise ValueError("Critical Math Failure")
+
+    with patch.dict(
+        "nemantix.core.interpreter.BUILTIN_FUNCTIONS",
+        {nmx_nodes.BuiltinFunctionEnum.SQRT: crashing_builtin},
+    ):
+        builtin_expr = make_node(
+            nmx_nodes.BuiltinFunction,
+            function=nmx_nodes.BuiltinFunctionEnum.SQRT,
+            args=[make_value(-1)],
+            meta=make_meta(),
+        )
+
+        with pytest.raises(nmx_ex.NemantixRuntimeException) as exc_info:
+            interpreter_instance.interpret_expression(builtin_expr)
+
+        err_msg = str(exc_info.value)
+        assert "Critical Math Failure" in err_msg
+        assert 'error in builtin function call "SQRT"' in err_msg
+        assert "[-1]" in err_msg  # Ensures args are printed in the error
+
+
+# =============================================================================
+# Tests for Builtin TO_STR (via Interpreter Execution Pipeline)
+# =============================================================================
+
+
+def test_interpret_builtin_to_str_scalar(interpreter_instance):
+    """
+    Test that a scalar passed to the builtin is evaluated and stringified correctly.
+    AST equivalent: to_str(True)
+    """
+    builtin_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=nmx_nodes.BuiltinFunctionEnum.TO_STR,
+        args=[make_value(True)],
+        meta=make_meta(),
+    )
+
+    result = interpreter_instance.interpret_expression(builtin_expr)
+    assert result == "true"
+
+
+def test_interpret_builtin_to_str_single_struct_positional(interpreter_instance):
+    """
+    Test that a Struct passed via a variable is NOT implicitly
+    unpacked by `function(*args)`. The builtin must receive the intact Struct.
+    AST equivalent:
+        [my_struct] = (1, 2)
+        to_str([my_struct])
+    """
+    # 1. Set the struct in the environment
+    my_struct = nmx_runtime.Struct()
+    my_struct.set(1)
+    my_struct.set(2)
+    interpreter_instance.context.env.set("my_struct", my_struct)
+
+    # 2. Pass the variable to the builtin
+    builtin_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=nmx_nodes.BuiltinFunctionEnum.TO_STR,
+        args=[make_var("my_struct")],
+        meta=make_meta(),
+    )
+
+    result = interpreter_instance.interpret_expression(builtin_expr)
+    assert result == "Struct(1, 2)"
+
+
+def test_interpret_builtin_to_str_single_struct_mixed(interpreter_instance):
+    """
+    Test that a Struct with mixed fields passed via a variable is securely stringified.
+    AST equivalent:
+        [my_struct] = (10, name: "Luigi")
+        to_str([my_struct])
+    """
+    my_struct = nmx_runtime.Struct()
+    my_struct.set(10)
+    my_struct.set("Luigi", key="name")
+    interpreter_instance.context.env.set("my_struct", my_struct)
+
+    builtin_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=nmx_nodes.BuiltinFunctionEnum.TO_STR,
+        args=[make_var("my_struct")],
+        meta=make_meta(),
+    )
+
+    result = interpreter_instance.interpret_expression(builtin_expr)
+    assert result == "Struct(10, name: Luigi)"
+
+
+def test_interpret_builtin_multiple_args_drops_extras_safely(interpreter_instance):
+    """
+    Because we removed the `_` hack, if a user maliciously calls to_str with
+    multiple arguments, `x` captures the first, and `*_, **__` absorbs the rest.
+    AST equivalent: to_str(1, 2, 3)
+    """
+    builtin_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=nmx_nodes.BuiltinFunctionEnum.TO_STR,
+        args=[make_value(1), make_value(2), make_value(3)],
+        meta=make_meta(),
+    )
+
+    # The new to_str(x=None, *_, **__) assigns x=1. The 2 and 3 are absorbed and ignored.
+    result = interpreter_instance.interpret_expression(builtin_expr)
+    assert result == "1"
+
+
+# =============================================================================
+# Tests for Builtin Functions (via Interpreter Execution Pipeline)
+# =============================================================================
+
+
+def _eval_builtin(interpreter, func_enum, args_ast):
+    """
+    Helper to cleanly build and evaluate a builtin function AST node.
+    Mirrors the real parser by wrapping the argument list in a Collection.
+    """
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=args_ast,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+    builtin_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=func_enum,
+        args=[collection],
+        meta=make_meta(),
+    )
+    return interpreter.interpret_expression(builtin_expr)
+
+
+def test_interpret_builtin_coalesce(interpreter_instance):
+    """Test coalesce returns the first non-null argument."""
+    res = _eval_builtin(
+        interpreter_instance,
+        nmx_nodes.BuiltinFunctionEnum.COALESCE,
+        [make_value(None), make_value(None), make_value(42), make_value(99)],
+    )
+    assert res == 42
+
+
+def test_interpret_builtin_exists(interpreter_instance):
+    """Test exists correctly identifies null vs non-null."""
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.EXISTS,
+            [make_value(None)],
+        )
+        is False
+    )
+    assert (
+        _eval_builtin(
+            interpreter_instance, nmx_nodes.BuiltinFunctionEnum.EXISTS, [make_value(0)]
+        )
+        is True
+    )
+
+    # Intact Struct evaluation via variable
+    my_struct = nmx_runtime.Struct()
+    interpreter_instance.context.env.set("empty_struct", my_struct)
+
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.EXISTS,
+            [make_var("empty_struct")],
+        )
+        is True
+    )
+
+
+def test_interpret_builtin_type(interpreter_instance):
+    """Test type builtin cleanly identifies standard and complex types."""
+    assert (
+        _eval_builtin(
+            interpreter_instance, nmx_nodes.BuiltinFunctionEnum.TYPE, [make_value(None)]
+        )
+        == "none"
+    )
+    assert (
+        _eval_builtin(
+            interpreter_instance, nmx_nodes.BuiltinFunctionEnum.TYPE, [make_value(42.5)]
+        )
+        == "num"
+    )
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.TYPE,
+            [make_value("hello", _STRING_TYPE)],
+        )
+        == "str"
+    )
+
+    # Intact Struct evaluation via variable
+    my_struct = nmx_runtime.Struct()
+    my_struct.set(1)
+    my_struct.set(2)
+    interpreter_instance.context.env.set("my_struct", my_struct)
+
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.TYPE,
+            [make_var("my_struct")],
+        )
+        == "struct"
+    )
+
+
+def test_interpret_builtin_size(interpreter_instance):
+    """Test size builtin with single scalar, single struct, and multiple arguments."""
+    # Single String
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.SIZE,
+            [make_value("abc", _STRING_TYPE)],
+        )
+        == 3
+    )
+
+    # Single Struct via variable
+    my_struct = nmx_runtime.Struct()
+    my_struct.set(1)
+    my_struct.set(2)
+    interpreter_instance.context.env.set("my_struct", my_struct)
+
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.SIZE,
+            [make_var("my_struct")],
+        )
+        == 2
+    )
+
+    # Multiple Positional Arguments (Passed as a Collection representing the argument list)
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.SIZE,
+            [make_value(10), make_value(20), make_value(30)],
+        )
+        == 3
+    )
+
+
+def test_interpret_builtin_substring(interpreter_instance):
+    """Test substring handles multiple positional arguments securely."""
+    res = _eval_builtin(
+        interpreter_instance,
+        nmx_nodes.BuiltinFunctionEnum.SUBSTRING,
+        [make_value("nemantix", _STRING_TYPE), make_value(3), make_value(8)],
+    )
+    assert res == "antix"
+
+
+def test_interpret_builtin_to_num_and_to_bool(interpreter_instance):
+    """Test explicit cast builtins."""
+    # to_num
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.TO_NUM,
+            [make_value("42.5", _STRING_TYPE)],
+        )
+        == 42.5
+    )
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.TO_NUM,
+            [make_value(True)],
+        )
+        == 1
+    )
+
+    # to_bool
+    assert (
+        _eval_builtin(
+            interpreter_instance, nmx_nodes.BuiltinFunctionEnum.TO_BOOL, [make_value(1)]
+        )
+        is True
+    )
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.TO_BOOL,
+            [make_value("false", _STRING_TYPE)],
+        )
+        is False
+    )
+
+
+def test_interpret_builtin_soft_conversions(interpreter_instance):
+    """Test implicit (soft) cast builtins, focusing on their Struct handling."""
+    my_struct = nmx_runtime.Struct()
+    my_struct.set(1)
+    interpreter_instance.context.env.set("my_struct", my_struct)
+
+    # num() safely fails on a Struct and returns None
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.NUM,
+            [make_var("my_struct")],
+        )
+        is None
+    )
+
+    # bool() on a Struct evaluates its length
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.BOOL,
+            [make_var("my_struct")],
+        )
+        is True
+    )
+
+    empty_struct = nmx_runtime.Struct()
+    interpreter_instance.context.env.set("empty_struct", empty_struct)
+
+    assert (
+        _eval_builtin(
+            interpreter_instance,
+            nmx_nodes.BuiltinFunctionEnum.BOOL,
+            [make_var("empty_struct")],
+        )
+        is False
+    )
+
+
+def test_interpret_builtin_math(interpreter_instance):
+    """Test math builtins pass parameters through correctly."""
+    assert (
+        _eval_builtin(
+            interpreter_instance, nmx_nodes.BuiltinFunctionEnum.SQRT, [make_value(4)]
+        )
+        == 2.0
+    )
+    assert (
+        _eval_builtin(
+            interpreter_instance, nmx_nodes.BuiltinFunctionEnum.SIN, [make_value(0)]
+        )
+        == 0.0
+    )
+    assert (
+        _eval_builtin(
+            interpreter_instance, nmx_nodes.BuiltinFunctionEnum.COS, [make_value(0)]
+        )
+        == 1.0
+    )
+
+
+# =============================================================================
+# Tests for Unified _extract_args_and_kwargs
+# =============================================================================
+
+
+def test_extract_args_and_kwargs_positional_only(interpreter_instance):
+    """Test extracting purely positional arguments."""
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[make_value(10), make_value(20)],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    args, kwargs = interpreter_instance._extract_args_and_kwargs(
+        [collection], statement=None
+    )
+    assert args == [10, 20]
+    assert kwargs == {}
+
+
+def test_extract_args_and_kwargs_nominal_only(interpreter_instance):
+    """Test extracting purely nominal arguments (both Assignment and bare dicts)."""
+    assign_node = make_node(
+        nmx_nodes.Assignment, var=make_var("x"), value=make_value(1), meta=make_meta()
+    )
+    dict_node = {"y": make_value(2), "z": make_value(3)}
+
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[assign_node, dict_node],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    args, kwargs = interpreter_instance._extract_args_and_kwargs(
+        [collection], statement=None
+    )
+    assert args == []
+    assert kwargs == {"x": 1, "y": 2, "z": 3}
+
+
+def test_extract_args_and_kwargs_mixed_valid_order(interpreter_instance):
+    """Test extracting mixed arguments in the correct order (positional first)."""
+    assign_node = make_node(
+        nmx_nodes.Assignment, var=make_var("x"), value=make_value(99), meta=make_meta()
+    )
+
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[make_value(42), assign_node],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    args, kwargs = interpreter_instance._extract_args_and_kwargs(
+        [collection], statement=None
+    )
+    assert args == [42]
+    assert kwargs == {"x": 99}
+
+
+def test_extract_args_and_kwargs_mixed_invalid_order_raises(interpreter_instance):
+    """Test that a positional argument following a keyword argument raises a strict error."""
+    assign_node = make_node(
+        nmx_nodes.Assignment, var=make_var("x"), value=make_value(99), meta=make_meta()
+    )
+
+    collection = make_node(
+        nmx_nodes.Collection,
+        value=[assign_node, make_value(42)],
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"Positional argument follows nominal argument",
+    ):
+        interpreter_instance._extract_args_and_kwargs([collection], statement=None)
+
+
+# =============================================================================
+# Tests for Builtin Execution with kwargs
+# =============================================================================
+
+
+def test_interpret_builtin_with_kwargs(interpreter_instance):
+    """
+    Test that inline builtins properly receive kwargs extracted from their args list.
+    AST equivalent: substring("nemantix", end=5)
+    """
+    mock_fn = MagicMock(return_value="mock_success")
+
+    with patch.dict(
+        "nemantix.core.interpreter.BUILTIN_FUNCTIONS",
+        {nmx_nodes.BuiltinFunctionEnum.SUBSTRING: mock_fn},
+    ):
+        assign_end = make_node(
+            nmx_nodes.Assignment,
+            var=make_var("end"),
+            value=make_value(5),
+            meta=make_meta(),
+        )
+        collection = make_node(
+            nmx_nodes.Collection,
+            value=[make_value("nemantix", _STRING_TYPE), assign_end],
+            inferred_type=VariableTypeEnum.LIST,
+            meta=make_meta(),
+        )
+
+        builtin_expr = make_node(
+            nmx_nodes.BuiltinFunction,
+            function=nmx_nodes.BuiltinFunctionEnum.SUBSTRING,
+            args=[collection],
+            meta=make_meta(),
+        )
+
+        interpreter_instance.interpret_expression(builtin_expr)
+        mock_fn.assert_called_once_with("nemantix", end=5)
+
+
+def test_interpret_builtin_single_struct_no_implicit_unpacking(interpreter_instance):
+    """
+    Test that resolving a variable to a Struct securely passes it to a standard
+    multi-argument builtin without unpacking it.
+    AST equivalent:
+        [my_struct] = ("nemantix", end: 5)
+        substring([my_struct])
+    """
+    mock_fn = MagicMock(return_value="mock_success")
+
+    with patch.dict(
+        "nemantix.core.interpreter.BUILTIN_FUNCTIONS",
+        {nmx_nodes.BuiltinFunctionEnum.SUBSTRING: mock_fn},
+    ):
+        my_struct = nmx_runtime.Struct()
+        my_struct.set("nemantix")
+        my_struct.set(5, key="end")
+        interpreter_instance.context.env.set("my_struct", my_struct)
+
+        builtin_expr = make_node(
+            nmx_nodes.BuiltinFunction,
+            function=nmx_nodes.BuiltinFunctionEnum.SUBSTRING,
+            args=[make_var("my_struct")],  # Passed as ONE single argument
+            meta=make_meta(),
+        )
+
+        interpreter_instance.interpret_expression(builtin_expr)
+
+        assert mock_fn.call_count == 1
+        call_args, call_kwargs = mock_fn.call_args
+
+        assert len(call_args) == 1
+        assert len(call_kwargs) == 0
+
+        passed_struct = call_args[0]
+        assert isinstance(passed_struct, nmx_runtime.Struct)
+        assert passed_struct.get(0) == "nemantix"
+        assert passed_struct.get("end") == 5
+
+
+def test_interpret_builtin_invalid_argument_order_raises(interpreter_instance):
+    """
+    Test that an invalid inline builtin call halts execution natively via the extractor.
+    AST equivalent: substring(start=3, "nemantix")
+    """
+    mock_fn = MagicMock(return_value="mock_success")
+
+    with patch.dict(
+        "nemantix.core.interpreter.BUILTIN_FUNCTIONS",
+        {nmx_nodes.BuiltinFunctionEnum.SUBSTRING: mock_fn},
+    ):
+        assign_start = make_node(
+            nmx_nodes.Assignment,
+            var=make_var("start"),
+            value=make_value(3),
+            meta=make_meta(),
+        )
+        collection = make_node(
+            nmx_nodes.Collection,
+            value=[assign_start, make_value("nemantix", _STRING_TYPE)],
+            inferred_type=VariableTypeEnum.LIST,
+            meta=make_meta(),
+        )
+
+        builtin_expr = make_node(
+            nmx_nodes.BuiltinFunction,
+            function=nmx_nodes.BuiltinFunctionEnum.SUBSTRING,
+            args=[collection],
+            meta=make_meta(),
+        )
+
+        with pytest.raises(
+            nmx_ex.NemantixRuntimeException,
+            match=r"Positional argument follows nominal argument",
+        ):
+            interpreter_instance.interpret_expression(builtin_expr)
+
+
+def test_interpret_builtin_type_and_size_with_struct_vars(interpreter_instance):
+    """Test `type` and `size` builtins when evaluating a Struct variable."""
+    my_struct = nmx_runtime.Struct()
+    my_struct.set(1)
+    my_struct.set(2)
+    interpreter_instance.context.env.set("my_struct", my_struct)
+
+    # type([my_struct])
+    type_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=nmx_nodes.BuiltinFunctionEnum.TYPE,
+        args=[make_var("my_struct")],
+        meta=make_meta(),
+    )
+    assert interpreter_instance.interpret_expression(type_expr) == "struct"
+
+    # size([my_struct])
+    size_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=nmx_nodes.BuiltinFunctionEnum.SIZE,
+        args=[make_var("my_struct")],
+        meta=make_meta(),
+    )
+    assert interpreter_instance.interpret_expression(size_expr) == 2
+
+
+def test_interpret_builtin_soft_conversions_with_struct_vars(interpreter_instance):
+    """Test implicit (soft) cast builtins against Struct variables."""
+    my_struct = nmx_runtime.Struct()
+    my_struct.set(1)
+    interpreter_instance.context.env.set("my_struct", my_struct)
+
+    # num() safely fails on a Struct and returns None
+    num_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=nmx_nodes.BuiltinFunctionEnum.NUM,
+        args=[make_var("my_struct")],
+        meta=make_meta(),
+    )
+    assert interpreter_instance.interpret_expression(num_expr) is None
+
+    # bool() on a Struct evaluates its length
+    bool_expr = make_node(
+        nmx_nodes.BuiltinFunction,
+        function=nmx_nodes.BuiltinFunctionEnum.BOOL,
+        args=[make_var("my_struct")],
+        meta=make_meta(),
+    )
+    assert interpreter_instance.interpret_expression(bool_expr) is True
+
+
+# =============================================================================
+# Tests for update_context
+# =============================================================================
+
+
+def test_update_context_with_script(interpreter_instance):
+    """
+    Test that updating the context with a Script registers the script location
+    and discovers its global actions.
+    """
+    # 1. Setup mock script with a global action
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "dynamic_script.nxs"
+
+    dummy_action = DummyAction(
+        name="dynamic_global_action", input=[], output=[], children=[], meta=make_meta()
+    )
+    mock_script.actions = {"dynamic_global_action": dummy_action}
+
+    # 2. Call update_context
+    interpreter_instance.update_context(script=mock_script)
+
+    # 3. Assertions
+    assert "dynamic_script.nxs" in interpreter_instance.context._seen_scripts
+    assert "dynamic_global_action" in interpreter_instance.context.actions
+    assert (
+        interpreter_instance.context.actions["dynamic_global_action"]["is_global"]
+        is True
+    )
+    assert (
+        interpreter_instance.context.actions["dynamic_global_action"]["action"]
+        == dummy_action
+    )
+
+
+def test_update_context_with_deliberate(interpreter_instance):
+    """
+    Test that updating the context with a Deliberate registers the deliberate name
+    and discovers its private (generated) actions.
+    """
+    # 1. Setup deliberate with a private action
+    dummy_action = DummyAction(
+        name="dynamic_private_action",
+        input=[],
+        output=[],
+        children=[],
+        meta=make_meta(),
+    )
+
+    mock_deliberate = make_node(
+        nmx_nodes.Deliberate,
+        name="dynamic_deliberate",
+        generated_actions=[dummy_action],
+        meta=make_meta(),
+    )
+
+    # 2. Call update_context
+    interpreter_instance.update_context(deliberate=mock_deliberate)
+
+    # 3. Assertions
+    assert "dynamic_deliberate" in interpreter_instance.context._seen_deliberates
+
+    # Private actions are registered under their short name and fully qualified name
+    assert "dynamic_private_action" in interpreter_instance.context.actions
+    assert (
+        "dynamic_deliberate.dynamic_private_action"
+        in interpreter_instance.context.actions
+    )
+
+    assert (
+        interpreter_instance.context.actions["dynamic_private_action"]["is_global"]
+        is False
+    )
+    assert (
+        "dynamic_deliberate"
+        in interpreter_instance.context.actions["dynamic_private_action"]["imported_by"]
+    )
+
+
+def test_update_context_with_both_script_and_deliberate(interpreter_instance):
+    """
+    Test that update_context correctly handles being passed both a Script and a Deliberate simultaneously.
+    """
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "combo_script.nxs"
+    mock_script.actions = {}
+
+    mock_deliberate = make_node(
+        nmx_nodes.Deliberate,
+        name="combo_deliberate",
+        generated_actions=[],
+        meta=make_meta(),
+    )
+
+    interpreter_instance.update_context(script=mock_script, deliberate=mock_deliberate)
+
+    assert "combo_script.nxs" in interpreter_instance.context._seen_scripts
+    assert "combo_deliberate" in interpreter_instance.context._seen_deliberates
+
+
+def test_update_context_none_args(interpreter_instance):
+    """
+    Test that calling update_context with no arguments safely returns without modifying state.
+    """
+    initial_script_count = len(interpreter_instance.context._seen_scripts)
+    initial_delib_count = len(interpreter_instance.context._seen_deliberates)
+
+    interpreter_instance.update_context()
+
+    assert len(interpreter_instance.context._seen_scripts) == initial_script_count
+    assert len(interpreter_instance.context._seen_deliberates) == initial_delib_count
+
+
+def test_update_context_forces_overwrite(interpreter_instance):
+    """
+    Test that update_context forces an overwrite of existing actions because it
+    passes `should_update=True` to the discovery methods.
+    """
+    # 1. Pre-populate the context with a stale action
+    interpreter_instance.context.actions["updatable_action"] = {
+        "closure": None,
+        "is_global": False,
+        "action": "stale_reference",
+    }
+
+    # 2. Setup a script with a fresh action carrying the exact same name
+    mock_script = MagicMock()
+    mock_script.get_location.return_value = "refresh.nxs"
+
+    fresh_action = DummyAction(
+        name="updatable_action", input=[], output=[], children=[], meta=make_meta()
+    )
+    mock_script.actions = {"updatable_action": fresh_action}
+
+    # 3. Update the context
+    interpreter_instance.update_context(script=mock_script)
+
+    # 4. Assert the action was overwritten with the fresh attributes
+    updated_action_info = interpreter_instance.context.actions["updatable_action"]
+    assert updated_action_info["is_global"] is True
+    assert updated_action_info["action"] == fresh_action
+    assert updated_action_info["closure"] is not None
+
+
+# =============================================================================
+# Tests for _build_context (Caching & Discovery)
+# =============================================================================
+
+
+def test_build_context_fresh_script_and_deliberate(interpreter_instance):
+    """
+    Test that a completely unseen script and deliberate trigger all the discovery methods.
+    """
+    mock_script = MagicMock(spec=Script)
+    mock_script.get_location.return_value = "main.nxs"
+
+    mock_deliberate = make_node(
+        nmx_nodes.Deliberate, name="fresh_deliberate", meta=make_meta()
+    )
+
+    # Mock the discovery methods to verify they are called
+    interpreter_instance._discover_actions = MagicMock()
+    interpreter_instance._discover_frames = MagicMock()
+    interpreter_instance._discover_toolsets_and_imports = MagicMock()
+    interpreter_instance._discover_deliberate_actions = MagicMock()
+
+    # Empty requires_map to isolate the test to just the main script
+    interpreter_instance.expertise.requires_map = {"main.nxs": []}
+
+    interpreter_instance._build_context(mock_script, mock_deliberate)
+
+    # 1. Assert global scope tracking was updated
+    assert interpreter_instance._get_global_script() == mock_script
+    assert interpreter_instance._get_global_deliberate() == mock_deliberate
+
+    # 2. Assert discovery methods were called exactly once for the script/deliberate
+    interpreter_instance._discover_actions.assert_called_once_with(mock_script)
+    interpreter_instance._discover_frames.assert_called_once_with(mock_script)
+    interpreter_instance._discover_toolsets_and_imports.assert_called_once_with(
+        mock_script
+    )
+    interpreter_instance._discover_deliberate_actions.assert_called_once_with(
+        mock_deliberate
+    )
+
+    # 3. Assert they are now tracked in the context
+    assert "main.nxs" in interpreter_instance.context._seen_scripts
+    assert "fresh_deliberate" in interpreter_instance.context._seen_deliberates
+
+
+def test_build_context_already_seen_skips_discovery(interpreter_instance):
+    """
+    Test that if a script and deliberate are already in the context,
+    the interpreter skips the expensive AST discovery phase entirely.
+    """
+    mock_script = MagicMock(spec=Script)
+    mock_script.get_location.return_value = "cached.nxs"
+
+    mock_deliberate = make_node(
+        nmx_nodes.Deliberate, name="cached_deliberate", meta=make_meta()
+    )
+
+    # Pre-seed the context tracking sets
+    interpreter_instance.context.add_script(mock_script)
+    interpreter_instance.context.add_deliberate(mock_deliberate)
+
+    # Mock the discovery methods
+    interpreter_instance._discover_actions = MagicMock()
+    interpreter_instance._discover_frames = MagicMock()
+    interpreter_instance._discover_toolsets_and_imports = MagicMock()
+    interpreter_instance._discover_deliberate_actions = MagicMock()
+
+    interpreter_instance.expertise.requires_map = {"cached.nxs": []}
+
+    # Execute
+    interpreter_instance._build_context(mock_script, mock_deliberate)
+
+    # Assert that NO discovery methods were called
+    interpreter_instance._discover_actions.assert_not_called()
+    interpreter_instance._discover_frames.assert_not_called()
+    interpreter_instance._discover_toolsets_and_imports.assert_not_called()
+    interpreter_instance._discover_deliberate_actions.assert_not_called()
+
+    # The globals should still be updated for execution context though
+    assert interpreter_instance._get_global_script() == mock_script
+    assert interpreter_instance._get_global_deliberate() == mock_deliberate
+
+
+def test_build_context_with_required_scripts_partial_cache(interpreter_instance):
+    """
+    Test that _build_context properly resolves the `requires_map`, skipping scripts
+    it has already seen, but discovering the ones it hasn't.
+    """
+    mock_main = MagicMock(spec=Script)
+    mock_main.get_location.return_value = "main.nxs"
+
+    mock_req1 = MagicMock(spec=Script)
+    mock_req1.get_location.return_value = "lib_cached.nxs"
+
+    mock_req2 = MagicMock(spec=Script)
+    mock_req2.get_location.return_value = "lib_fresh.nxs"
+
+    mock_deliberate = make_node(
+        nmx_nodes.Deliberate,
+        name="main_deliberate",
+        generated_actions=[],
+        meta=make_meta(),
+    )
+
+    # Setup expertise script routing and requirements
+    interpreter_instance.expertise.script_by_loc = {
+        "main.nxs": mock_main,
+        "lib_cached.nxs": mock_req1,
+        "lib_fresh.nxs": mock_req2,
+    }
+    interpreter_instance.expertise.requires_map = {
+        "main.nxs": ["lib_cached.nxs", "lib_fresh.nxs"]
+    }
+
+    # Mark `lib_cached.nxs` as already seen
+    interpreter_instance.context.add_script(mock_req1)
+
+    # Mock discovery
+    interpreter_instance._discover_actions = MagicMock()
+    interpreter_instance._discover_frames = MagicMock()
+    interpreter_instance._discover_toolsets_and_imports = MagicMock()
+
+    # Execute
+    interpreter_instance._build_context(mock_main, mock_deliberate)
+
+    # Extract all the arguments passed to _discover_actions
+    action_calls = interpreter_instance._discover_actions.call_args_list
+
+    # Assert `lib_fresh` (required script, called with kwargs)
+    # and `main` (main script, called positionally) were discovered
+    assert call(script=mock_req2) in action_calls
+    assert call(mock_main) in action_calls
+
+    # Assert `lib_cached` was SKIPPED
+    assert call(script=mock_req1) not in action_calls
+
+    # Ensure all scripts ended up in the seen list
+    assert "main.nxs" in interpreter_instance.context._seen_scripts
+    assert "lib_fresh.nxs" in interpreter_instance.context._seen_scripts
+    assert "lib_cached.nxs" in interpreter_instance.context._seen_scripts

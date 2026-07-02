@@ -10,9 +10,9 @@ logger = get_package_logger(__name__)
 
 class SegmentEnricher:
     """
-        Leverages an LLM to generate concise summaries and extract structured metadata
-        from individual document segments.
-        """
+    Leverages an LLM to generate concise summaries and extract structured metadata
+    from individual document segments.
+    """
 
     def __init__(self, llm_proxy: Any, max_workers: int = 5):
         """
@@ -41,11 +41,13 @@ class SegmentEnricher:
         """
         enriched_segments: List[Tuple[int, Dict[str, Any]]] = []
 
-        def _enrich_single(index: int, segment: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+        def _enrich_single(
+            index: int, segment: Dict[str, Any]
+        ) -> Tuple[int, Dict[str, Any]]:
             """Isolated worker function to process a single segment."""
             prompt = f"""
             Analyze the following text segment from a document.
-            Hierarchy context: {segment.get('hierarchy_ref')}
+            Hierarchy context: {segment.get("hierarchy_ref")}
 
             Task:
             1. Write a very brief summary of the content.
@@ -53,13 +55,15 @@ class SegmentEnricher:
             3. Extract metadata as a single keywords or keyword lists, not sentences.
 
             Text:
-            {segment.get('text')}
+            {segment.get("text")}
             """
 
             messages = [
-                {"role": "developer",
-                 "content": "You are a data extraction assistant. Return strict JSON. Keep the summary concise."},
-                {"role": "user", "content": prompt.strip()}
+                {
+                    "role": "developer",
+                    "content": "You are a data extraction assistant. Return strict JSON. Keep the summary concise.",
+                },
+                {"role": "user", "content": prompt.strip()},
             ]
 
             enriched_segment = segment.copy()
@@ -67,8 +71,8 @@ class SegmentEnricher:
             try:
                 # Attempt LLM extraction
                 response = self.llm.invoke_structured(
-                    prompt=messages,
-                    schema=SegmentEnrichment)
+                    prompt=messages, schema=SegmentEnrichment
+                )
 
                 enriched_data = response.result
                 metadata_dict = {}
@@ -91,8 +95,11 @@ class SegmentEnricher:
 
             except Exception as err:
                 # Fallback if LLM fails
-                logger.warning("Fallback activated for segment %s. Error: %s",
-                               segment.get('node_id', index), err)
+                logger.warning(
+                    "Fallback activated for segment %s. Error: %s",
+                    segment.get("node_id", index),
+                    err,
+                )
                 enriched_segment["text_view"] = segment.get("text", "")
                 enriched_segment["metadata"] = {}
 
@@ -100,7 +107,10 @@ class SegmentEnricher:
 
         # Execute concurrent enrichment
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(_enrich_single, i, seg) for i, seg in enumerate(segments)]
+            futures = [
+                executor.submit(_enrich_single, i, seg)
+                for i, seg in enumerate(segments)
+            ]
 
             for future in as_completed(futures):
                 try:
@@ -122,7 +132,9 @@ class SegmentEnricher:
 
         return [res[1] for res in enriched_segments]
 
-    def summarize_parent_node(self, node_title: str, children_summaries: list[str]) -> str:
+    def summarize_parent_node(
+        self, node_title: str, children_summaries: list[str]
+    ) -> str:
         """
         Generates a hierarchical summary for a parent node by synthesizing the summaries of its children.
 
@@ -149,9 +161,11 @@ class SegmentEnricher:
         """
 
         messages = [
-            {"role": "developer",
-             "content": "You are a precise knowledge extractor. You never use meta-language. You only output direct facts, rules, and core concepts."},
-            {"role": "user", "content": prompt.strip()}
+            {
+                "role": "developer",
+                "content": "You are a precise knowledge extractor. You never use meta-language. You only output direct facts, rules, and core concepts.",
+            },
+            {"role": "user", "content": prompt.strip()},
         ]
 
         response = self.llm.invoke(prompt=messages)

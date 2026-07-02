@@ -18,14 +18,6 @@ class DummySchema(BaseModel):
 
 
 @pytest.fixture
-def mock_credentials(tmp_path):
-    """Creates a temporary dummy credentials file for Agent initialization."""
-    cred_file = tmp_path / "credentials.json"
-    cred_file.write_text('{"api_key": "fake"}')
-    return cred_file
-
-
-@pytest.fixture
 def mock_nxs_file(tmp_path):
     """Creates a temporary NXS script."""
     nxs_file = tmp_path / "test.nxs"
@@ -36,7 +28,7 @@ def mock_nxs_file(tmp_path):
 
 
 @pytest.fixture
-def mock_agent(mock_credentials, mock_nxs_file):
+def mock_agent(mock_nxs_file):
     """Fixture to provide an Agent instance with mocked dependencies."""
     # Mocking Executor and LLM
     with patch("nemantix.core.agent.Executor") as MockExecutor:
@@ -60,7 +52,7 @@ def mock_agent(mock_credentials, mock_nxs_file):
 
 
 @patch("nemantix.core.agent.Executor")
-def test_agent_run_success(mock_executor_class, mock_nxs_file, mock_credentials):
+def test_agent_run_success(mock_executor_class, mock_nxs_file):
     """
     Verifies the one-shot running mode where the Agent executes the task until completion
     without errors and updates its state.
@@ -92,9 +84,7 @@ def test_agent_run_success(mock_executor_class, mock_nxs_file, mock_credentials)
 
 
 @patch("nemantix.core.agent.Executor")
-def test_agent_run_nemantix_exception(
-    mock_executor_class, mock_nxs_file, mock_credentials
-):
+def test_agent_run_nemantix_exception(mock_executor_class, mock_nxs_file):
     """
     Verifies that if the Executor raises a NemantixException, the Agent catches it
     and returns it as the first element of the tuple.

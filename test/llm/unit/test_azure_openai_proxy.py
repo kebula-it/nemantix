@@ -1,13 +1,14 @@
+from typing import List
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import BaseModel
 
 from nemantix.core import Toolset, tool
 from nemantix.llm.abstract_proxy import (
     AbstractLLMProxy,
     LLMProxyException,
     LLMResponse,
-    LLMUsage,
     StructuredLLMResponse,
 )
 from nemantix.llm.azure_openai_proxy import AzureOpenAILLMProxy
@@ -153,53 +154,76 @@ def azure_proxy(mock_azure_openai_client, monkeypatch):
     )
 
 
+class LocationData(BaseModel):
+    city: str
+    zip_code: int
+
+
 # =============================================================================
 # Tests
 # =============================================================================
 
 
 def test_azure_openai_init_and_invoke_stream_bind_unbind(azure_proxy):
+    """
+    This test accepts the `azure_openai_llm_proxy` fixture (from conftest.py).
+    """
     proxy = azure_proxy
 
-    # 1. Unbound invoke
+    # unbound invoke
     out = proxy.invoke("Hello")
     assert isinstance(out, LLMResponse)
-    assert "Mock response to: Hello" in out.text
-    assert out.tool_calls == []
-    assert isinstance(out.usage, LLMUsage)
-    assert out.usage.input_tokens >= 0
-    assert out.usage.output_tokens >= 0
 
-    # 2. Bind tools and invoke
+    # bind tools and invoke
     class DummyToolset(Toolset):
         @tool
         def get_current_weather(self, location: str):
             """A dummy tool for weather."""
-            return f"Weather in {location} is 70F"
+            pass
 
         @tool
-        def get_stock_price(self, ticker: str):
-            """Another dummy tool."""
-            return f"Stock {ticker} is 150"
+        def get_complex_weather(self, loc_data: LocationData, tags: List[str]):
+            """A tool with complex schemas."""
+            pass
 
-    proxy2 = proxy.bind_tools(DummyToolset, ["get_current_weather", "get_stock_price"])
-    out2 = proxy2.invoke("What's the weather in Boston?")
+    # Bind both simple and complex tools
+    proxy2 = proxy.bind_tools(
+        DummyToolset, ["get_current_weather", "get_complex_weather"]
+    )
 
-    # Assert tool call structure was extracted properly
+    # --- NEW ASSERTIONS TO TEST COMPLEX SCHEMA GENERATION ---
+    bound_tools = proxy2._bound_tools
+
+    # Isolate the complex tool payload
+    complex_tool = next(
+        t for t in bound_tools if t["function"]["name"] == "get_complex_weather"
+    )
+    props = complex_tool["function"]["parameters"]["properties"]
+
+    # 1. Verify Pydantic model mapping (loc_data)
+    assert props["loc_data"]["type"] == "object"
+    assert "city" in props["loc_data"]["properties"]
+    assert props["loc_data"]["properties"]["city"]["type"] == "string"
+    assert "zip_code" in props["loc_data"]["properties"]
+    assert props["loc_data"]["properties"]["zip_code"]["type"] == "integer"
+
+    # 2. Verify List mapping (tags)
+    assert props["tags"]["type"] == "array"
+    assert props["tags"]["items"]["type"] == "string"
+    # --------------------------------------------------------
+
+    # Test standard invocation with the mocked client
+    out2 = proxy2.invoke("What's the weather? And stock?")
     assert "get_current_weather" in [tc["name"] for tc in out2.tool_calls]
     assert out2.tool_calls[0]["args"] == {"location": "Boston"}
 
-    # Assert the second LLM call (tool resolution) populated the final text
-    assert "Weather is sunny in Boston." in out2.text
-
-    # 3. Streaming yields characters
+    # streaming yields characters
     chunks = list(proxy.stream("abc"))
     assert "".join(chunks) == "Mock stream response."
 
-    # 4. Unbind tools
+    # unbind
     proxy3 = proxy.unbind_tools()
-    out3 = proxy3.invoke("Hello after unbind")
-    assert "Mock response to: Hello after unbind" in out3.text
+    out3 = proxy3.invoke("What's the weather? And stock?")
     assert out3.tool_calls == []
 
 

@@ -1764,10 +1764,7 @@ class Interpreter:
         self._set_global_script(script)
 
         # required scripts discover
-        required_locations = self.expertise.requires_map.get(script.get_location(), [])
-        for location in required_locations:
-            required_script = self.expertise.script_by_loc[location]
-
+        for required_script in self.expertise.get_required_scripts(script):
             if required_script not in self.context:
                 self.context.add_script(script=required_script)
                 self._discover_actions(script=required_script)

@@ -41,6 +41,12 @@ class DummyExpertise:
         self.script_by_loc = {}
         self.event_hub = None
         self.deliberate_to_script_loc = {}
+        self.requires_map = {}
+
+    def get_required_scripts(self, script):
+        loc = script.get_location()
+        req_locs = self.requires_map.get(loc, [])
+        return [self.script_by_loc[r_loc] for r_loc in req_locs]
 
 
 # =============================================================================

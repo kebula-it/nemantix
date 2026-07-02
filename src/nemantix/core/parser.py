@@ -1441,13 +1441,18 @@ class AstTransformer(Transformer):
     def generic_loop(self, meta, items):
         node_meta = items.pop(0) if items and isinstance(items[0], NodeMeta) else None
         non_tokens = [i for i in items if not isinstance(i, Token)]
+        prompt: MicroPrompt | None = None
+        first_non_token = non_tokens[0] if non_tokens else None
+        if isinstance(first_non_token, MicroPrompt):
+            prompt = first_non_token
 
         block = RepeatBlock(
-            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta}
+            meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
+            prompt=prompt,
         )
-        for st in non_tokens[1:]:
-            if isinstance(st, Statement):
-                block.add_node(st)
+        body = non_tokens[1] if len(non_tokens) > 1 else []
+        for st in body:
+            block.add_node(st)
         return block
 
     def loop_each_where(self, items):
@@ -1760,28 +1765,28 @@ class AstTransformer(Transformer):
         for it in vals:
             if it.strip() == "":
                 raise NemantixParserException("Cannot use empty string as slot enum.")
-        return {"ENUM_TYPE": vals}
+        return {SlotTypesEnum.ENUM: vals}
 
     def slot_types(self, items):
-        types_list = []
+        types_dict: dict[SlotTypesEnum, Any] = {}
         for it in items:
             if isinstance(it, Token):
                 it = it.value
 
             if isinstance(it, str):
                 if it in slot_types_map:
-                    types_list.append(slot_types_map[it])
+                    types_dict[slot_types_map[it]] = None
                 elif it in self._frame_names:
-                    types_list.append({SlotTypesEnum.FRAME: it})
+                    types_dict[SlotTypesEnum.FRAME] = it
                 else:
                     raise NemantixParserException(
                         f"Unknown slot type: {it}. Choose one of: {list(slot_types_map.keys())}"
                     )
 
-            if isinstance(it, dict) and "ENUM_TYPE" in it:
-                types_list.append({SlotTypesEnum.ENUM: it.get("ENUM_TYPE")})
+            if isinstance(it, dict) and SlotTypesEnum.ENUM in it:
+                types_dict[SlotTypesEnum.ENUM] = it[SlotTypesEnum.ENUM]
 
-        return {"types": types_list}
+        return {"types": types_dict}
 
     def slot_card(self, items):
         return {"cardinality": items[0].value}

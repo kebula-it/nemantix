@@ -89,7 +89,7 @@ class OutputSchema(BaseModel):
 
 ## Example of Instantiating the Agent
 
-The following example shows how to instantiate and use the Agent with an NXC file 
+The following example shows how to instantiate and use the Agent with an NXC file
 (remember to add a `.env` file with LLM API Keys in your project root).
 
 ```python
@@ -113,9 +113,12 @@ err, out = agent.run(user_request="Assemble a castle ladder")
 print("Error:", err)
 print("Output:", out)
 ```
+
 #### Import of scripts
+
 Suppose you have scripts (say `script_a.nxs`, and `script_b.nxs`) that import a common script
- (`common.nxc`) with the `require` keyword. For example:
+(`common.nxc`) with the `require` keyword. For example:
+
 ```
 # both script_a.nxs and script_b.nxs
 
@@ -124,13 +127,14 @@ require common.nxc
 ```
 
 To correctly execute the agent, the `Expertise` need to know the full paths of the scripts:
+
 ```python
 from nemantix.core import Expertise
 
 script_paths = [
-  'path/to/script_a.nxs',
-  'path/to/script_b.nxs',
-  'another/path/to/common.nxc'
+    'path/to/script_a.nxs',
+    'path/to/script_b.nxs',
+    'another/path/to/common.nxc'
 ]
 
 # assume the scripts are stored on local filesystem
@@ -139,6 +143,7 @@ exp = Expertise.from_local_scripts(paths=script_paths,
                                    search_paths=['path/to/', 'another/path/to/'])
 # agent creation [...]
 ```
+
 Notice the `search_paths`: this argument specifies paths to look up the imported scripts.
 
 > If you provide the `seach_paths` as 'another/path/to/', you can import the common
@@ -181,10 +186,12 @@ be optionally enabled, allowing the coding of a new, not planned deliberate
 for the actual request (assuming no other deliberate can answer it):
 
 ```python
+from nemantix.core.expertise import Expertise, FallbackEnum
+
 # the fallback mechanism is enabled by the Expertise
 exp = Expertise.from_local_scripts(paths=['/examples/ticket.nxs'],
                                    verifier=Verifier('public-key-path'),
-                                   allow_fallback_deliberate=True)
+                                   allow_fallback_deliberate=FallbackEnum.VOLATILE)
 
 agent = Agent(expertise=exp, build_on_start=True)
 
@@ -192,8 +199,12 @@ agent = Agent(expertise=exp, build_on_start=True)
 # therefore a new deliberate will be coded.
 _ = agent.run(user_request='Send the ticket "Ticket-BUG <fix necessary for infrastructure orchestration code>"'
                            'to the IT department at IT@department.com')
-
 ```
+`FallbackEnum` controls what happens when no existing deliberate matches the request:
+* `NONE` (default): raises a `NemantixRuntimeException` because no deliberate can answer the request
+* `VOLATILE`: synthesizes a new deliberate for this run only; the script is restored afterward
+* `PERSISTENT`: creates and **exports** (writes it to the corresponding script file) the 
+new deliberate so it is available for future runs.
 
 ### LLM Proxies Configuration
 

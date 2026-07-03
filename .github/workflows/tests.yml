@@ -6,6 +6,8 @@ on:
       - dev
       - 'feature/**'
       - 'bugfix/**'
+      - 'refactor/**'
+      - 'experimental/**'
       - 'issue/**'
   pull_request:
     branches: [ dev ]

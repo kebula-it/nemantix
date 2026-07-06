@@ -69,6 +69,25 @@ class NemantixOperationException(NemantixRuntimeException):
             )
 
 
+class PolicyViolationError(NemantixRuntimeException):
+    def __init__(
+        self,
+        resource_kind: str,
+        resource_name: str,
+        reason: str,
+        policy_id: str | None = None,
+    ):
+        self.resource_kind = resource_kind
+        self.resource_name = resource_name
+        self.policy_id = policy_id
+        msg = (
+            f"Policy DENY on {resource_kind!r}/{resource_name!r}"
+            + (f" [policy={policy_id}]" if policy_id else "")
+            + f": {reason}"
+        )
+        super().__init__(msg)
+
+
 class NemantixImportException(NemantixRuntimeException):
     def __init__(
         self,

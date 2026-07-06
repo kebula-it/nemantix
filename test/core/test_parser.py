@@ -263,29 +263,15 @@ def test_frame_and_slots(parser):
     # Slot 3: role (Enum definition)
     role_slot = person_frame.children[2]
     assert role_slot.name == "role"
-    # Verify the structure of the Enum dict
-    enum_def = next(
-        (t for t in role_slot.types if isinstance(t, dict) and SlotTypesEnum.ENUM in t),
-        None,
-    )
-    assert enum_def is not None
-    assert isinstance(enum_def[SlotTypesEnum.ENUM], list)
-    assert "User" in enum_def[SlotTypesEnum.ENUM]
-    assert "Admin" in enum_def[SlotTypesEnum.ENUM]
+    enum_vals = role_slot.types.get(SlotTypesEnum.ENUM)
+    assert isinstance(enum_vals, list)
+    assert "User" in enum_vals
+    assert "Admin" in enum_vals
 
     # Slot 4: main_address (Custom Frame Reference)
     addr_slot = person_frame.children[3]
     assert addr_slot.name == "main_address"
-    frame_def = next(
-        (
-            t
-            for t in addr_slot.types
-            if isinstance(t, dict) and SlotTypesEnum.FRAME in t
-        ),
-        None,
-    )
-    assert frame_def is not None
-    assert frame_def[SlotTypesEnum.FRAME] == "AddressFrame"
+    assert addr_slot.types.get(SlotTypesEnum.FRAME) == "AddressFrame"
 
 
 def test_intentables_label_and_meta(parser):

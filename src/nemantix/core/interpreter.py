@@ -378,13 +378,11 @@ class Interpreter:
             elif isinstance(slot, nmx_nodes.Slot):
                 types = []
 
-                for t in slot.types or []:
-                    if isinstance(t, dict):
-                        frame_type, frame_name = list(t.items())[0]
-                        types.append(dict(type=frame_type, name=frame_name))
+                for slot_type, slot_value in (slot.types or {}).items():
+                    if slot_value is not None:
+                        types.append(dict(type=slot_type, name=slot_value))
                     else:
-                        assert isinstance(t, nmx_nodes.SlotTypesEnum)
-                        types.append(dict(name=t))
+                        types.append(dict(name=slot_type))
 
                 assert isinstance(slot.name, str)
                 frame_.add_slot(

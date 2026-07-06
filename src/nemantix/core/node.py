@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from nemantix.core.exceptions import NemantixException
 
@@ -121,62 +123,6 @@ class BlockStatement(Statement):
 
         return val
 
-    def get_qualifier(self) -> Any | list:
-        if hasattr(self, "qualifier"):
-            if self.qualifier is not None:
-                return self.qualifier
-
-        try:
-            qualifier = self.get_annotation_value("completion")
-
-            # Unwrap SingleValue if present
-            if hasattr(qualifier, "value"):
-                qualifier = qualifier.value
-
-            # Convert to list if it was parsed as a raw string
-            if isinstance(qualifier, str):
-                if "->" in qualifier:
-                    qualifier = qualifier.split("->")
-                else:
-                    qualifier = [qualifier]
-
-            if isinstance(qualifier, list | tuple):
-                # unwrap SingleValues inside lists
-                def _get_str(item):
-                    return (
-                        str(item.value).strip()
-                        if hasattr(item, "value")
-                        else str(item).strip()
-                    )
-
-                if len(qualifier) == 1:
-                    val = _get_str(qualifier[0])
-                    qualifier = [plan_qualifier_map[val], plan_qualifier_map[val]]
-
-                elif len(qualifier) == 2:
-                    qualifier = [
-                        plan_qualifier_map[_get_str(qualifier[0])],
-                        plan_qualifier_map[_get_str(qualifier[1])],
-                    ]
-            else:
-                raise NemantixException(
-                    f"Received {type(qualifier)} as completion qualifier!"
-                )
-
-            return qualifier
-
-        except NemantixException:
-            return None
-
-    def is_not_valid_qualifier(self) -> bool:
-        if hasattr(self, "qualifier"):
-            return (
-                self.qualifier
-                and not plan_qualifier_ordered_map[self.qualifier[0]]
-                <= plan_qualifier_ordered_map[self.qualifier[1]]
-            )
-        return True
-
     def get_intent(self):
         intent = None
         for name in ["intent.goal", "goal"]:
@@ -204,7 +150,7 @@ class Require(LeafStatement):
     def __str__(self):
         return f"Require: {self.file_path!r}"
 
-    def to_nxs(self) -> str:
+    def to_nxs(self, **kwargs) -> str:
         return f"require {self.file_path}"
 
 
@@ -216,6 +162,11 @@ class MicroPrompt(LeafStatement):
     def __str__(self):
         return f"MicroPrompt: {self.prompt!r}"
 
+    def to_nxs(self, **kwargs) -> str:
+        if "\n" in self.prompt:
+            return f">>> {self.prompt} <<<"
+        return f">> {self.prompt} <<"
+
 
 class PythonToolDeclaration(LeafStatement):
     def __init__(self, name: str, prompt: MicroPrompt, meta: dict[str, Meta | None]):
@@ -225,6 +176,11 @@ class PythonToolDeclaration(LeafStatement):
 
     def __str__(self):
         return f"PythonToolDecl: {self.name} - {self.prompt}"
+
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        return f"{pad}toolset {self.name}:\n{inner_pad}{self.prompt.to_nxs(**kwargs)}\n{pad}__toolset"
 
 
 # =============================================================================
@@ -259,6 +215,9 @@ class MetaExpression(Expression):
     def __str__(self):
         # first element is the one before "@"
         return f"MetaExpression({self.quals[0]}@{'.'.join(self.quals[1:])})"
+
+    def to_nxs(self, **kwargs) -> str:
+        return f"{{{{{self.quals[0]}@{'.'.join(self.quals[1:])}}}}}"
 
 
 class ExpressionOperand(Expression):
@@ -331,7 +290,7 @@ class Variable(ExpressionOperand):
         self,
         name: str | None,
         prompt: MicroPrompt | None,
-        path: str | None | list[SingleValue],
+        path: str | None | list[SingleValue] | list[Expression],
         meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
@@ -359,18 +318,23 @@ class Variable(ExpressionOperand):
 
     def to_nxs(self, **kwargs) -> str:
         path_str = ""
-        if self.path:
-            # Handle nested paths like [user:address:city]
+        if isinstance(self.path, list) and self.path:
             path_str = ":" + ":".join(
-                str(p.value) if hasattr(p, "value") else str(p) for p in self.path
+                str(p.value)
+                if isinstance(p, SingleValue)
+                else f"({p.to_nxs(**kwargs)})"
+                for p in self.path
             )
-        return f"[{self.name}{path_str}]"
+        prompt_str = (
+            f" {self.prompt.to_nxs(**kwargs)}" if self.prompt is not None else ""
+        )
+        return f"[{self.name}{path_str}{prompt_str}]"
 
 
 class Collection(Value):
     def __init__(
         self,
-        value: list[SingleValue] | dict[str, SingleValue],
+        value: list[Expression] | dict[str, Expression],
         inferred_type: VariableTypeEnum,
         meta: dict[str, Meta | None],
     ):
@@ -391,6 +355,8 @@ class Collection(Value):
         if isinstance(self.value, dict):
             buffer.append(self._dict_to_nxs(value=self.value, **kwargs))
             strip_parenthesis.append(False)
+        elif isinstance(self.value, Collection):
+            return self.value.to_nxs(**kwargs)
         else:
             assert isinstance(self.value, (list, tuple))
 
@@ -417,10 +383,20 @@ class Collection(Value):
                     buffer.append(str(v))
                     strip_parenthesis.append(True)
 
+        if not buffer:
+            return "()"
+
         if all(strip_parenthesis):
             return ", ".join(buffer)
 
         return f"({', '.join(buffer)})"
+
+    def _to_nxs_for_nested(self, **kwargs) -> str:
+        """Return inner content without outer parens, for use by parent nodes."""
+        result = self.to_nxs(**kwargs)
+        if result.startswith("(") and result.endswith(")"):
+            return result[1:-1]
+        return result
 
     def _dict_to_nxs(self, value: dict, **kwargs) -> str:
         buf = []
@@ -431,7 +407,10 @@ class Collection(Value):
                 else:
                     raise NotImplementedError(f"list: {v}")
 
-            buf.append(f"{k}: {v.to_nxs(**kwargs)}")
+            if k is None:
+                buf.append(v.to_nxs(**kwargs))
+            else:
+                buf.append(f"{k}: {v.to_nxs(**kwargs)}")
 
         return ", ".join(buf)
 
@@ -439,7 +418,7 @@ class Collection(Value):
 class SchemedCollection(Collection):
     def __init__(
         self,
-        value: list[SingleValue] | dict[str, SingleValue],
+        value: list[Expression] | dict[str, Expression],
         inferred_type: VariableTypeEnum,
         dataframe: str,
         apply_type: FrameApplyEnum,
@@ -458,16 +437,35 @@ class SchemedCollection(Collection):
         )
 
         if hasattr(self.dataframe, "value"):
-            dataframe = self.dataframe.value
+            dataframe = str(self.dataframe.value)
         else:
             dataframe = str(self.dataframe)
 
-        return f"SchemedCollection {'{' + dataframe + '}'}[{pos_str}]: {val_str})"
+        return f"SchemedCollection {{{dataframe}}}[{pos_str}]: {val_str})"
+
+    def to_nxs(self, **kwargs) -> str:
+        inner = super().to_nxs(**kwargs)
+        if inner.startswith("(") and inner.endswith(")"):
+            list_nxs = inner
+        else:
+            list_nxs = f"({inner})"
+        dataframe = (
+            self.dataframe.value
+            if hasattr(self.dataframe, "value")
+            else str(self.dataframe)
+        )
+        frame_nxs = f"{{{dataframe}}}"
+        if self.apply_type == FrameApplyEnum.PRE:
+            return f"{frame_nxs} {list_nxs}"
+        return f"{list_nxs} {frame_nxs}"
 
 
 class Assignment(Expression):
     def __init__(
-        self, var: Variable, value: Expression | None, meta: dict[str, Meta | None]
+        self,
+        var: Variable,
+        value: Expression | list[Expression] | None,
+        meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.var = var
@@ -477,14 +475,14 @@ class Assignment(Expression):
         return f"ASSIGN: {self.var} = {self.value}"
 
     def to_nxs(self, **kwargs) -> str:
+        var_nxs = self.var.to_nxs(**kwargs)
         if isinstance(self.value, list):
-            values = [v.to_nxs(**kwargs) for v in self.value]
-            return f"[{self.var.name}] = ({', '.join(values)})"
-
+            # noinspection PyUnnecessaryCast
+            exprs = cast(list[Expression], self.value)
+            return f"{var_nxs} = ({', '.join(v.to_nxs(**kwargs) for v in exprs)})"
         if self.value is None:
-            return f"[{self.var.name}] = none"
-
-        return f"[{self.var.name}] = {self.value.to_nxs(**kwargs)}"
+            return f"{var_nxs} = none"
+        return f"{var_nxs} = {self.value.to_nxs(**kwargs)}"
 
 
 class BinaryOperationEnum(Enum):
@@ -579,7 +577,7 @@ class SimilarityOperation(Expression):
     def __init__(
         self,
         operation: SimilarityEnum,
-        qualifier: tuple[SimilarityQualifierEnum, Value]
+        qualifier: tuple[SimilarityQualifierEnum, Value | None]
         | SimilarityQualifierEnum
         | None,
         first: Expression,
@@ -620,6 +618,32 @@ class SimilarityOperation(Expression):
         )
         return f"SimilarityOperation: [{self.first}] {op_name} {qualifier_str} [{self.second}]"
 
+    def to_nxs(self, **kwargs) -> str:
+        first_nxs = self.first.to_nxs(**kwargs)
+        second_nxs = self.second.to_nxs(**kwargs)
+
+        q = self.qualifier
+        qualifier_str = ""
+        if (
+            isinstance(q, tuple)
+            and len(q) == 2
+            and isinstance(q[0], SimilarityQualifierEnum)
+        ):
+            q_enum, q_val = q
+            if q_enum == SimilarityQualifierEnum.NUMBER and q_val is not None:
+                qualifier_str = (
+                    q_val.to_nxs(**kwargs)
+                    if isinstance(q_val, Expression)
+                    else str(q_val)
+                )
+            else:
+                qualifier_str = q_enum.name.lower()
+        elif isinstance(q, SimilarityQualifierEnum):
+            qualifier_str = q.name.lower()
+
+        op_str = self.operation.value.replace("op", qualifier_str)
+        return f"{first_nxs} {op_str} {second_nxs}"
+
 
 class BuiltinFunctionEnum(Enum):
     EXISTS = "exists"
@@ -655,23 +679,19 @@ class BuiltinFunction(Expression):
     def __init__(
         self,
         function: BuiltinFunctionEnum,
-        args: list[Expression],
+        args: list[Expression] | Expression,
         meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.function = function
-        self.args = args
+        self.args: list[Expression] = [args] if isinstance(args, Expression) else args
 
     def __str__(self):
         args_str = ", ".join(str(a) for a in self.args)
         return f"BuiltinFunction({self.function.value}({args_str}))"
 
     def to_nxs(self, **kwargs) -> str:
-        if isinstance(self.args, list):
-            args = ", ".join(a.to_nxs(**kwargs) for a in self.args)
-        else:
-            args = self.args.to_nxs(**kwargs)
-
+        args = ", ".join(a.to_nxs(**kwargs) for a in self.args)
         return f"{self.function.name.lower()}({args})"
 
 
@@ -735,8 +755,11 @@ class DoStatement(LeafStatement):
 
     def to_nxs(self, **kwargs):
         code = ["do"]
-        lines = self.meta["file_meta"].line
-        is_multiline = lines[1] - lines[0] > 0
+        file_meta = self.meta["file_meta"]
+        is_multiline = (
+            isinstance(file_meta, FileMeta)
+            and file_meta.line[1] - file_meta.line[0] > 0
+        )
 
         if self.callable_type is not None:
             code.append(str(self.callable_type.value).lower())
@@ -780,6 +803,11 @@ class Return(LeafStatement):
     def __str__(self):
         return f"RETURN: {self.val}"
 
+    def to_nxs(self, **kwargs) -> str:
+        if not self.val:
+            return "return"
+        return "return " + ", ".join(v.to_nxs(**kwargs) for v in self.val)
+
 
 class Break(LeafStatement):
     def __init__(self, meta: dict[str, Meta | None]):
@@ -787,6 +815,9 @@ class Break(LeafStatement):
 
     def __str__(self):
         return "BREAK"
+
+    def to_nxs(self, **kwargs) -> str:
+        return "break"
 
 
 class Continue(LeafStatement):
@@ -796,13 +827,95 @@ class Continue(LeafStatement):
     def __str__(self):
         return "CONTINUE"
 
+    def to_nxs(self, **kwargs) -> str:
+        return "continue"
+
+
+def _child_body_nxs(child: "Statement", **kwargs) -> str:
+    """Serialize a body child, wrapping Assignment nodes in [...] as required by the grammar."""
+    nxs = child.to_nxs(**kwargs)
+    if isinstance(child, Assignment):
+        return f"[{nxs}]"
+    return nxs
+
+
+class QualifiableBlock(BlockStatement):
+    """BlockStatement with a completion qualifier (action, plan, deliberate)."""
+
+    def __init__(self, meta: dict[str, Meta | None]):
+        super().__init__(meta)
+        self.qualifier: tuple[PlanQualifierEnum, PlanQualifierEnum] | None = None
+
+    def get_qualifier(self) -> tuple[PlanQualifierEnum, PlanQualifierEnum] | None:
+        if self.qualifier is not None:
+            return self.qualifier
+
+        try:
+            qualifier = self.get_annotation_value("completion")
+
+            if isinstance(qualifier, SingleValue):
+                qualifier = qualifier.value
+
+            if isinstance(qualifier, str):
+                if "->" in qualifier:
+                    qualifier = qualifier.split("->")
+                else:
+                    qualifier = [qualifier]
+
+            if isinstance(qualifier, list | tuple):
+
+                def _get_str(item) -> str:
+                    return (
+                        str(item.value).strip()
+                        if isinstance(item, SingleValue)
+                        else str(item).strip()
+                    )
+
+                if len(qualifier) == 1:
+                    val = _get_str(qualifier[0])
+                    return (plan_qualifier_map[val], plan_qualifier_map[val])
+                elif len(qualifier) == 2:
+                    return (
+                        plan_qualifier_map[_get_str(qualifier[0])],
+                        plan_qualifier_map[_get_str(qualifier[1])],
+                    )
+            raise NemantixException(
+                f"Received {type(qualifier)} as completion qualifier!"
+            )
+
+        except NemantixException:
+            return None
+
+    def is_not_valid_qualifier(self) -> bool:
+        if isinstance(self.qualifier, tuple):
+            return not (
+                plan_qualifier_ordered_map[self.qualifier[0]]
+                <= plan_qualifier_ordered_map[self.qualifier[1]]
+            )
+        return False
+
 
 # =============================================================================
 # BlockStatement subclasses
 # =============================================================================
 class RepeatBlock(BlockStatement):
-    def __init__(self, meta: dict[str, Meta | None]):
+    def __init__(
+        self, meta: dict[str, Meta | None], prompt: "MicroPrompt | None" = None
+    ):
         super().__init__(meta)
+        self.prompt = prompt
+
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        prompt_nxs = (
+            self.prompt.to_nxs(**kwargs) if self.prompt is not None else ">> <<"
+        )
+        body = "\n".join(
+            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
+            for c in self.children
+        )
+        return f"{pad}repeat {prompt_nxs}:\n{body}\n{pad}__repeat"
 
 
 class RepeatEachBlock(RepeatBlock):
@@ -817,9 +930,24 @@ class RepeatEachBlock(RepeatBlock):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"RepeatEachBlock(each={self.each}, as_vars={self.as_vars}) \n{children_str}"
 
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        each_nxs = self.each.to_nxs(**kwargs)
+        as_str = (
+            " as " + ", ".join(f"[{v}]" for v in self.as_vars) if self.as_vars else ""
+        )
+        body = "\n".join(
+            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
+            for c in self.children
+        )
+        return f"{pad}repeat each {each_nxs}{as_str}:\n{body}\n{pad}__repeat"
+
 
 class RepeatTimesBlock(RepeatBlock):
-    def __init__(self, times: int, as_vars: list[str], meta: dict[str, Meta | None]):
+    def __init__(
+        self, times: int, as_vars: list[str] | None, meta: dict[str, Meta | None]
+    ):
         super().__init__(meta)
         self.times = times
         self.as_vars = as_vars
@@ -828,12 +956,22 @@ class RepeatTimesBlock(RepeatBlock):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"RepeatTimesBlock(times={self.times} as_vars={self.as_vars})\n{children_str})"
 
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        as_str = f" as [{self.as_vars}]" if self.as_vars is not None else ""
+        body = "\n".join(
+            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
+            for c in self.children
+        )
+        return f"{pad}repeat {self.times} times{as_str}:\n{body}\n{pad}__repeat"
+
 
 class RepeatWhileBlock(RepeatBlock):
     def __init__(
         self,
         condition: LeafStatement,
-        max_it: Expression | int,
+        max_it: Expression | int | None,
         meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
@@ -844,12 +982,36 @@ class RepeatWhileBlock(RepeatBlock):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"RepeatWhileBlock(condition={self.condition}, max={self.max}) \n{children_str})"
 
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        raw_cond = self.condition.to_nxs(**kwargs)
+        cond_nxs = (
+            raw_cond if isinstance(self.condition, MicroPrompt) else f"[{raw_cond}]"
+        )
+        if self.max is None:
+            max_str = ""
+        elif isinstance(self.max, int):
+            max_str = f" max {self.max}"
+        else:
+            raw_max = self.max.to_nxs(**kwargs)
+            max_str = (
+                f" max {raw_max}"
+                if raw_max.startswith("[") and raw_max.endswith("]")
+                else f" max [{raw_max}]"
+            )
+        body = "\n".join(
+            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
+            for c in self.children
+        )
+        return f"{pad}repeat while {cond_nxs}{max_str}:\n{body}\n{pad}__repeat"
+
 
 class RepeatUntilBlock(RepeatBlock):
     def __init__(
         self,
         condition: LeafStatement,
-        max_it: Expression | int,
+        max_it: Expression | int | None,
         meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
@@ -859,6 +1021,30 @@ class RepeatUntilBlock(RepeatBlock):
     def __str__(self):
         children_str = ", ".join(str(c) for c in self.children)
         return f"RepeatUntilBlock(condition={self.condition}, max={self.max}) \n{children_str})"
+
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        raw_cond = self.condition.to_nxs(**kwargs)
+        cond_nxs = (
+            raw_cond if isinstance(self.condition, MicroPrompt) else f"[{raw_cond}]"
+        )
+        if self.max is None:
+            max_str = ""
+        elif isinstance(self.max, int):
+            max_str = f" max {self.max}"
+        else:
+            raw_max = self.max.to_nxs(**kwargs)
+            max_str = (
+                f" max {raw_max}"
+                if raw_max.startswith("[") and raw_max.endswith("]")
+                else f" max [{raw_max}]"
+            )
+        body = "\n".join(
+            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
+            for c in self.children
+        )
+        return f"{pad}repeat until {cond_nxs}{max_str}:\n{body}\n{pad}__repeat"
 
 
 # =============================================================================
@@ -880,6 +1066,20 @@ class IfBlock(BlockStatement):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"If({self.condition}): \n{children_str}"
 
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        if self.condition:
+            raw = self.condition.to_nxs(**kwargs)
+            cond_nxs = raw if isinstance(self.condition, MicroPrompt) else f"[{raw}]"
+        else:
+            cond_nxs = ""
+        body = "\n".join(
+            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
+            for c in self.children
+        )
+        return f"{pad}if {cond_nxs}:\n{body}"
+
 
 class ElifBlock(BlockStatement):
     def __init__(
@@ -897,6 +1097,20 @@ class ElifBlock(BlockStatement):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"Elif({self.condition}): \n{children_str}"
 
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        if self.condition:
+            raw = self.condition.to_nxs(**kwargs)
+            cond_nxs = raw if isinstance(self.condition, MicroPrompt) else f"[{raw}]"
+        else:
+            cond_nxs = ""
+        body = "\n".join(
+            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
+            for c in self.children
+        )
+        return f"{pad}elif {cond_nxs}:\n{body}"
+
 
 class ElseBlock(BlockStatement):
     def __init__(self, body: list[Statement] | None, meta: dict[str, Meta | None]):
@@ -907,6 +1121,15 @@ class ElseBlock(BlockStatement):
     def __str__(self):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"Else: \n{children_str}"
+
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        body = "\n".join(
+            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
+            for c in self.children
+        )
+        return f"{pad}else:\n{body}"
 
 
 class ConditionBlock(BlockStatement):
@@ -928,6 +1151,11 @@ class ConditionBlock(BlockStatement):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"ConditionBlock: \n{children_str}"
 
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        parts = [c.to_nxs(indent=indent, **kwargs) for c in self.children]
+        return "\n".join(parts) + f"\n{pad}__if"
+
 
 # =============================================================================
 # Action
@@ -945,6 +1173,21 @@ class ActionInput:
         prompt_str = f", prompt={self.prompt.prompt}" if self.prompt is not None else ""
         return f"ActionInput(name={self.name}, required={self.required}{default_str}{prompt_str})"
 
+    def to_nxs(self, **kwargs) -> str:
+        if self.required:
+            flag_str = " (required)"
+        elif self.default is not None:
+            default_nxs = self.default.to_nxs(**kwargs)
+            if not default_nxs.startswith("["):
+                default_nxs = f"[{default_nxs}]"
+            flag_str = f" (default {default_nxs})"
+        else:
+            flag_str = ""
+        prompt_str = (
+            f" {self.prompt.to_nxs(**kwargs)}" if self.prompt is not None else ""
+        )
+        return f"{self.name}{flag_str}{prompt_str}"
+
 
 @dataclass
 class ActionOutput:
@@ -956,8 +1199,12 @@ class ActionOutput:
         prompt_str = f", prompt={self.prompt}" if self.prompt else ""
         return f"ActionOutput(name={self.name}{prompt_str})"
 
+    def to_nxs(self, **kwargs) -> str:
+        prompt_str = f" {self.prompt.to_nxs(**kwargs)}" if self.prompt else ""
+        return f"{self.name}{prompt_str}"
 
-class ActionBlock(BlockStatement):
+
+class ActionBlock(QualifiableBlock):
     def __init__(
         self,
         name: str | None,
@@ -965,7 +1212,7 @@ class ActionBlock(BlockStatement):
         action_inputs: list[ActionInput],
         action_outputs: list[ActionOutput],
         body: list[Statement] | None,
-        meta: dict[str, Meta],
+        meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.name = name
@@ -974,7 +1221,6 @@ class ActionBlock(BlockStatement):
         self.output = action_outputs
         if body:
             self.children = body
-        self.qualifier = None
         self.qualifier = self.get_qualifier()
         if (
             self.qualifier
@@ -994,6 +1240,34 @@ class ActionBlock(BlockStatement):
         qual_str = f",[{self.qualifier}]" if self.qualifier else ""
         return f"Action{qual_str} '{self.name}' {prompt_str}with input={self.input}, output={self.output}\n {children_str}"
 
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner = "    " * (indent + 1)
+        inner2 = "    " * (indent + 2)
+        lines = []
+        if self.qualifier:
+            lines.append(
+                f"{pad}@completion: {self.qualifier[0].value}->{self.qualifier[1].value}"
+            )
+        prompt_nxs = f" {self.prompt.to_nxs(**kwargs)}" if self.prompt else ""
+        lines.append(f"{pad}action {self.name}{prompt_nxs}:")
+        if self.input:
+            lines.append(f"{inner}in:")
+            for inp in self.input:
+                lines.append(inner2 + inp.to_nxs(**kwargs))
+            lines.append(f"{inner}__in")
+        if self.output:
+            lines.append(f"{inner}out:")
+            for out in self.output:
+                lines.append(inner2 + out.to_nxs(**kwargs))
+            lines.append(f"{inner}__out")
+        lines.append(f"{inner}body:")
+        for child in self.children:
+            lines.append(_child_body_nxs(child, indent=indent + 2, **kwargs))
+        lines.append(f"{inner}__body")
+        lines.append(f"{pad}__action")
+        return "\n".join(lines)
+
 
 class ImportStatement(LeafStatement):
     def __init__(self, name: str, elements: list[str], meta: dict[str, Meta | None]):
@@ -1010,8 +1284,8 @@ class ImportToolsetStatement(ImportStatement):
         self,
         name: str,
         elements: list[str],
-        args: Expression,
-        alias: str,
+        args: Expression | None,
+        alias: str | None,
         meta: dict[str, Meta | None],
     ):
         super().__init__(name, elements, meta)
@@ -1026,6 +1300,12 @@ class ImportToolsetStatement(ImportStatement):
         alias_str = f" as {self.alias}" if self.alias else ""
         with_str = f" with {self.args}, " if self.args else ""
         return f"ImportToolsetStatement(name={self.name}{alias_str}, {with_str}elements={self.elements})"
+
+    def to_nxs(self, **kwargs) -> str:
+        elements_str = ", ".join(self.elements)
+        alias_str = f" as {self.alias}" if self.alias else ""
+        with_str = f" with [{self.args.to_nxs(**kwargs)}]" if self.args else ""
+        return f"from toolset {self.name}{alias_str}{with_str} use {elements_str}"
 
 
 class PlanQualifierEnum(Enum):
@@ -1050,13 +1330,13 @@ plan_qualifier_ordered_map = {
 }
 
 
-class PlanBlock(BlockStatement):
+class PlanBlock(QualifiableBlock):
     def __init__(
         self,
         action_inputs: list[ActionInput],
         action_outputs: list[ActionOutput],
         body: list[Statement] | None,
-        meta: dict[str, Meta],
+        meta: dict[str, Meta | None],
     ):
         super().__init__(meta)
         self.input = action_inputs
@@ -1065,10 +1345,9 @@ class PlanBlock(BlockStatement):
         if body:
             self.children = body
 
-        self.qualifier = None
         self.qualifier = self.get_qualifier()
 
-        if self.is_not_valid_qualifier():
+        if isinstance(self.qualifier, tuple) and self.is_not_valid_qualifier():
             raise NemantixException(
                 "Plan/deliberate completion qualifiers must specify "
                 "increasing completion levels (e.g drafted->frozen). "
@@ -1081,8 +1360,35 @@ class PlanBlock(BlockStatement):
         qual_str = f",[{self.qualifier}]" if self.qualifier else ""
         return f"Plan{qual_str} with input={self.input}, output={self.output}\n {children_str}"
 
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner = "    " * (indent + 1)
+        inner2 = "    " * (indent + 2)
+        lines = []
+        if self.qualifier:
+            lines.append(
+                f"{pad}@completion: {self.qualifier[0].value}->{self.qualifier[1].value}"
+            )
+        lines.append(f"{pad}plan:")
+        if self.input:
+            lines.append(f"{inner}in:")
+            for inp in self.input:
+                lines.append(inner2 + inp.to_nxs(**kwargs))
+            lines.append(f"{inner}__in")
+        if self.output:
+            lines.append(f"{inner}out:")
+            for out in self.output:
+                lines.append(inner2 + out.to_nxs(**kwargs))
+            lines.append(f"{inner}__out")
+        lines.append(f"{inner}body:")
+        for child in self.children:
+            lines.append(_child_body_nxs(child, indent=indent + 2, **kwargs))
+        lines.append(f"{inner}__body")
+        lines.append(f"{pad}__plan")
+        return "\n".join(lines)
 
-class Deliberate(BlockStatement):
+
+class Deliberate(QualifiableBlock):
     def __init__(
         self,
         name: str,
@@ -1090,17 +1396,16 @@ class Deliberate(BlockStatement):
         guidelines: MicroPrompt,
         plan: PlanBlock,
         meta: dict[str, Meta | None],
-        generated_actions: list[ActionBlock] = None,
+        generated_actions: list[ActionBlock] | None = None,
     ):
         super().__init__(meta)
         self.when = when
         self.guidelines = guidelines
         self.name = name
         self.generated_actions = generated_actions if generated_actions else []
-        self.qualifier = None
         self.qualifier = self.get_qualifier()
 
-        if self.is_not_valid_qualifier():
+        if isinstance(self.qualifier, tuple) and self.is_not_valid_qualifier():
             raise NemantixException(
                 "Plan/deliberate completion qualifiers must specify increasing"
                 " completion levels (e.g drafted->frozen). "
@@ -1152,6 +1457,28 @@ class Deliberate(BlockStatement):
             f"\n   {children_str}"
         )
 
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner = "    " * (indent + 1)
+        lines = []
+        if self.qualifier:
+            lines.append(
+                f"{pad}@completion: {self.qualifier[0].value}->{self.qualifier[1].value}"
+            )
+        when_nxs = self.when.to_nxs(**kwargs) if self.when else ""
+        lines.append(f"{pad}deliberate {self.name} when {when_nxs}:")
+        if self.guidelines:
+            lines.append(f"{inner}guidelines:")
+            lines.append(inner + self.guidelines.to_nxs(**kwargs))
+            lines.append(f"{inner}__guidelines")
+        for action in self.generated_actions:
+            lines.append(action.to_nxs(indent=indent + 1, **kwargs))
+        plan = self.get_plan()
+        if plan:
+            lines.append(plan.to_nxs(indent=indent + 1, **kwargs))
+        lines.append(f"{pad}__deliberate")
+        return "\n".join(lines)
+
 
 # =============================================================================
 # Frames and Slots
@@ -1181,7 +1508,7 @@ class Slot(LeafStatement):
     def __init__(
         self,
         name: str | None,
-        types: list[SlotTypesEnum] | None,
+        types: dict[SlotTypesEnum, Any] | None,
         card: str | None,
         prompt: MicroPrompt | None,
         meta: dict[str, Meta | None],
@@ -1194,7 +1521,7 @@ class Slot(LeafStatement):
 
     def __str__(self):
         types_str = (
-            f" of type {[t for t in self.types]}" if self.types is not None else ""
+            f" of type {list(self.types.keys())}" if self.types is not None else ""
         )
         card_str = (
             f" and cardinality {self.cardinality}"
@@ -1203,6 +1530,25 @@ class Slot(LeafStatement):
         )
         prompt_str = f" prompt={self.prompt}" if self.prompt is not None else ""
         return f"Slot '{self.name}'{types_str}{card_str}{prompt_str}"
+
+    @staticmethod
+    def _type_to_nxs(k: SlotTypesEnum, v: Any) -> str:
+        if k == SlotTypesEnum.FRAME:
+            return v
+        if k == SlotTypesEnum.ENUM:
+            vals = v or []
+            return "ENUM(" + ", ".join(f'"{x}"' for x in vals) + ")"
+        return k.name
+
+    def to_nxs(self, **kwargs) -> str:
+        types_str = (
+            " as " + "|".join(self._type_to_nxs(k, v) for k, v in self.types.items())
+            if self.types
+            else ""
+        )
+        card_str = f" [{self.cardinality}]" if self.cardinality else ""
+        prompt_str = f" {self.prompt.to_nxs(**kwargs)}" if self.prompt else ""
+        return f"slot {self.name}{types_str}{card_str}{prompt_str}"
 
 
 class Frame(BlockStatement):
@@ -1214,3 +1560,12 @@ class Frame(BlockStatement):
         children_str = "\n  - ".join(str(c) for c in self.children)
         name = f"'{self.name}' " if self.name is not None else ""
         return f"Frame {name}: \n{children_str}"
+
+    def to_nxs(self, indent: int = 0, **kwargs) -> str:
+        pad = "    " * indent
+        inner_pad = "    " * (indent + 1)
+        body = "\n".join(
+            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
+            for c in self.children
+        )
+        return f"{pad}frame {self.name}:\n{body}\n{pad}__frame"

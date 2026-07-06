@@ -129,7 +129,7 @@ class KnowledgeBaseManager:
         self,
         folder_path: Path | str,
         index_name: str,
-        target_views: List[Dict[str, str]] = None,
+        target_views: List[Dict[str, str]] | None = None,
         doc_type: str = "unknown",
     ) -> None:
         """
@@ -178,7 +178,7 @@ class KnowledgeBaseManager:
         self,
         location: Location,
         index_name: str,
-        target_views: List[Dict[str, str]] = None,
+        target_views: List[Dict[str, str]] | None = None,
         doc_type: str = "unknown",
     ) -> bool:
         """
@@ -485,7 +485,7 @@ class KnowledgeBaseManager:
 
     def _summarize_single_node(
         self, node_id: str, doc_graph: nx.DiGraph, document, plugin
-    ) -> dict:
+    ) -> dict | None:
         """
         Isolated worker: calculates new coordinates and calls the LLM for summarization.
         Note: It only reads from the graph, it DOES NOT write to it.
@@ -525,10 +525,10 @@ class KnowledgeBaseManager:
         if coords_dump and "doc_format" not in coords_dump:
             coords_dump["doc_format"] = document.doc_format
 
-        children_summaries = [
-            doc_graph.nodes[cid].get("text_view")
+        children_summaries: list[str] = [
+            text_view
             for cid in children_ids
-            if doc_graph.nodes[cid].get("text_view")
+            if (text_view := doc_graph.nodes[cid].get("text_view"))
         ]
 
         if not children_summaries:
@@ -658,6 +658,12 @@ class KnowledgeBaseManager:
             error_msg = f"Critical DB Error during cleanup. Index '{index_name}' was partially deleted (Vectors/Graph removed, but DB records remain). Manual intervention required. Details: {e}"
             logger.error(f"    {error_msg}")
             raise NemantixException(error_msg) from e
+
+    def list_indexes(self) -> list[dict]:
+        """
+        Returns metadata for every registered knowledge index.
+        """
+        return self.registry_manager.list_indexes()
 
     # TODO: define and implement other management functions for the knowledge base
     def delete_document(self, doc_id: str) -> bool:

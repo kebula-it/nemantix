@@ -31,6 +31,14 @@ def test_list_indexes_returns_all(registry):
     indexes = registry.list_indexes()
 
     assert sorted(indexes, key=lambda i: i["index_name"]) == [
-        {"index_name": "index-a", "graph_path": "graphs/a.gpickle", "embedding_model": "model-a"},
-        {"index_name": "index-b", "graph_path": "graphs/b.gpickle", "embedding_model": "model-b"},
+        {
+            "index_name": "index-a",
+            "graph_path": "graphs/a.gpickle",
+            "embedding_model": "model-a",
+        },
+        {
+            "index_name": "index-b",
+            "graph_path": "graphs/b.gpickle",
+            "embedding_model": "model-b",
+        },
     ]

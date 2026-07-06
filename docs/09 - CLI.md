@@ -1,15 +1,16 @@
 # CLI Reference
 
-The Nemantix CLI (`nemantix`) exposes five subcommands that map to the
+The Nemantix CLI (`nemantix`) exposes six subcommands that map to the
 [Script Lifecycle](./04%20-%20Script%20Lifecycle.md):
 
-| Subcommand | Purpose                                         |
-|------------|-------------------------------------------------|
-| `run`      | Execute NXS / NXC / NXV scripts via an Agent    |
-| `code`     | Code NXS scripts to NXC without executing       |
-| `sign`     | Sign NXC files to produce verifiable NXV files  |
-| `verify`   | Verify the cryptographic signature of NXV files |
-| `keygen`   | Generate an ECDSA key pair for signing          |
+| Subcommand  | Purpose                                              |
+|-------------|------------------------------------------------------|
+| `run`       | Execute NXS / NXC / NXV scripts via an Agent         |
+| `code`      | Code NXS scripts to NXC without executing            |
+| `sign`      | Sign NXC files to produce verifiable NXV files       |
+| `verify`    | Verify the cryptographic signature of NXV files      |
+| `keygen`    | Generate an ECDSA key pair for signing               |
+| `knowledge` | Manage knowledge base indexes (ingest, delete, list) |
 
 ---
 
@@ -221,6 +222,99 @@ nemantix keygen --output keys/
 # Keys generated in 'keys/':
 #   Private key: keys/nmx_ecdsa_private.pem
 #   Public key:  keys/nmx_ecdsa_public.pem
+```
+
+---
+
+## `nemantix knowledge`
+
+Manages knowledge base indexes: ingesting documents, deleting indexes, and
+listing what's registered. Unlike `run --use-knowledge-base` (retrieval-only),
+`knowledge` performs ingestion (segmentation, embedding, and vector-store
+writes).
+
+Sensitive credentials (`db_username`, `db_password`) are read exclusively from
+environment variables, exactly like `run`'s Knowledge Base options:
+
+| Variable               | Description                      |
+|------------------------|----------------------------------|
+| `NEMANTIX_KB_USERNAME` | Database username — **required** |
+| `NEMANTIX_KB_PASSWORD` | Database password — **required** |
+
+All three subcommands below share the same connection flags:
+
+| Flag                     | Default       | Description                                             |
+|--------------------------|---------------|---------------------------------------------------------|
+| `--vendor`               | `openai`      | LLM vendor used for enrichment (env: `NEMANTIX_VENDOR`) |
+| `--model`                | `gpt-5-mini`  | LLM model used for enrichment (env: `NEMANTIX_MODEL`)   |
+| `--kb-db-engine`         | `postgresql`  | Database engine                                         |
+| `--kb-db-host`           | `localhost`   | Database host                                           |
+| `--kb-db-port`           | `5432`        | Database port                                           |
+| `--kb-db-database`       | `nemantix_db` | Database name                                           |
+| `--kb-base-storage-path` | `kb_storage`  | Base storage path for the Knowledge Base                |
+| `--kb-vector-subdir`     | `vector_db`   | Vector store subdirectory                               |
+| `--kb-vector-store-type` | `qdrant`      | Vector store type (`qdrant`, `faiss`, `milvus`)         |
+
+### `nemantix knowledge ingest`
+
+Ingests a single file, or (if the path is a directory) bulk-ingests every
+supported file in it.
+
+```bash
+nemantix knowledge ingest <path> --index-name NAME [options]
+```
+
+| Flag                | Default      | Description                                                   |
+|---------------------|--------------|---------------------------------------------------------------|
+| `path`              | —            | File or directory to ingest (positional)                      |
+| `--index-name`      | **required** | Target index name                                             |
+| `--doc-type`        | `unknown`    | Document type hint                                            |
+| `--view-id VIEW_ID` | —            | Knowledge Base view ID to bind the document(s) to. Repeatable |
+
+**Example:**
+
+```bash
+export NEMANTIX_KB_USERNAME=admin
+export NEMANTIX_KB_PASSWORD=secret
+
+nemantix knowledge ingest ./docs \
+  --index-name product-docs \
+  --view-id prod_kb \
+  --kb-vector-store-type faiss
+```
+
+### `nemantix knowledge delete-index`
+
+Deletes an index — its vector collection, graph file, and relational
+records (orphaned documents are cleaned up too).
+
+```bash
+nemantix knowledge delete-index --index-name NAME [options]
+```
+
+| Flag           | Default      | Description          |
+|----------------|--------------|----------------------|
+| `--index-name` | **required** | Index name to delete |
+
+**Example:**
+
+```bash
+nemantix knowledge delete-index --index-name product-docs
+```
+
+### `nemantix knowledge list-indexes`
+
+Lists every registered index with its embedding model and graph path.
+
+```bash
+nemantix knowledge list-indexes [options]
+```
+
+**Example:**
+
+```bash
+nemantix knowledge list-indexes
+# product-docs   sentence-transformers/all-MiniLM-L6-v2   kb_storage/graphs/product-docs.gpickle
 ```
 
 ---

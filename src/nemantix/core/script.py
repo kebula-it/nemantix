@@ -183,7 +183,7 @@ class Script:
                         f"Cannot instantiate two deliberates with the same name ({n.name})"
                     )
 
-                semantics = n.guidelines.prompt if n.guidelines is not None else None
+                semantics = n.mandate.prompt if n.mandate is not None else None
                 plan = n.get_plan()
 
                 if plan:

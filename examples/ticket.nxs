@@ -29,7 +29,7 @@ __action
 
 @breakdown: true
 deliberate SummarizeSupportTicket when >>> the user provides a raw support ticket and asks for a short summary. <<<:
-    guidelines:
+    mandate:
     >>> Given a description ticket with format Ticket-XXX (where XXX) is the code plus the
         description, extract useful information about the ticket, and return a summary.
     <<<
@@ -55,7 +55,7 @@ __deliberate
 @breakdown: true
 deliberate GenerateTicket when >>> create a new ticket for the user support <<<:
 
-    guidelines:
+    mandate:
     >>> Given a description of an issue, generate a ticket:
         - format: Ticket-XXX, where XXX is the code
         - fields: name, code, lang, and issue.

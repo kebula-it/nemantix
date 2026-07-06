@@ -9,7 +9,7 @@ Telegraph style. Root rules only. Read scoped `AGENTS.md` before subtree work.
 ## Goals
 * Write safe, deterministic, and verifiable Python code for the core platform, or syntactically correct NXS scripts for the agentic workflows.
 * Preserve code correctness before quantity.
-* When generating NXS scripts pay attention to the guidelines.
+* When generating NXS scripts pay attention to the mandate.
 
 ## Tech Stack
 - **Language**: Python 3.12+

@@ -63,7 +63,7 @@ def _assign(name: str, line: int) -> Assignment:
 def _deliberate(name: str, line: int) -> Deliberate:
     plan = PlanBlock(action_inputs=[], action_outputs=[], body=None, meta=_meta(line))
     return Deliberate(
-        name=name, when=_mp(line), guidelines=_mp(line), plan=plan, meta=_meta(line)
+        name=name, when=_mp(line), mandate=_mp(line), plan=plan, meta=_meta(line)
     )
 
 
@@ -504,7 +504,7 @@ class TestDeliberateScope:
             action_inputs=[inp], action_outputs=[], body=None, meta=_meta(1)
         )
         deliberate = Deliberate(
-            name="my_d", when=_mp(1), guidelines=_mp(1), plan=plan, meta=_meta(1)
+            name="my_d", when=_mp(1), mandate=_mp(1), plan=plan, meta=_meta(1)
         )
         # Variable reference to "x" inside the deliberate's body
         ref_do = _do("print", 3)
@@ -523,7 +523,7 @@ class TestDeliberateScope:
             action_inputs=[inp], action_outputs=[], body=None, meta=_meta(1)
         )
         deliberate = Deliberate(
-            name="my_d", when=_mp(1), guidelines=_mp(1), plan=plan, meta=_meta(1)
+            name="my_d", when=_mp(1), mandate=_mp(1), plan=plan, meta=_meta(1)
         )
         ref_outside = _do("print", 5)
         ref_outside.using = _var("secret", 5)

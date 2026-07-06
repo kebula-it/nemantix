@@ -90,7 +90,7 @@ RESERVED_VAR_NAMES = [
     "as",
     "with",
     "include",
-    "guidelines",
+    "mandate",
     "if",
     "elif",
     "else",
@@ -113,7 +113,7 @@ RESERVED_VAR_NAMES = [
     "drafted",
     "frozen",
     "__deliberate",
-    "__guidelines",
+    "__mandate",
     "__plan",
     "__action",
     "__body",
@@ -460,9 +460,9 @@ class AstTransformer(Transformer):
         return items[0]
 
     @v_args(meta=True)
-    def guidelines(self, meta, items):
+    def mandate(self, meta, items):
         """
-        guidelines: _GUIDELINES ":" (prompt_line | prompt_block)+ (_END_BLOCK | _END_GUIDELINES)
+        mandate: _MANDATE ":" (prompt_line | prompt_block)+ (_END_BLOCK | _END_MANDATE)
         Returns a single MicroPrompt (multi-line concatenation).
         """
         node_meta = items.pop(0) if items and isinstance(items[0], NodeMeta) else None
@@ -536,14 +536,14 @@ class AstTransformer(Transformer):
     def deliberate(self, meta, items):
         """
         deliberate:
-          _DELIBERATE deliberate_name? _WHEN deliberate_condition ":" import* guidelines?
+          _DELIBERATE deliberate_name? _WHEN deliberate_condition ":" import* mandate?
             plan (_END_BLOCK | _END_DELIBERATE)
         """
         node_meta = items.pop(0) if items and isinstance(items[0], NodeMeta) else None
 
         name: Optional[str] = None
         condition: Optional[MicroPrompt] = None
-        guidelines: Optional[MicroPrompt] = None
+        mandate: Optional[MicroPrompt] = None
         plan_blocks: Optional[PlanBlock] = None
         actions: List[ActionBlock] = []
 
@@ -555,7 +555,7 @@ class AstTransformer(Transformer):
             elif isinstance(obj, MicroPrompt) and condition is None:
                 condition = obj
             elif isinstance(obj, MicroPrompt):
-                guidelines = obj
+                mandate = obj
             elif isinstance(obj, PlanBlock):
                 plan_blocks = obj
             elif isinstance(obj, ActionBlock):
@@ -569,7 +569,7 @@ class AstTransformer(Transformer):
         return Deliberate(
             name=name,
             when=condition,
-            guidelines=guidelines,
+            mandate=mandate,
             plan=plan_blocks,
             generated_actions=actions,
             meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
@@ -2000,7 +2000,7 @@ TOKEN_MAP = {
     "_END_FRAME": "'__frame'",
     "_END_IN": "'__in'",
     "_END_OUT": "'__out'",
-    "_END_GUIDELINES": "'__guidelines'",
+    "_END_MANDATE": "'__mandate'",
     "_WHEN": "'when'",
     "_FROM": "'from'",
     "_USE": "'use'",
@@ -2041,7 +2041,7 @@ TOKEN_MAP = {
     "_BODY": "'body'",
     "_EACH": "'each'",
     "_END_DO": "'__do'",
-    "_GUIDELINES": "'guidelines'",
+    "_MANDATE": "'mandate'",
     "_IN": "'in'",
     "_MAX": "'max'",
     "_NONE": "'none'",

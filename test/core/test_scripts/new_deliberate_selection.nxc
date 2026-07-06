@@ -2,11 +2,11 @@ from deliberate Stairs use step
 {Example} @version: 1
 deliberate SummarizeSupportTicket when >>> run when the user provides a raw support ticket and asks for a short summary. <<<:
 
-    guidelines:
+    mandate:
     >>> Takes a raw support ticket, cleans and normalizes its text, extracts key signals (language, entities, salient points),
     and produces two outputs: (1) a short internal summary with an issue label and a few key bullets, and (2) a concise,
     polite reply message for the user based on those points. <<<
-    __guidelines
+    __mandate
 
 
     editable->frozen plan:

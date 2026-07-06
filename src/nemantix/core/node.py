@@ -1393,14 +1393,14 @@ class Deliberate(QualifiableBlock):
         self,
         name: str,
         when: MicroPrompt,
-        guidelines: MicroPrompt,
+        mandate: MicroPrompt,
         plan: PlanBlock,
         meta: dict[str, Meta | None],
         generated_actions: list[ActionBlock] | None = None,
     ):
         super().__init__(meta)
         self.when = when
-        self.guidelines = guidelines
+        self.mandate = mandate
         self.name = name
         self.generated_actions = generated_actions if generated_actions else []
         self.qualifier = self.get_qualifier()
@@ -1452,7 +1452,7 @@ class Deliberate(QualifiableBlock):
         )
         return (
             f"Deliberate: {name}when={self.when}, "
-            f"guidelines={self.guidelines} "
+            f"mandate={self.mandate} "
             f"{actions}\n"
             f"\n   {children_str}"
         )
@@ -1467,10 +1467,10 @@ class Deliberate(QualifiableBlock):
             )
         when_nxs = self.when.to_nxs(**kwargs) if self.when else ""
         lines.append(f"{pad}deliberate {self.name} when {when_nxs}:")
-        if self.guidelines:
-            lines.append(f"{inner}guidelines:")
-            lines.append(inner + self.guidelines.to_nxs(**kwargs))
-            lines.append(f"{inner}__guidelines")
+        if self.mandate:
+            lines.append(f"{inner}mandate:")
+            lines.append(inner + self.mandate.to_nxs(**kwargs))
+            lines.append(f"{inner}__mandate")
         for action in self.generated_actions:
             lines.append(action.to_nxs(indent=indent + 1, **kwargs))
         plan = self.get_plan()

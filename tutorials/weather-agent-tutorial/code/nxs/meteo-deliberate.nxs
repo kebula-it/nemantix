@@ -1,9 +1,9 @@
 from toolset OpenMeteoTools use get_weather_by_city
 
 deliberate CheckWeatherDeliberate when >> the user asks for the current weather in a specific city <<:
-  guidelines:
+  mandate:
     >> Extract the city name and use get_weather_by_city to fetch real data.
-  __guidelines
+  __mandate
 
   @completion: drafted->frozen 
   plan:

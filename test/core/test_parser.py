@@ -55,7 +55,7 @@ def parser(grammar_path):
 def test_deliberate_structure(parser):
     """
     Test the top-level 'deliberate' structure, including 'when' condition,
-    imports, guidelines, and the plan block.
+    imports, mandate, and the plan block.
     """
     code = """
     from toolset CAD use align_tool, measure_tool
@@ -67,7 +67,7 @@ def test_deliberate_structure(parser):
     __
 
     deliberate alignment when >> I need to align the plans <<:
-        guidelines:
+        mandate:
             >> ensure precision
         __
 
@@ -101,8 +101,8 @@ def test_deliberate_structure(parser):
     ]  # Check specific list content
     assert imports.alias is None  # Ensure optional fields are None
 
-    # Guidelines
-    assert deliberate.guidelines.prompt == "ensure precision"
+    # Mandate
+    assert deliberate.mandate.prompt == "ensure precision"
 
     # Plan
     plan = deliberate.get_plan()

@@ -4,8 +4,8 @@ You are working with NXS, a DSL made of structured blocks.
 CORE CONCEPTS
 - An NXS file can include other NXS files, define reusable schemas with `frame`, declare tools with `toolset`, define executable units with `action`, and define a runnable workflow with `deliberate`.
 - An `action` is like a function: it can declare inputs (`in:`), outputs (`out:`), and a `body:` with logic such as expressions, calls, conditionals, loops, and control flow.
-- A `deliberate` is the main executable workflow: it includes a `when` trigger, `guidelines`, a `plan` and in some special case some private `action`s.
-- The `plan` of a `deliberate` is the orchestration logic that aggregates and coordinates multiple `action` call to achieve the desired outcome following the `guidelines`. Like an `action`, it can declare inputs (`in:`), outputs (`out:`), and a `body:`.
+- A `deliberate` is the main executable workflow: it includes a `when` trigger, `mandate`, a `plan` and in some special case some private `action`s.
+- The `plan` of a `deliberate` is the orchestration logic that aggregates and coordinates multiple `action` call to achieve the desired outcome following the `mandate`. Like an `action`, it can declare inputs (`in:`), outputs (`out:`), and a `body:`.
 """
 
 CODING_SYSTEM_PROMPT = (
@@ -187,18 +187,18 @@ __action
 deliberate DemoMain when >>> Run this deliberate when the user asks for a two-action syntax showcase. <<<:
     # deliberate declaration needs a name and a short micro-prompt showing its purpose
 
-    guidelines:
+    mandate:
         # PROMPTS (LANGUAGE TOKENS):
         # - Inline prompt: `>> ... <<` (single line, explicitly closed)
         # - Block prompt:  `>>> ... <<<` (multiline, explicitly closed)
         # Some prompts are completion prompts (implement their meaning while preserving the original text),
         # others are verification prompts (MUST stay unchanged).
         >> Keep verification prompts unchanged; implement completion prompts without removing their original text. <<
-    __guidelines
+    __mandate
 
     plan:
         # The plan aggregates and coordinates multiple actions to achieve the desired outcome
-        # while following the deliberate guidelines.
+        # while following the deliberate mandate.
 
         in:
             raw_text (required) >> text input, may contain extra spaces <<
@@ -291,7 +291,7 @@ ACTION TO COMPLETE
 {action_nxs}
 """
 
-DRAFT_ACTION_RULES = """- Complete `in:`, `out:`, and `body:` only with what can be validly inferred from the available code, prompts, micro-prompts, and guidelines.
+DRAFT_ACTION_RULES = """- Complete `in:`, `out:`, and `body:` only with what can be validly inferred from the available code, prompts, micro-prompts, and mandate.
 - The produced action may be partial if some implementation details depend on information that will only be provided later by the user request.
 - You must decide what can already be encoded now and what must remain deferred to a later coding pass.
 - Encode now everything that is structurally clear, semantically grounded, and already implied by the available information.
@@ -366,14 +366,14 @@ WHAT YOU MUST PRODUCE
 - Do NOT output explanations, markdown, or any text outside the NXS code.
 
 CONTEXT
-- The deliberate header, `when`, and `guidelines` are already defined.
+- The deliberate header, `when`, and `mandate` are already defined.
 - The `plan` already contains `in:`, `out:`, and `body:` blocks, and they may be filled, partially filled, or empty.
 - Your job is to complete the existing `plan`, not to rewrite the whole deliberate.
 
 REQUIRED STRUCTURE
 - Preserve and complete `plan.in:`, `plan.out:`, and `plan.body:` as needed.
 - The `plan` must behave as the orchestration unit of the deliberate.
-- The `plan` must define a coherent execution flow aligned with the deliberate guidelines.
+- The `plan` must define a coherent execution flow aligned with the deliberate mandate.
 - You have to add the `@intent.goal` annotation, which must be a short description of your implementation of the plan.
 
 RULES
@@ -383,7 +383,7 @@ DELIBERATE TO COMPLETE
 {deliberate_nxs}
 """
 
-DRAFT_DELIBERATE_RULES = """- Complete the `plan` only with what can be validly inferred from the available code, micro-prompts, guidelines, and deliberate intent.
+DRAFT_DELIBERATE_RULES = """- Complete the `plan` only with what can be validly inferred from the available code, micro-prompts, mandate, and deliberate intent.
 - Complete `plan.in:`, `plan.out:`, and `plan.body:` only where enough information is available.
 - The produced `plan` may be partial if some orchestration details depend on information that will only be provided later by the user request.
 - You must decide what can already be encoded now and what must remain deferred to a later coding pass.
@@ -391,7 +391,7 @@ DRAFT_DELIBERATE_RULES = """- Complete the `plan` only with what can be validly 
 - Do not invent missing business logic, user data, constants, branches, sequencing rules, or assumptions that are not supported by the current input.
 - Leave unresolved only the parts that genuinely require future user-provided information.
 - Even if the implementation is partial, the output must remain valid NXS and preserve the full `plan` structure.
-- The `plan` must be compiled so that it creates a coherent execution plan consistent with the `guidelines`, aggregating the appropriate actions and tools in valid NXS.
+- The `plan` must be compiled so that it creates a coherent execution plan consistent with the `mandate`, aggregating the appropriate actions and tools in valid NXS.
 - The `plan` should use `do` calls to actions and tools when their role is already implied by the available information.
 - Follow the rules given about the prompts: verification micro-prompts must remain exactly unchanged; completion micro-prompts must be implemented when enough information is available.
 - If a completion prompt cannot yet be fully implemented because it depends on future user input, preserve it exactly and encode only the portion that can already be determined.
@@ -399,10 +399,10 @@ DRAFT_DELIBERATE_RULES = """- Complete the `plan` only with what can be validly 
 - You can use and call the tools, actions, and frames described in the section below. Respect EXACTLY the described inputs and outputs of the tools and actions.
 """
 
-COMPLETE_DELIBERATE_RULES = """- Complete empty or partial `plan.in:`, `plan.out:`, and `plan.body:` blocks using the available completion prompts, micro-prompts, and guidelines.
+COMPLETE_DELIBERATE_RULES = """- Complete empty or partial `plan.in:`, `plan.out:`, and `plan.body:` blocks using the available completion prompts, micro-prompts, and mandate.
 - Do not rename, remove, or alter declared plan inputs or outputs unless this is strictly necessary to make the `plan` valid.
 - The `plan.body:` must be consistent with the declared `plan.in:` and `plan.out:`.
-- The `plan` must be compiled so that it defines a coherent execution plan aligned with the deliberate `guidelines`, aggregating the needed actions and tools in valid NXS.
+- The `plan` must be compiled so that it defines a coherent execution plan aligned with the deliberate `mandate`, aggregating the needed actions and tools in valid NXS.
 - The orchestration in `plan.body:` must be explicit and valid: sequence calls coherently, pass inputs correctly, and produce outputs consistent with the plan contract.
 - Follow the rules given about the prompts: verification micro-prompts must remain exactly unchanged; completion micro-prompts must be implemented as valid NXS code.
 - When a completion prompt is present, keep its original text exactly as written for traceability, and implement its meaning in NXS.
@@ -413,7 +413,7 @@ COMPLETE_DELIBERATE_RULES = """- Complete empty or partial `plan.in:`, `plan.out
 """
 
 EVALUATE_DELIBERATE_RULES = """- The input `plan` must be treated as a draft implementation that should be completed as far as possible.
-- Complete `plan.in:`, `plan.out:`, and `plan.body:` using everything that can be validly inferred from the available code, micro-prompts, guidelines, deliberate intent, and additional context.
+- Complete `plan.in:`, `plan.out:`, and `plan.body:` using everything that can be validly inferred from the available code, micro-prompts, mandate, deliberate intent, and additional context.
 - Prefer completing the plan now whenever the structure, orchestration, or intended behavior are already clear enough.
 - If you think some orchestration details genuinely depend on information that will only be available later from the user request, leave only those parts unresolved.
 - Do not invent unsupported business logic, user data, constants, branches, sequencing rules, or assumptions that are not grounded in the current input.
@@ -421,7 +421,7 @@ EVALUATE_DELIBERATE_RULES = """- The input `plan` must be treated as a draft imp
 - Preserve declared plan inputs and outputs, and do not rename, remove, or alter them unless this is strictly necessary to make the `plan` valid.
 - If `plan.in:` or `plan.out:` is partial or shallow, complete it consistently with the plan semantics and the available information.
 - The `plan.body:` must be consistent with the declared `plan.in:` and `plan.out:`, and should implement as much valid orchestration as can already be determined.
-- The `plan` must define a coherent execution flow aligned with the deliberate `guidelines`, aggregating the needed actions and tools in valid NXS.
+- The `plan` must define a coherent execution flow aligned with the deliberate `mandate`, aggregating the needed actions and tools in valid NXS.
 - The orchestration in `plan.body:` should be explicit and valid: sequence calls coherently, pass inputs correctly, and produce outputs consistent with the plan contract.
 - Prefer using `do` calls to actions and tools whenever their role is already implied by the available information.
 - If full implementation is not yet possible, the current `plan.body:` should still provide the best valid partial orchestration, preparing the plan for a later completion pass without guessing missing details.
@@ -469,7 +469,7 @@ WHAT YOU MUST PRODUCE
 - Do NOT output explanations, markdown, or any text outside the NXS code.
 
 CONTEXT
-- The deliberate header, `when`, and `guidelines` are already defined.
+- The deliberate header, `when`, and `mandate` are already defined.
 - The `plan` may already contains `in:`, `out:`, and `body:` blocks, and they may be filled, partially filled, or empty.
 - Your job is to complete the existing `plan`, not to rewrite the whole deliberate.
 
@@ -482,7 +482,7 @@ REQUIRED STRUCTURE
   - The `plan` must act ONLY as an orchestration/aggregation layer.
   - The `plan.body` must reference and compose the previously defined actions.
   - The plan must NOT contain low-level implementation details.
-  - The plan must define a coherent execution flow aligned with the deliberate guidelines.
+  - The plan must define a coherent execution flow aligned with the deliberate mandate.
   - You must add the `@intent.goal` annotation to each action, which must be a short description of your implementation (like a short docstring).
 
 RULES
@@ -491,7 +491,7 @@ RULES
 DELIBERATE TO COMPLETE
 {deliberate_nxs}
 """
-DRAFT_DELIBERATE_BREAKDOWN_RULES = """- Complete the `deliberate` only with what can be validly inferred from the available code, micro-prompts, guidelines, and deliberate intent.
+DRAFT_DELIBERATE_BREAKDOWN_RULES = """- Complete the `deliberate` only with what can be validly inferred from the available code, micro-prompts, mandate, and deliberate intent.
 - If the deliberate already contains `action` blocks before the `plan`, treat them as available and reusable in the `plan`.
 - Reuse existing actions first, including actions already inside the deliberate and actions provided in the additional context.
 - Add new `action` blocks before the `plan` only if the available actions are not sufficient to satisfy the request.
@@ -500,7 +500,7 @@ DRAFT_DELIBERATE_BREAKDOWN_RULES = """- Complete the `deliberate` only with what
 - Remember to always generate the plan: its the main logic of the deliberate.
 - Encode now everything that is already clear; do not invent unsupported logic, data, constants, branches, or sequencing rules.
 - Leave unresolved only what genuinely requires future user-provided information.
-- The `plan` must define a coherent execution flow consistent with the `guidelines`, aggregating actions and tools in valid NXS.
+- The `plan` must define a coherent execution flow consistent with the `mandate`, aggregating actions and tools in valid NXS.
 - Follow the rules about prompts:
   - verification micro-prompts must remain exactly unchanged;
   - completion micro-prompts must be implemented as valid NXS code whenever enough information is available;
@@ -508,7 +508,7 @@ DRAFT_DELIBERATE_BREAKDOWN_RULES = """- Complete the `deliberate` only with what
 - Use only valid NXS constructs.
 - You can use and call (with `do`) the tools, actions, and frames described in the section below. Respect EXACTLY the described inputs and outputs of the tools and actions.
 """
-COMPLETE_DELIBERATE_BREAKDOWN_RULES = """- Complete empty or partial `plan.in:`, `plan.out:`, and `plan.body:` using the available completion prompts, micro-prompts, and guidelines.
+COMPLETE_DELIBERATE_BREAKDOWN_RULES = """- Complete empty or partial `plan.in:`, `plan.out:`, and `plan.body:` using the available completion prompts, micro-prompts, and mandate.
 - If the deliberate already contains `action` blocks before the `plan`, treat them as available and reusable in the `plan`.
 - Reuse existing actions first, including actions already inside the deliberate and actions provided in the additional context.
 - Add new `action` blocks before the `plan` only if the available actions are not sufficient.
@@ -516,7 +516,7 @@ COMPLETE_DELIBERATE_BREAKDOWN_RULES = """- Complete empty or partial `plan.in:`,
 - Do not rename, remove, or alter declared plan inputs or outputs unless strictly necessary to make the `plan` valid.
 - Remember to always generate the plan: its the main logic of the deliberate.
 - `plan.body:` must be consistent with `plan.in:` and `plan.out:`.
-- The `plan` must define a coherent execution flow consistent with the `guidelines`, aggregating actions and tools in valid NXS.
+- The `plan` must define a coherent execution flow consistent with the `mandate`, aggregating actions and tools in valid NXS.
 - Follow the rules about prompts:
   - verification micro-prompts must remain exactly unchanged;
   - completion micro-prompts must be implemented as valid NXS code;
@@ -535,7 +535,7 @@ EVALUATE_DELIBERATE_BREAKDOWN_RULES = """- Treat the input `deliberate` as a dra
 - Remember to always generate the plan: its the main logic of the deliberate.
 - If `plan.in:` or `plan.out:` is partial, complete it consistently with the plan semantics and the available information.
 - `plan.body:` must be consistent with `plan.in:` and `plan.out:` and should implement as much valid orchestration as can already be determined.
-- The `plan` must define a coherent execution flow aligned with the `guidelines`, aggregating the needed actions and tools in valid NXS.
+- The `plan` must define a coherent execution flow aligned with the `mandate`, aggregating the needed actions and tools in valid NXS.
 - Follow the rules about prompts:
   - verification micro-prompts must remain exactly unchanged;
   - completion micro-prompts must be implemented as valid NXS code whenever enough information is available;
@@ -626,7 +626,7 @@ REQUEST_PARSING_PROMPT = """
 
 # Used by Executor when a fallback deliberate is promoted into a new reusable
 # deliberate on the same script. Asks the LLM to synthesize a stable identity
-# (name / when clause / guidelines) that describes the CLASS of requests the
+# (name / when clause / mandate) that describes the CLASS of requests the
 # new deliberate will serve, not just the current request.
 FALLBACK_IDENTITY_PROMPT = """The user submitted a request that does not match any existing deliberate in the current script.
 You must synthesize a NEW deliberate identity that generalises the request into a reusable deliberate.
@@ -638,9 +638,9 @@ Produce three fields:
        The name MUST NOT collide with any of the names listed below.
 - when: a single concise sentence describing the class of user requests that should be routed to
        this deliberate in the future. Describe the trigger, not the implementation.
-- guidelines: a brief natural-language description (no code, no bullet list) of how to solve requests
+- mandate: a brief natural-language description (no code, no bullet list) of how to solve requests
        in this class, referring to the intent only. It should read like a short operating procedure
-       and will be used verbatim as the deliberate's `guidelines` block, so keep it focused and stable.
+       and will be used verbatim as the deliberate's `mandate` block, so keep it focused and stable.
 
 [[user_request]]
 "{request}"

@@ -14,9 +14,9 @@ __action
 
 @completion: _->frozen
 deliberate ExtractAndReport when >> user wants to extract and report info from text <<:
-    guidelines:
+    mandate:
         >> extract structured information and return it <<
-    __guidelines
+    __mandate
     plan:
         in:
             raw_text >> the text to process <<

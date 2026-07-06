@@ -65,7 +65,7 @@ class Executor:
     class IdentitySchema(BaseModel):
         name: str
         when: str
-        guidelines: str
+        mandate: str
 
     class PhaseEvent:
         def __init__(
@@ -610,7 +610,7 @@ class Executor:
     ) -> str:
         """Turn a fallback deliberate into a concrete, reusable deliberate.
 
-        1. Ask the LLM for a new identity (name / when / guidelines) generalizing
+        1. Ask the LLM for a new identity (name / when / mandate) generalizing
            the request.
         2. Swap the fallback block in-script with a new-deliberate skeleton carrying
            that identity.
@@ -642,7 +642,7 @@ class Executor:
 
         # 2. replace the fallback block with the new-deliberate skeleton
         new_block = self.expertise.build_promoted_deliberate_block(
-            name=new_name, when=identity.when, guidelines=identity.guidelines
+            name=new_name, when=identity.when, mandate=identity.mandate
         )
 
         script = self.expertise.update_script_content(

@@ -36,7 +36,7 @@ __action
 deliberate AssemblePlatformLadder when >> Assemble a platform ladder <<:
 
 
-    guidelines:
+    mandate:
         >> Assemble the platform ladder respecting the constraints
     __
 

@@ -66,14 +66,14 @@ class DummyPlan:
 
 
 class DummyDeliberate:
-    def __init__(self, name: str, actions: list[DummyAction], guidelines=None):
+    def __init__(self, name: str, actions: list[DummyAction], mandate=None):
         self.name = name
         self._plan = DummyPlan(
             actions,
             ins=actions[0].input if actions else [],
             outs=actions[0].output if actions else [],
         )
-        self.guidelines = guidelines
+        self.mandate = mandate
         self.generated_actions = {}
 
     def get_plan(self):
@@ -303,7 +303,7 @@ def test_parse_builds_structures_and_semantics_map(mock_source_manager, monkeypa
     ]
 
     delib = DummyDeliberate(
-        name="D1", actions=actions, guidelines=DummyGuidelines("follow D1")
+        name="D1", actions=actions, mandate=DummyGuidelines("follow D1")
     )
     req = DummyRequire()
     tool = DummyPythonToolDeclaration()
@@ -345,7 +345,7 @@ def test_parse_builds_structures_and_semantics_map(mock_source_manager, monkeypa
     assert info.to_dict() == {"semantics": "do X", "ins": ["i1"], "outs": ["o1"]}
 
 
-def test_parse_deliberate_without_guidelines_sets_none_semantics(
+def test_parse_deliberate_without_mandate_sets_none_semantics(
     mock_source_manager, monkeypatch
 ):
     import nemantix.core.script as script_module
@@ -362,7 +362,7 @@ def test_parse_deliberate_without_guidelines_sets_none_semantics(
     )
 
     action = DummyAction(name="A1", semantics="do X", ins=["i1"], outs=["o1"])
-    delib = DummyDeliberate(name="D1", actions=[action], guidelines=None)
+    delib = DummyDeliberate(name="D1", actions=[action], mandate=None)
 
     scr = Script(location="x.nxs", source_manager=mock_source_manager, content="RAW")
     scr.parser.parse = MagicMock(return_value=[action, delib])

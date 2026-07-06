@@ -190,7 +190,9 @@ class TestIngestHandle:
             kb_vector_store_type="qdrant",
         )
 
-    def test_nonexistent_path_returns_one_without_building_manager(self, tmp_path) -> None:
+    def test_nonexistent_path_returns_one_without_building_manager(
+        self, tmp_path
+    ) -> None:
         missing = tmp_path / "does-not-exist.txt"
         with patch("nemantix.cli.knowledge.KnowledgeBaseManager") as mock_manager_cls:
             rc = cmd_knowledge.handle_ingest(self._args(path=str(missing)))
@@ -206,7 +208,9 @@ class TestIngestHandle:
             if k not in ("NEMANTIX_KB_USERNAME", "NEMANTIX_KB_PASSWORD")
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch("nemantix.cli.knowledge.KnowledgeBaseManager") as mock_manager_cls:
+            with patch(
+                "nemantix.cli.knowledge.KnowledgeBaseManager"
+            ) as mock_manager_cls:
                 rc = cmd_knowledge.handle_ingest(self._args(path=str(target)))
         assert rc == 1
         mock_manager_cls.assert_not_called()
@@ -317,7 +321,9 @@ class TestDeleteIndexHandle:
             if k not in ("NEMANTIX_KB_USERNAME", "NEMANTIX_KB_PASSWORD")
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch("nemantix.cli.knowledge.KnowledgeBaseManager") as mock_manager_cls:
+            with patch(
+                "nemantix.cli.knowledge.KnowledgeBaseManager"
+            ) as mock_manager_cls:
                 rc = cmd_knowledge.handle_delete_index(self._args())
         assert rc == 1
         mock_manager_cls.assert_not_called()
@@ -376,7 +382,9 @@ class TestListIndexesHandle:
             if k not in ("NEMANTIX_KB_USERNAME", "NEMANTIX_KB_PASSWORD")
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch("nemantix.cli.knowledge.KnowledgeBaseManager") as mock_manager_cls:
+            with patch(
+                "nemantix.cli.knowledge.KnowledgeBaseManager"
+            ) as mock_manager_cls:
                 rc = cmd_knowledge.handle_list_indexes(self._args())
         assert rc == 1
         mock_manager_cls.assert_not_called()

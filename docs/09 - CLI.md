@@ -35,21 +35,21 @@ nemantix run [paths ...] [options]
 
 ### General options
 
-| Flag                   | Default            | Description                                                 |
-|------------------------|--------------------|-------------------------------------------------------------|
-| `paths`                | —                  | Scripts to execute (positional, repeatable)                 |
-| `-u`, `--user-request` | stdin              | User request string                                         |
-| `--vendor`             | `openai`           | LLM vendor (env: `NEMANTIX_VENDOR`)                         |
-| `--model`              | `gpt-5-mini`       | LLM model name (env: `NEMANTIX_MODEL`)                      |
-| `--export-location`    | `coding_output`    | Directory for coded script output                           |
-| `--no-build`           | `false`            | Skip build-on-start                                         |
-| `--use-embedder`       | `false`            | Enable sentence-transformer embedder                        |
-| `--use-knowledge-base` | `false`            | Enable the Knowledge Base                                   |
-| `--log-level`          | —                  | Agent log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`        |
-| `--verify`             | —                  | Path to public key PEM for NXV signature verification       |
-| `--debug`              | `false`            | Enable the interactive CLI debugger (ndb)                   |
-| `--profile`            | `false`            | Enable the Profiler and print stats on exit                 |
-| `--toolset`            | —                  | Load extra toolsets (repeatable, see [Toolsets](#toolsets)) |
+| Flag                   | Default         | Description                                                 |
+|------------------------|-----------------|-------------------------------------------------------------|
+| `paths`                | —               | Scripts to execute (positional, repeatable)                 |
+| `-u`, `--user-request` | stdin           | User request string                                         |
+| `--vendor`             | `openai`        | LLM vendor (env: `NEMANTIX_VENDOR`)                         |
+| `--model`              | `gpt-5-mini`    | LLM model name (env: `NEMANTIX_MODEL`)                      |
+| `--export-location`    | `coding_output` | Directory for coded script output                           |
+| `--no-build`           | `false`         | Skip build-on-start                                         |
+| `--use-embedder`       | `false`         | Enable sentence-transformer embedder                        |
+| `--use-knowledge-base` | `false`         | Enable the Knowledge Base                                   |
+| `--log-level`          | —               | Agent log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`        |
+| `--verify`             | —               | Path to public key PEM for NXV signature verification       |
+| `--debug`              | `false`         | Enable the interactive CLI debugger (ndb)                   |
+| `--profile`            | `false`         | Enable the Profiler and print stats on exit                 |
+| `--toolset`            | —               | Load extra toolsets (repeatable, see [Toolsets](#toolsets)) |
 
 ### Knowledge Base options
 
@@ -130,12 +130,12 @@ iterating on the coding step independently.
 nemantix code [paths ...] [options]
 ```
 
-| Flag            | Default            | Description                            |
-|-----------------|--------------------|----------------------------------------|
-| `paths`         | —                  | NXS scripts to code (positional)       |
-| `--output`      | same dir as source | Output directory for NXC files         |
-| `--vendor`      | `openai`           | LLM vendor (env: `NEMANTIX_VENDOR`)    |
-| `--model`       | `gpt-5-mini`       | LLM model name (env: `NEMANTIX_MODEL`) |
+| Flag       | Default            | Description                            |
+|------------|--------------------|----------------------------------------|
+| `paths`    | —                  | NXS scripts to code (positional)       |
+| `--output` | same dir as source | Output directory for NXC files         |
+| `--vendor` | `openai`           | LLM vendor (env: `NEMANTIX_VENDOR`)    |
+| `--model`  | `gpt-5-mini`       | LLM model name (env: `NEMANTIX_MODEL`) |
 
 **Example:**
 
@@ -322,12 +322,12 @@ nemantix knowledge list-indexes
 ## Plugin system
 
 Subcommands are discovered via Python entry points under the
-`nemantix.cli` group. Third-party packages can add new subcommands
+`nemantix` group. Third-party packages can add new subcommands
 without modifying the core package:
 
 ```toml
 # pyproject.toml of a plugin package
-[project.entry-points."nemantix.cli"]
+[project.entry-points.nemantix]
 my-command = "mypackage.cli.my_command:register"
 ```
 
@@ -351,5 +351,6 @@ def handle(args: argparse.Namespace) -> int:
     return 0
 ```
 
-When two plugins register the same subcommand name, the last entry point
-(in installation order) wins.
+Entry points from the core `nemantix` distribution always load first, while entry points from any other distribution
+load last and win on name collision, so a third-party package can extend or override a core subcommand regardless of
+installation order.

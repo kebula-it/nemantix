@@ -418,23 +418,24 @@ class Collection(Value):
 class SchemedCollection(Collection):
     def __init__(
         self,
-        value: list[Expression] | dict[str, Expression],
+        value: list[Expression] | dict[str, Expression] | Variable,
         inferred_type: VariableTypeEnum,
         dataframe: str,
         apply_type: FrameApplyEnum,
         meta: dict[str, Meta | None],
     ):
+        # value is either a struct literal (list/dict of expressions) or a
+        # Variable reference that must resolve to a struct / JSON string at runtime.
         super().__init__(value, inferred_type, meta)
         self.dataframe = dataframe
         self.apply_type = apply_type
 
     def __str__(self):
         pos_str = self.apply_type.value
-        val_str = (
-            [str(v) for v in self.value]
-            if isinstance(self.value, list)
-            else str(self.value)
-        )
+        if isinstance(self.value, list):
+            val_str = [str(v) for v in self.value]
+        else:
+            val_str = str(self.value)
 
         if hasattr(self.dataframe, "value"):
             dataframe = str(self.dataframe.value)
@@ -444,11 +445,15 @@ class SchemedCollection(Collection):
         return f"SchemedCollection {{{dataframe}}}[{pos_str}]: {val_str})"
 
     def to_nxs(self, **kwargs) -> str:
-        inner = super().to_nxs(**kwargs)
-        if inner.startswith("(") and inner.endswith(")"):
-            list_nxs = inner
+        if isinstance(self.value, Variable):
+            operand_nxs = self.value.to_nxs(**kwargs)
         else:
-            list_nxs = f"({inner})"
+            inner = super().to_nxs(**kwargs)
+            operand_nxs = (
+                inner
+                if inner.startswith("(") and inner.endswith(")")
+                else f"({inner})"
+            )
         dataframe = (
             self.dataframe.value
             if hasattr(self.dataframe, "value")
@@ -456,8 +461,8 @@ class SchemedCollection(Collection):
         )
         frame_nxs = f"{{{dataframe}}}"
         if self.apply_type == FrameApplyEnum.PRE:
-            return f"{frame_nxs} {list_nxs}"
-        return f"{list_nxs} {frame_nxs}"
+            return f"{frame_nxs} {operand_nxs}"
+        return f"{operand_nxs} {frame_nxs}"
 
 
 class Assignment(Expression):

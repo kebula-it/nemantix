@@ -28,6 +28,8 @@ from nemantix.core.node import (
     BinaryOperationEnum,
     CallableTypeEnum,
     MicroPrompt,
+    SchemedCollection,
+    FrameApplyEnum,
 )
 from nemantix.core.parser import ParserLark
 
@@ -692,6 +694,37 @@ def test_do_statement_with_producing_schema(parser):
 
     # Check producing schema (Frame Name)
     assert do_stmt.producing_schema == "PERSON"
+
+
+def test_frame_apply_on_variable(parser):
+    """Frame application on already-defined variables, both postfix and prefix."""
+    code = """
+    action test_action >> action <<:
+        body:
+            [[loose] = [my_struct]{Person}]
+            [[strict] = {Person}[my_struct]]
+            [[nested] = [my_struct:field]{Person}]
+        __
+    __
+    """
+    body = parser.parse_string(code)[0].children
+
+    loose = body[0].value
+    assert isinstance(loose, SchemedCollection)
+    assert loose.apply_type == FrameApplyEnum.POST
+    assert isinstance(loose.value, Variable)
+    assert loose.value.name == "my_struct"
+
+    strict = body[1].value
+    assert isinstance(strict, SchemedCollection)
+    assert strict.apply_type == FrameApplyEnum.PRE
+    assert isinstance(strict.value, Variable)
+
+    nested = body[2].value
+    assert isinstance(nested, SchemedCollection)
+    assert isinstance(nested.value, Variable)
+    assert nested.value.name == "my_struct"
+    assert len(nested.value.path) == 1
 
 
 def test_do_statement_with_generative_schema(parser):

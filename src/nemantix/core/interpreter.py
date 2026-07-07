@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import json
 import math
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Iterable, List, Optional, Type, Union
@@ -1296,12 +1297,70 @@ class Interpreter:
 
             frame: nmx_runtime.Frame = self.context.frames[frame_name]
 
-        struct = self.eval_collection(collection=collection, frame=frame)
+        if isinstance(collection, nmx_nodes.Collection):
+            # incline struct literal
+            struct = self.eval_collection(collection=collection, frame=frame)
+        else:
+            # operand is a variable (or path access) that must resolve to a struct
+            # or to a string holding JSON
+            value = self.interpret_expression(collection)
+            struct = self._coerce_to_struct(value, statement=schemed_collection)
 
         if schemed_collection.apply_type == nmx_nodes.FrameApplyEnum.PRE:
             return frame.apply_prefix(struct)
 
         return frame.apply_postfix(struct)
+
+    def _coerce_to_struct(
+        self, value: Any, statement: nmx_nodes.Statement
+    ) -> nmx_runtime.Struct:
+        """Coerces an already-evaluated value into a Struct for frame application.
+        - a Struct is returned as-is;
+        - dict/list are converted natively;
+        - a string is parsed as JSON (with an LLM repair fallback for quasi-JSON);
+        - anything else raises a runtime error.
+        """
+        if isinstance(value, nmx_runtime.Struct):
+            return value
+
+        if isinstance(value, (dict, list, tuple)):
+            return nmx_runtime.Struct.from_python(value)
+
+        if isinstance(value, str):
+            parsed = self._parse_json_lenient(value, statement=statement)
+            if isinstance(parsed, (dict, list)):
+                return nmx_runtime.Struct.from_python(parsed)
+
+            err_msg = "A frame can only be applied to a structure (JSON must be an object or array)."
+            raise self._runtime_exception(err_msg, statement=statement)
+
+        err_msg = "A frame can only be applied to a structure."
+        raise self._runtime_exception(err_msg, statement=statement)
+
+    def _parse_json_lenient(self, text: str, statement: nmx_nodes.Statement) -> Any:
+        """json.loads with a self-healing fallback: on a decode error the text is
+        sent to an LLM asking for corrected, strictly-valid JSON, then reparsed."""
+        error = ''
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            error = str(e)
+            logger.info("Invalid JSON for frame application; attempting LLM repair.")
+
+        repair_prompt = (
+            "The following text is meant to be JSON but contains syntax errors. "
+            "Return ONLY the corrected, strictly-valid JSON, with no explanation, "
+            "no markdown fences, and no surrounding text.\n\n"
+            f"{text}"
+            f"\n\nErrors:\n{error}"
+        )
+
+        try:
+            response = Builtin.ask_llm(self.proxies.internal, repair_prompt)
+            return json.loads(response.text)
+        except Exception:
+            err_msg = "Could not parse operand as JSON for frame application (repair failed)."
+            raise self._runtime_exception(err_msg, statement=statement)
 
     def eval_collection(
         self,

@@ -130,6 +130,42 @@ class Struct(OrderedDict):
         return False
 
     @classmethod
+    def from_python(cls, obj: Any) -> Any:
+        """Recursively builds a Struct from a plain Python object (e.g. the result
+        of json.loads). dicts become named-field structs, lists/tuples become
+        positional structs, and scalars are returned unchanged. Nested dicts/lists
+        become nested Structs so that frame application recurses into them."""
+        if isinstance(obj, Struct):
+            return obj
+
+        if isinstance(obj, dict):
+            struct = cls()
+
+            for k, v in obj.items():
+                # numeric string keys are treated as positional
+                try:
+                    k = int(k)
+                except (ValueError, TypeError):
+                    pass
+
+                if isinstance(k, int):
+                    struct.set(cls.from_python(v))
+                else:
+                    struct.set(cls.from_python(v), key=str(k))
+
+            return struct
+
+        if isinstance(obj, (list, tuple)):
+            struct = cls()
+
+            for v in obj:
+                struct.set(cls.from_python(v))
+
+            return struct
+
+        return obj
+
+    @classmethod
     def unbox_in(cls, value: list | dict | Any) -> Any:
         if isinstance(value, Struct):
             args, kwargs = value.to_args_and_kwargs()

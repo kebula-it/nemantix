@@ -406,7 +406,6 @@ class Frame:
         """
         validated_slots = []
         valid_struct = Struct()
-        struct = self._extract_struct(struct)
 
         for k, v in struct.items():
             # skip extra fields
@@ -470,7 +469,6 @@ class Frame:
         Returns a new struct that complies with the frame, even if fields are missing.
         """
         valid_struct = Struct()
-        struct = self._extract_struct(struct)
 
         for k, v in struct.items():
             if isinstance(k, int):
@@ -499,19 +497,6 @@ class Frame:
                     valid_struct.set(value=self._get_default(slot=slot), key=k)
 
         return valid_struct
-
-    @staticmethod
-    def _extract_struct(struct: Struct) -> Struct:
-        # TODO: workaround
-        if len(struct) == 1 and "__" in struct:
-            logger.info('Extracting struct in variable in "__" field.')
-            struct = struct["__"]
-
-            if not isinstance(struct, Struct):
-                logger.warning("Extracted value is not a Struct!")
-                return Struct()
-
-        return struct
 
     def _coerce(self, value, slot: dict):
         kinds = [self._get_type(kind) for kind in slot["types"]]

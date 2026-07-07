@@ -1757,6 +1757,88 @@ def test_eval_schemed_collection_scalar_json_raises(interpreter_instance):
         )
 
 
+def _person_with_date_frame() -> nmx_runtime.Frame:
+    """PERSON with a nested DATE frame typing its `date` slot.
+
+    frame Person:
+        slot name    as TEXT
+        slot surname as TEXT
+        slot date    as DATE
+        frame Date:
+            slot day   as INT
+            slot month as INT
+            slot year  as INT
+    """
+    person = nmx_runtime.Frame("PERSON")
+    date = nmx_runtime.Frame("DATE")
+    for part in ("day", "month", "year"):
+        date.add_slot(
+            part, cardinality="1", types=[{"name": nmx_nodes.SlotTypesEnum.INT}]
+        )
+    person.add_frame(date)
+    person.add_slot(
+        "name", cardinality="1", types=[{"name": nmx_nodes.SlotTypesEnum.TEXT}]
+    )
+    person.add_slot(
+        "surname", cardinality="1", types=[{"name": nmx_nodes.SlotTypesEnum.TEXT}]
+    )
+    person.add_slot(
+        "date",
+        cardinality="1",
+        types=[{"type": nmx_nodes.SlotTypesEnum.FRAME, "name": "DATE"}],
+    )
+    return person
+
+
+def test_eval_schemed_collection_nested_frame_on_variable(interpreter_instance):
+    """{Person}[var] where var holds a struct with a nested DATE struct."""
+    interpreter_instance.context.frames["PERSON"] = _person_with_date_frame()
+
+    date = nmx_runtime.Struct()
+    date.set(7, key="day")
+    date.set(3, key="month")
+    date.set(1998, key="year")
+    person = nmx_runtime.Struct()
+    person.set("Ada", key="name")
+    person.set("Lovelace", key="surname")
+    person.set(date, key="date")
+    interpreter_instance.context.env.set(var_name="p", value=person)
+
+    result = interpreter_instance.eval_schemed_collection(
+        _schemed_var("p", nmx_nodes.FrameApplyEnum.PRE)  # prefix = strict
+    )
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("name") == "Ada"
+    inner = result.get("date")
+    assert isinstance(inner, nmx_runtime.Struct)
+    assert inner.get("day") == 7
+    assert inner.get("month") == 3
+    assert inner.get("year") == 1998
+
+
+def test_eval_schemed_collection_nested_frame_on_json(interpreter_instance):
+    """[json]{Person} where the JSON string carries a nested DATE object."""
+    interpreter_instance.context.frames["PERSON"] = _person_with_date_frame()
+    interpreter_instance.context.env.set(
+        var_name="payload",
+        value=(
+            '{"name": "Ada", "surname": "Lovelace", '
+            '"date": {"day": 7, "month": 3, "year": 1998}}'
+        ),
+    )
+
+    result = interpreter_instance.eval_schemed_collection(
+        _schemed_var("payload", nmx_nodes.FrameApplyEnum.PRE)  # strict
+    )
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("surname") == "Lovelace"
+    inner = result.get("date")
+    assert isinstance(inner, nmx_runtime.Struct)
+    assert inner.get("day") == 7
+    assert inner.get("month") == 3
+    assert inner.get("year") == 1998
+
+
 # =============================================================================
 # interpret_imports — toolset resolution error propagation
 # =============================================================================

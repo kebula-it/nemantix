@@ -1340,7 +1340,7 @@ class Interpreter:
     def _parse_json_lenient(self, text: str, statement: nmx_nodes.Statement) -> Any:
         """json.loads with a self-healing fallback: on a decode error the text is
         sent to an LLM asking for corrected, strictly-valid JSON, then reparsed."""
-        error = ''
+        error = ""
         try:
             return json.loads(text)
         except json.JSONDecodeError as e:
@@ -1359,7 +1359,9 @@ class Interpreter:
             response = Builtin.ask_llm(self.proxies.internal, repair_prompt)
             return json.loads(response.text)
         except Exception:
-            err_msg = "Could not parse operand as JSON for frame application (repair failed)."
+            err_msg = (
+                "Could not parse operand as JSON for frame application (repair failed)."
+            )
             raise self._runtime_exception(err_msg, statement=statement)
 
     def eval_collection(

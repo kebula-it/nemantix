@@ -450,9 +450,7 @@ class SchemedCollection(Collection):
         else:
             inner = super().to_nxs(**kwargs)
             operand_nxs = (
-                inner
-                if inner.startswith("(") and inner.endswith(")")
-                else f"({inner})"
+                inner if inner.startswith("(") and inner.endswith(")") else f"({inner})"
             )
         dataframe = (
             self.dataframe.value

@@ -270,3 +270,20 @@ class RegistryManager:
                 )
             )
             return session.query(stmt).scalar()
+
+    def list_indexes(self) -> list[dict]:
+        """
+        Returns metadata for every registered knowledge index.
+
+        Returns:
+            list[dict]: One dict per index with keys 'index_name', 'graph_path', 'embedding_model'.
+        """
+        with self.db.get_session() as session:
+            return [
+                {
+                    "index_name": row.index_name,
+                    "graph_path": row.graph_path,
+                    "embedding_model": row.embedding_model,
+                }
+                for row in session.query(KnowledgeIndex).all()
+            ]

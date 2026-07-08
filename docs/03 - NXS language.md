@@ -335,6 +335,15 @@ Variables use square brackets and can be accessed through a path:
 [var]          # variable
 [var:0]        # index access
 [var:name]     # key access
+[var:(expr)]   # expression access — field/index resolved at runtime
+```
+
+The expression access form evaluates any NXS expression inside the parentheses and uses the result as the field name or index. This allows dynamic, data-driven navigation of structures:
+
+```nxs
+[[struct]  = ("ciao", end: 4)]
+[[field]   = "end"]
+[[content] = [struct:([field])]]   # content = 4
 ```
 
 ### Prompted variables

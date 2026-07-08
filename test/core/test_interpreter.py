@@ -3515,3 +3515,47 @@ def test_build_context_with_required_scripts_partial_cache(interpreter_instance)
     assert "main.nxs" in interpreter_instance.context._seen_scripts
     assert "lib_fresh.nxs" in interpreter_instance.context._seen_scripts
     assert "lib_cached.nxs" in interpreter_instance.context._seen_scripts
+
+
+# =============================================================================
+# access_expr — dynamic struct field access via [struct:([field])]
+# =============================================================================
+
+
+def test_unbox_variable_access_expr_named_field(interpreter_instance):
+    """
+    Dynamic field access: [struct:([field])] where field = "end".
+    AST equivalent:
+        [struct] = ("ciao", end: 4)
+        [field]  = "end"
+        result   = [struct:([field])]   → should be 4
+    """
+    struct = nmx_runtime.Struct()
+    struct.set("ciao")
+    struct.set(4, key="end")
+    interpreter_instance.context.env.set("struct", struct)
+    interpreter_instance.context.env.set("field", "end")
+
+    # Build [struct:([field])] — a Variable whose path contains another Variable
+    field_var = make_var("field")
+    struct_var = make_var("struct", path=[field_var])
+
+    result = interpreter_instance.unbox_value(struct_var)
+    assert result == 4
+
+
+def test_unbox_variable_access_expr_index_field(interpreter_instance):
+    """
+    Dynamic index access: [struct:([idx])] where idx = 0.
+    """
+    struct = nmx_runtime.Struct()
+    struct.set("ciao")
+    struct.set(4, key="end")
+    interpreter_instance.context.env.set("struct", struct)
+    interpreter_instance.context.env.set("idx", 0)
+
+    idx_var = make_var("idx")
+    struct_var = make_var("struct", path=[idx_var])
+
+    result = interpreter_instance.unbox_value(struct_var)
+    assert result == "ciao"

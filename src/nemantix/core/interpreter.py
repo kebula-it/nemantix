@@ -1063,7 +1063,9 @@ class Interpreter:
                 raise self._runtime_exception(err_msg, statement=assignment)
 
             for field in var_path[:-1]:
-                field = self.unbox_value(field)
+                field = self._resolve_accessor(
+                    field, var_name=var_name, statement=assignment
+                )
 
                 if field not in struct:
                     # create the missing field
@@ -1080,7 +1082,9 @@ class Interpreter:
                     )
                     raise self._runtime_exception(err_msg, statement=assignment)
 
-            field = self.unbox_value(var_path[-1])
+            field = self._resolve_accessor(
+                var_path[-1], var_name=var_name, statement=assignment
+            )
             struct.update_field(key=field, value=value)
             logger.debug(f'"{path}.{field}" = {value}')
         else:
@@ -1599,6 +1603,27 @@ class Interpreter:
 
         raise __nmx_operation_exception()
 
+    def _resolve_accessor(self, node, var_name: str, statement):
+        """Evaluate a field accessor node and validate it as an index/key.
+
+        The grammar allows any expression as an accessor (``[x:<expr>]``), so we
+        evaluate it via ``interpret_expression`` and then require the result to be
+        an integer index or a string field name. Anything else (a Struct/list used
+        as an index, a float, a bool, none, ...) is rejected.
+        """
+        key = self.interpret_expression(node)
+
+        # bool is an int subclass but is never a valid index/key
+        if isinstance(key, bool) or not isinstance(key, (int, str)):
+            actual = type(key).__name__
+            err_msg = (
+                f'Cannot index "[{var_name}]" with a "{actual}": a field accessor '
+                f"must be an integer index or a string field name."
+            )
+            raise self._runtime_exception(err_msg, statement=statement)
+
+        return key
+
     def unbox_value(self, value: nmx_nodes.Variable | nmx_nodes.SingleValue | None):
         if value is None:
             return None
@@ -1618,7 +1643,9 @@ class Interpreter:
 
                 # navigate the path
                 for name in value_path[:-1]:
-                    name = self.unbox_value(name)
+                    name = self._resolve_accessor(
+                        name, var_name=value.name, statement=value
+                    )
 
                     if name not in struct:
                         var = None
@@ -1630,7 +1657,9 @@ class Interpreter:
                         struct = var
                         continue
 
-                name = self.unbox_value(value=value_path[-1])
+                name = self._resolve_accessor(
+                    value_path[-1], var_name=value.name, statement=value
+                )
                 if len(value_path) == 1:
                     return struct.get(name, None)
 

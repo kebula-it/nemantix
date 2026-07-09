@@ -229,7 +229,7 @@ variable: "[" (var_path prompt_line_variable? | prompt_line_variable) "]"
 var_path: CNAME (":" var_accessor)*
 var_accessor: CNAME -> access_key
        | INT   -> access_index
-       | "(" inner_expression ")" -> access_expr
+       | inner_expression -> access_expr
 ident_list: CNAME ("," CNAME)*
 // --- Expression & Operators ---
 // Precedence Order (Lowest to Highest):

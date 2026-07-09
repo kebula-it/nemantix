@@ -756,6 +756,8 @@ class AstTransformer(Transformer):
                 prompt = it
             elif isinstance(it, SingleValue):
                 path.append(it)
+            elif isinstance(it, Expression):
+                path.append(it)
 
         if name in RESERVED_VAR_NAMES:
             raise NemantixParserException(

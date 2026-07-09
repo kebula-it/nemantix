@@ -66,7 +66,15 @@ action NormalizeInput >> Demonstrate prompts, variables, calls, structures, and 
 
         # VARIABLES:
         # - Variables are in square brackets: [x]
-        # - Accessors use `:` for keys/indices/expressions: [m:key], [arr:0], [x:<expr>]
+        # - Accessors use `:` for keys/indices/expressions: [m:key], [arr:0], [m:"01"], [m:[i]]
+        #   - [m:key]     key access — a bare identifier is a field name
+        #   - [arr:0]     index access — an integer literal is a POSITIONAL index
+        #   - [m:"01"]    string access — a quoted string is a field name (use it for numeric-looking names)
+        #   - [m:<expr>]  expression access — ANY expression is evaluated at runtime and its result
+        #                 selects the field, e.g. [m:[i]], [m:1 + [i]]. (Wrap in (...) only to group.)
+        #   NOTE: [x:5] is POSITIONAL index 5, while [x:"5"] is the FIELD named "5" — they differ.
+        #   An accessor must resolve to an integer index or a string field name; using a
+        #   struct/collection as an index (e.g. [x:(1, 2)]) is a runtime error.
         # - You can also embed a micro-prompt in a variable token (prompt runs until `]`) for verification
         [ [clean_text >> cleaned text <<] = [raw_text] ?? "" ]  # EXPRESSIONS: outer [] wraps an expression; `??` is fallback
         # - Keywords (e.g., when, from, use, as, with, ...) are forbidden as variable names!
@@ -95,6 +103,9 @@ action NormalizeInput >> Demonstrate prompts, variables, calls, structures, and 
         [ [user:student] = false ]
         [ [user:worker] = true ]
         [ [prepared_users] = [users] ?? ([user]) ]
+        # - EXPRESSION ACCESS: any expression can be an accessor; its result selects the field
+        [ [field_name] = "name" ]
+        [ [dynamic_value] = [user:[field_name]] ]  # equivalent to [user:name] → "alice"
 
         # STRUCTURE / FRAME APPLY:
         # - Apply a frame to a list literal with {Qualified.Name} (before or after the list).

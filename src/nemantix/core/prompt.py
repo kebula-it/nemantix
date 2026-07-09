@@ -66,7 +66,12 @@ action NormalizeInput >> Demonstrate prompts, variables, calls, structures, and 
 
         # VARIABLES:
         # - Variables are in square brackets: [x]
-        # - Accessors use `:` for keys/indices/expressions: [m:key], [arr:0], [x:<expr>]
+        # - Accessors use `:` for keys/indices/expressions: [m:key], [arr:0], [struct:([field])]
+        #   - [m:key]          key access  (literal field name)
+        #   - [arr:0]          index access (literal integer)
+        #   - [struct:([field])] expression access — the expression in (...) is evaluated at runtime
+        #     and its result is used as the field name or index; useful for programmatic struct navigation.
+        #     Example: if [field] = "name", then [user:([field])] is equivalent to [user:name].
         # - You can also embed a micro-prompt in a variable token (prompt runs until `]`) for verification
         [ [clean_text >> cleaned text <<] = [raw_text] ?? "" ]  # EXPRESSIONS: outer [] wraps an expression; `??` is fallback
         # - Keywords (e.g., when, from, use, as, with, ...) are forbidden as variable names!
@@ -95,6 +100,9 @@ action NormalizeInput >> Demonstrate prompts, variables, calls, structures, and 
         [ [user:student] = false ]
         [ [user:worker] = true ]
         [ [prepared_users] = [users] ?? ([user]) ]
+        # - EXPRESSION ACCESS: use [struct:([expr])] to access a field whose name is computed at runtime
+        [ [field_name] = "name" ]
+        [ [dynamic_value] = [user:([field_name])] ]  # equivalent to [user:name] → "alice"
 
         # STRUCTURE / FRAME APPLY:
         # - Apply a frame to a list literal with {Qualified.Name} (before or after the list).

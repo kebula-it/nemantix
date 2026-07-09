@@ -108,11 +108,21 @@ action NormalizeInput >> Demonstrate prompts, variables, calls, structures, and 
         [ [dynamic_value] = [user:[field_name]] ]  # equivalent to [user:name] → "alice"
 
         # STRUCTURE / FRAME APPLY:
-        # - Apply a frame to a list literal with {Qualified.Name} (before or after the list).
-        # Prefix application requires the Structured Collection to conform to the frame definition;
-        # Postfix application interprets the structure in the context of the frame, even if it is partial or incomplete.
+        # - Apply a frame with {Qualified.Name} placed BEFORE (prefix) or AFTER (suffix) an operand.
+        #   Prefix (strict): the structure must fully conform to the frame, otherwise it yields `none`.
+        #   Postfix (loose): interprets the structure in the frame's terms even if partial (missing slots get defaults, values are coerced).
+        # - Frame application returns the framed struct, or `none` when it cannot be applied.
+        # - The operand can be a LIST LITERAL:
         [ [constrained] = {PERSON}( name: "alice", age: 30, tags: ("dev", "ops") ) ]
         [ [partial] = ( name: "bob", tags: ("ml", "ai") ){PERSON} ]
+        # - ...or an ALREADY-DEFINED VARIABLE (including path access like [x:field]):
+        [ [typed_user] = [user]{PERSON} ]      # postfix (loose) on the [user] struct above
+        [ [checked_user] = {PERSON}[user] ]    # prefix (strict); the struct or `none`
+        # - ...or a VARIABLE HOLDING A JSON STRING: it is parsed into a struct first
+        #   (minor/"quasi"-JSON errors are auto-repaired), then the frame is applied.
+        [ [json_user] = [raw_json]{PERSON} ]   # [raw_json] is TEXT containing a JSON object
+        # - Nested frames are validated automatically: frame-typed slots recurse into nested structs
+        #   for literals, variables, and JSON alike.
 
         # META EXPRESSIONS:
         # - {{Name@qualified.path}} can appear in expressions/metadata to inject runtime/meta values.

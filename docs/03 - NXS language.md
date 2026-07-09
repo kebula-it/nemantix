@@ -329,22 +329,27 @@ Examples:
 
 ### Variables
 
-Variables use square brackets and can be accessed through a path:
+Variables use square brackets and can be accessed through a path of `:`-separated accessors:
 
 ```nxs
 [var]          # variable
-[var:0]        # index access
-[var:name]     # key access
-[var:(expr)]   # expression access — field/index resolved at runtime
+[var:0]        # index access   — an integer literal is a positional index
+[var:name]     # key access     — a bare identifier is a field name
+[var:"01"]     # string access  — a quoted string is a field name (any name, incl. numeric-looking)
+[var:expr]     # expression access — field/index resolved at runtime
 ```
 
-The expression access form evaluates any NXS expression inside the parentheses and uses the result as the field name or index. This allows dynamic, data-driven navigation of structures:
+An accessor may be **any expression**: it is evaluated at runtime and its result is used as the field name (string) or index (integer). This allows dynamic, data-driven navigation of structures:
 
 ```nxs
 [[struct]  = ("ciao", end: 4)]
 [[field]   = "end"]
-[[content] = [struct:([field])]]   # content = 4
+[[content] = [struct:[field]]]   # content = 4   (parentheses are only needed to group)
 ```
+
+For numeric-looking field names, note that an integer literal is a **positional index** while a quoted string is a **field name**. For a struct `("0": 1, "5": 5)`, `[x:0]` reads position `0`, whereas `[x:"5"]` reads the field named `"5"`.
+
+An accessor must resolve to an integer index or a string field name. Using a structure/collection as an index (e.g. `[x:(1, 2, 3)]`) is a runtime error.
 
 ### Prompted variables
 

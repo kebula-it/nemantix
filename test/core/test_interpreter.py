@@ -291,35 +291,27 @@ def _struct_with_mixed_keys():
 
 
 def test_field_accessor_string_reaches_named_field(interpreter_instance):
-    interpreter_instance.context.env.set(
-        var_name="x", value=_struct_with_mixed_keys()
-    )
+    interpreter_instance.context.env.set(var_name="x", value=_struct_with_mixed_keys())
     var = make_var("x", path=[make_value("01", _STRING_TYPE)])
     assert interpreter_instance.unbox_value(var) == "val"
 
 
 def test_field_accessor_variable_resolves(interpreter_instance):
-    interpreter_instance.context.env.set(
-        var_name="x", value=_struct_with_mixed_keys()
-    )
+    interpreter_instance.context.env.set(var_name="x", value=_struct_with_mixed_keys())
     interpreter_instance.context.env.set(var_name="index", value="01")
     var = make_var("x", path=[make_var("index")])
     assert interpreter_instance.unbox_value(var) == "val"
 
 
 def test_field_accessor_int_index(interpreter_instance):
-    interpreter_instance.context.env.set(
-        var_name="x", value=_struct_with_mixed_keys()
-    )
+    interpreter_instance.context.env.set(var_name="x", value=_struct_with_mixed_keys())
     var = make_var("x", path=[make_value(0)])
     assert interpreter_instance.unbox_value(var) == 10
 
 
 def test_struct_accessor_rejected_on_read(interpreter_instance):
     """[x:(1, 2)] — a struct/collection cannot be used as a field index."""
-    interpreter_instance.context.env.set(
-        var_name="x", value=_struct_with_mixed_keys()
-    )
+    interpreter_instance.context.env.set(var_name="x", value=_struct_with_mixed_keys())
     coll = make_node(
         nmx_nodes.Collection,
         value=[make_value(1), make_value(2)],
@@ -336,22 +328,16 @@ def test_struct_accessor_rejected_on_read(interpreter_instance):
 
 def test_struct_valued_variable_accessor_rejected(interpreter_instance):
     """[x:[y]] where [y] holds a struct — caught only at runtime."""
-    interpreter_instance.context.env.set(
-        var_name="x", value=_struct_with_mixed_keys()
-    )
+    interpreter_instance.context.env.set(var_name="x", value=_struct_with_mixed_keys())
     interpreter_instance.context.env.set(var_name="y", value=nmx_runtime.Struct())
     var = make_var("x", path=[make_var("y")])
-    with pytest.raises(
-        nmx_ex.NemantixRuntimeException, match=r"Cannot index"
-    ):
+    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"Cannot index"):
         interpreter_instance.unbox_value(var)
 
 
 def test_struct_accessor_rejected_on_assignment(interpreter_instance):
     """[x:(1, 2)] = v — the guard also applies on the assignment path."""
-    interpreter_instance.context.env.set(
-        var_name="x", value=_struct_with_mixed_keys()
-    )
+    interpreter_instance.context.env.set(var_name="x", value=_struct_with_mixed_keys())
     coll = make_node(
         nmx_nodes.Collection,
         value=[make_value(1), make_value(2)],

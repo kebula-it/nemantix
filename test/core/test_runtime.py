@@ -259,6 +259,18 @@ def test_struct_from_python_scalar_passthrough():
     assert Struct.from_python("hi") == "hi"
 
 
+def test_struct_from_python_numeric_string_keys_are_named_fields():
+    """Numeric-looking JSON keys stay named string fields (no int() mangling),
+    mirroring how a struct literal ("0": ..., "01": ...) is built."""
+    s = Struct.from_python({"0": 10, "01": "val", "5": 5})
+
+    # preserved verbatim as named fields (in particular "01" is NOT collapsed to 1)
+    assert s.get("0") == 10
+    assert s.get("01") == "val"
+    assert s.get("5") == 5
+    assert not s.can_be_seen_as_list()  # they are named fields, not positional
+
+
 def test_frame_apply_prefix_on_from_python_nested():
     """A nested frame validates a Struct built from a plain (JSON-like) dict."""
     root = Frame("ROOT")

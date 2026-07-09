@@ -141,17 +141,12 @@ class Struct(OrderedDict):
         if isinstance(obj, dict):
             struct = cls()
 
+            # Every dict key becomes a named string field — mirroring how a struct
+            # literal ("0": ..., "01": ...) is built. This keeps JSON-built structs
+            # consistent with literals (e.g. "01" stays the field "01", not int 1)
+            # and reachable via a string accessor like [x:"01"].
             for k, v in obj.items():
-                # numeric string keys are treated as positional
-                try:
-                    k = int(k)
-                except (ValueError, TypeError):
-                    pass
-
-                if isinstance(k, int):
-                    struct.set(cls.from_python(v))
-                else:
-                    struct.set(cls.from_python(v), key=str(k))
+                struct.set(cls.from_python(v), key=str(k))
 
             return struct
 

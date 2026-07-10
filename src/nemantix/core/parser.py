@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -91,6 +92,7 @@ RESERVED_VAR_NAMES = [
     "with",
     "include",
     "mandate",
+    "guidelines",  # deprecated alias for mandate
     "if",
     "elif",
     "else",
@@ -114,6 +116,7 @@ RESERVED_VAR_NAMES = [
     "frozen",
     "__deliberate",
     "__mandate",
+    "__guidelines",  # deprecated alias for __mandate
     "__plan",
     "__action",
     "__body",
@@ -476,6 +479,19 @@ class AstTransformer(Transformer):
             text,
             meta={"file_meta": self._build_file_meta(meta), "node_meta": node_meta},
         )
+
+    @v_args(meta=True)
+    def guidelines(self, meta, items):
+        """Deprecated alias for mandate. Emits a DeprecationWarning and delegates."""
+        warnings.warn(
+            "The 'guidelines' keyword is deprecated; use 'mandate' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.warning(
+            "Deprecated NXS keyword 'guidelines' used; migrate to 'mandate'."
+        )
+        return self.mandate(meta, items)
 
     def plan_type(self, items):
         return items[0].value
@@ -2001,6 +2017,7 @@ TOKEN_MAP = {
     "_END_IN": "'__in'",
     "_END_OUT": "'__out'",
     "_END_MANDATE": "'__mandate'",
+    "_END_GUIDELINES": "'__guidelines'",
     "_WHEN": "'when'",
     "_FROM": "'from'",
     "_USE": "'use'",
@@ -2042,6 +2059,7 @@ TOKEN_MAP = {
     "_EACH": "'each'",
     "_END_DO": "'__do'",
     "_MANDATE": "'mandate'",
+    "_GUIDELINES": "'guidelines'",
     "_IN": "'in'",
     "_MAX": "'max'",
     "_NONE": "'none'",

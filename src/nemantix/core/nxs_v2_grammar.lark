@@ -46,7 +46,7 @@ toolset_body: (prompt_block | prompt_line)
 
 
 // --- Top Level Structure ---
-deliberate: intentable_prefix? DELIBERATE deliberate_name _WHEN deliberate_condition ":"  mandate? action* plan? (_END_BLOCK | _END_DELIBERATE)
+deliberate: intentable_prefix? DELIBERATE deliberate_name _WHEN deliberate_condition ":"  (mandate | guidelines)? action* plan? (_END_BLOCK | _END_DELIBERATE)
 deliberate_name: CNAME
 deliberate_condition: prompt_block
 
@@ -70,6 +70,7 @@ wildcard: "*"
 
 
 mandate: _MANDATE ":" (prompt_line | prompt_block)+ (_END_BLOCK | _END_MANDATE)
+guidelines: _GUIDELINES ":" (prompt_line | prompt_block)+ (_END_BLOCK | _END_GUIDELINES)  // deprecated alias for mandate
 
 
 // --- Planning & Actions ---
@@ -443,6 +444,7 @@ _FROM: "from"
 _TOOLSET: "toolset"
 _USE: "use"
 _MANDATE: "mandate"
+_GUIDELINES: "guidelines"  // deprecated alias for _MANDATE
 _PLAN: "plan"
 ACTION: "action"
 _IN: "in"
@@ -497,6 +499,7 @@ _SHORT_NONE: "_"
 _END_BLOCK: "__"
 _END_DELIBERATE: "__deliberate"
 _END_MANDATE: "__mandate"
+_END_GUIDELINES: "__guidelines"  // deprecated alias for _END_MANDATE
 _END_PLAN: "__plan"
 _END_ACTION: "__action"
 _END_BODY: "__body"

@@ -60,6 +60,8 @@ A `deliberate` provides four key elements:
 The `mandate` section is a contract for the plan: it specifies expected flow and invariants.
 The Executor/Coder should treat mandate as the ground truth for what the plan must achieve, even if actions are partially generated or completed at runtime.
 
+> **Compatibility note:** The `guidelines` keyword is a deprecated alias for `mandate` and will be removed in a future version. Scripts using `guidelines:` / `__guidelines` continue to work but emit a `DeprecationWarning` at parse time. Migrate to `mandate:` / `__mandate`.
+
 #### Plan
 
 Similarly to actions, the plan defines:
@@ -139,7 +141,7 @@ Each block has a start delimiter (e.g. `mandate:`, `in:`, `out:`, `plan:`, `body
 
 - the generic terminator `__`, or
 - a specific terminator such as:
-  - `__mandate`
+  - `__mandate` (or `__guidelines`, deprecated)
   - `__in`
   - `__out`
   - `__plan`

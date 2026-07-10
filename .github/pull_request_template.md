@@ -7,6 +7,7 @@ Briefly describe the issue or feature being addressed.
 - [ ] Bug fix
 - [ ] New feature
 - [ ] Refactoring
+- [ ] Prompt
 - [ ] Documentation
 - [ ] Other (describe below)
 

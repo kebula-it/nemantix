@@ -593,9 +593,7 @@ class Expertise:
     ) -> str:
         """Build the NXS text for a newly promoted deliberate (empty plan)."""
         safe_when = (when or "").replace("<<<", "<<").replace(">>>", ">>").strip()
-        safe_mandate = (
-            (mandate or "").replace("<<<", "<<").replace(">>>", ">>").strip()
-        )
+        safe_mandate = (mandate or "").replace("<<<", "<<").replace(">>>", ">>").strip()
 
         return self.PROMOTED_DELIBERATE_TEMPLATE.format(
             name=name, when=safe_when, mandate=safe_mandate

@@ -143,7 +143,9 @@ def test_guidelines_deprecated_alias(parser):
     deliberate = next(n for n in nodes if isinstance(n, Deliberate))
     assert deliberate.mandate.prompt == "ensure precision"
 
-    deprecation_messages = [str(w.message) for w in caught if issubclass(w.category, DeprecationWarning)]
+    deprecation_messages = [
+        str(w.message) for w in caught if issubclass(w.category, DeprecationWarning)
+    ]
     assert any("guidelines" in m and "mandate" in m for m in deprecation_messages)
 
 

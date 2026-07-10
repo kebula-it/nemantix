@@ -1578,9 +1578,7 @@ class Coder:
         semantics = {
             "deliberate_name": deliberate.name,
             "when": deliberate.when.prompt,
-            "mandate": deliberate.mandate.prompt
-            if deliberate.mandate
-            else None,
+            "mandate": deliberate.mandate.prompt if deliberate.mandate else None,
         }
 
         return semantics

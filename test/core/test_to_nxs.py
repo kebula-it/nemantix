@@ -631,7 +631,7 @@ def test_frame_with_multiline_prompt():
     frame = node.Frame(name="Doc", meta=_meta())
     frame.children = [prompt_child]
     result = frame.to_nxs()
-    assert ">>> line one\nline two <<<" in result
+    assert "  >>> line one\n  line two <<<" in result
     _parse_toplevel(result)
 
 

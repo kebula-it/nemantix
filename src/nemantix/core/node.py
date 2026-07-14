@@ -177,10 +177,8 @@ class PythonToolDeclaration(LeafStatement):
     def __str__(self):
         return f"PythonToolDecl: {self.name} - {self.prompt}"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner_pad = "    " * (indent + 1)
-        return f"{pad}toolset {self.name}:\n{inner_pad}{self.prompt.to_nxs(**kwargs)}\n{pad}__toolset"
+    def to_nxs(self, **kwargs) -> str:
+        return f"toolset {self.name}:\n  {self.prompt.to_nxs(**kwargs)}\n__toolset"
 
 
 # =============================================================================
@@ -908,17 +906,16 @@ class RepeatBlock(BlockStatement):
         super().__init__(meta)
         self.prompt = prompt
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner_pad = "    " * (indent + 1)
+    def to_nxs(self, **kwargs) -> str:
         prompt_nxs = (
             self.prompt.to_nxs(**kwargs) if self.prompt is not None else ">> <<"
         )
-        body = "\n".join(
-            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
-            for c in self.children
-        )
-        return f"{pad}repeat {prompt_nxs}:\n{body}\n{pad}__repeat"
+        body_lines: list[str] = []
+        for c in self.children:
+            for line in _child_body_nxs(c, **kwargs).splitlines():
+                body_lines.append("  " + line)
+        body = "\n".join(body_lines)
+        return f"repeat {prompt_nxs}:\n{body}\n__repeat"
 
 
 class RepeatEachBlock(RepeatBlock):
@@ -933,18 +930,17 @@ class RepeatEachBlock(RepeatBlock):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"RepeatEachBlock(each={self.each}, as_vars={self.as_vars}) \n{children_str}"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner_pad = "    " * (indent + 1)
+    def to_nxs(self, **kwargs) -> str:
         each_nxs = self.each.to_nxs(**kwargs)
         as_str = (
             " as " + ", ".join(f"[{v}]" for v in self.as_vars) if self.as_vars else ""
         )
-        body = "\n".join(
-            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
-            for c in self.children
-        )
-        return f"{pad}repeat each {each_nxs}{as_str}:\n{body}\n{pad}__repeat"
+        body_lines: list[str] = []
+        for c in self.children:
+            for line in _child_body_nxs(c, **kwargs).splitlines():
+                body_lines.append("  " + line)
+        body = "\n".join(body_lines)
+        return f"repeat each {each_nxs}{as_str}:\n{body}\n__repeat"
 
 
 class RepeatTimesBlock(RepeatBlock):
@@ -959,15 +955,14 @@ class RepeatTimesBlock(RepeatBlock):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"RepeatTimesBlock(times={self.times} as_vars={self.as_vars})\n{children_str})"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner_pad = "    " * (indent + 1)
+    def to_nxs(self, **kwargs) -> str:
         as_str = f" as [{self.as_vars}]" if self.as_vars is not None else ""
-        body = "\n".join(
-            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
-            for c in self.children
-        )
-        return f"{pad}repeat {self.times} times{as_str}:\n{body}\n{pad}__repeat"
+        body_lines: list[str] = []
+        for c in self.children:
+            for line in _child_body_nxs(c, **kwargs).splitlines():
+                body_lines.append("  " + line)
+        body = "\n".join(body_lines)
+        return f"repeat {self.times} times{as_str}:\n{body}\n__repeat"
 
 
 class RepeatWhileBlock(RepeatBlock):
@@ -985,9 +980,7 @@ class RepeatWhileBlock(RepeatBlock):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"RepeatWhileBlock(condition={self.condition}, max={self.max}) \n{children_str})"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner_pad = "    " * (indent + 1)
+    def to_nxs(self, **kwargs) -> str:
         raw_cond = self.condition.to_nxs(**kwargs)
         cond_nxs = (
             raw_cond if isinstance(self.condition, MicroPrompt) else f"[{raw_cond}]"
@@ -1003,11 +996,12 @@ class RepeatWhileBlock(RepeatBlock):
                 if raw_max.startswith("[") and raw_max.endswith("]")
                 else f" max [{raw_max}]"
             )
-        body = "\n".join(
-            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
-            for c in self.children
-        )
-        return f"{pad}repeat while {cond_nxs}{max_str}:\n{body}\n{pad}__repeat"
+        body_lines: list[str] = []
+        for c in self.children:
+            for line in _child_body_nxs(c, **kwargs).splitlines():
+                body_lines.append("  " + line)
+        body = "\n".join(body_lines)
+        return f"repeat while {cond_nxs}{max_str}:\n{body}\n__repeat"
 
 
 class RepeatUntilBlock(RepeatBlock):
@@ -1025,9 +1019,7 @@ class RepeatUntilBlock(RepeatBlock):
         children_str = ", ".join(str(c) for c in self.children)
         return f"RepeatUntilBlock(condition={self.condition}, max={self.max}) \n{children_str})"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner_pad = "    " * (indent + 1)
+    def to_nxs(self, **kwargs) -> str:
         raw_cond = self.condition.to_nxs(**kwargs)
         cond_nxs = (
             raw_cond if isinstance(self.condition, MicroPrompt) else f"[{raw_cond}]"
@@ -1043,11 +1035,12 @@ class RepeatUntilBlock(RepeatBlock):
                 if raw_max.startswith("[") and raw_max.endswith("]")
                 else f" max [{raw_max}]"
             )
-        body = "\n".join(
-            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
-            for c in self.children
-        )
-        return f"{pad}repeat until {cond_nxs}{max_str}:\n{body}\n{pad}__repeat"
+        body_lines: list[str] = []
+        for c in self.children:
+            for line in _child_body_nxs(c, **kwargs).splitlines():
+                body_lines.append("  " + line)
+        body = "\n".join(body_lines)
+        return f"repeat until {cond_nxs}{max_str}:\n{body}\n__repeat"
 
 
 # =============================================================================
@@ -1069,19 +1062,18 @@ class IfBlock(BlockStatement):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"If({self.condition}): \n{children_str}"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner_pad = "    " * (indent + 1)
+    def to_nxs(self, **kwargs) -> str:
         if self.condition:
             raw = self.condition.to_nxs(**kwargs)
             cond_nxs = raw if isinstance(self.condition, MicroPrompt) else f"[{raw}]"
         else:
             cond_nxs = ""
-        body = "\n".join(
-            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
-            for c in self.children
-        )
-        return f"{pad}if {cond_nxs}:\n{body}"
+        body_lines: list[str] = []
+        for c in self.children:
+            for line in _child_body_nxs(c, **kwargs).splitlines():
+                body_lines.append("  " + line)
+        body = "\n".join(body_lines)
+        return f"if {cond_nxs}:\n{body}"
 
 
 class ElifBlock(BlockStatement):
@@ -1100,19 +1092,18 @@ class ElifBlock(BlockStatement):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"Elif({self.condition}): \n{children_str}"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner_pad = "    " * (indent + 1)
+    def to_nxs(self, **kwargs) -> str:
         if self.condition:
             raw = self.condition.to_nxs(**kwargs)
             cond_nxs = raw if isinstance(self.condition, MicroPrompt) else f"[{raw}]"
         else:
             cond_nxs = ""
-        body = "\n".join(
-            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
-            for c in self.children
-        )
-        return f"{pad}elif {cond_nxs}:\n{body}"
+        body_lines: list[str] = []
+        for c in self.children:
+            for line in _child_body_nxs(c, **kwargs).splitlines():
+                body_lines.append("  " + line)
+        body = "\n".join(body_lines)
+        return f"elif {cond_nxs}:\n{body}"
 
 
 class ElseBlock(BlockStatement):
@@ -1125,14 +1116,13 @@ class ElseBlock(BlockStatement):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"Else: \n{children_str}"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner_pad = "    " * (indent + 1)
-        body = "\n".join(
-            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
-            for c in self.children
-        )
-        return f"{pad}else:\n{body}"
+    def to_nxs(self, **kwargs) -> str:
+        body_lines: list[str] = []
+        for c in self.children:
+            for line in _child_body_nxs(c, **kwargs).splitlines():
+                body_lines.append("  " + line)
+        body = "\n".join(body_lines)
+        return f"else:\n{body}"
 
 
 class ConditionBlock(BlockStatement):
@@ -1154,10 +1144,9 @@ class ConditionBlock(BlockStatement):
         children_str = "\n   - ".join(str(c) for c in self.children)
         return f"ConditionBlock: \n{children_str}"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        parts = [c.to_nxs(indent=indent, **kwargs) for c in self.children]
-        return "\n".join(parts) + f"\n{pad}__if"
+    def to_nxs(self, **kwargs) -> str:
+        parts = [c.to_nxs(**kwargs) for c in self.children]
+        return "\n".join(parts) + "\n__if"
 
 
 # =============================================================================
@@ -1243,32 +1232,30 @@ class ActionBlock(QualifiableBlock):
         qual_str = f",[{self.qualifier}]" if self.qualifier else ""
         return f"Action{qual_str} '{self.name}' {prompt_str}with input={self.input}, output={self.output}\n {children_str}"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner = "    " * (indent + 1)
-        inner2 = "    " * (indent + 2)
+    def to_nxs(self, **kwargs) -> str:
         lines = []
         if self.qualifier:
-            lines.append(
-                f"{pad}@completion: {self.qualifier[0].value}->{self.qualifier[1].value}"
-            )
+            q0, q1 = self.qualifier
+            qual_str = q0.value if q0 == q1 else f"{q0.value}->{q1.value}"
+            lines.append(f"@completion: {qual_str}")
         prompt_nxs = f" {self.prompt.to_nxs(**kwargs)}" if self.prompt else ""
-        lines.append(f"{pad}action {self.name}{prompt_nxs}:")
+        lines.append(f"action {self.name}{prompt_nxs}:")
         if self.input:
-            lines.append(f"{inner}in:")
+            lines.append("  in:")
             for inp in self.input:
-                lines.append(inner2 + inp.to_nxs(**kwargs))
-            lines.append(f"{inner}__in")
+                lines.append("    " + inp.to_nxs(**kwargs))
+            lines.append("  __in")
         if self.output:
-            lines.append(f"{inner}out:")
+            lines.append("  out:")
             for out in self.output:
-                lines.append(inner2 + out.to_nxs(**kwargs))
-            lines.append(f"{inner}__out")
-        lines.append(f"{inner}body:")
+                lines.append("    " + out.to_nxs(**kwargs))
+            lines.append("  __out")
+        lines.append("  body:")
         for child in self.children:
-            lines.append(_child_body_nxs(child, indent=indent + 2, **kwargs))
-        lines.append(f"{inner}__body")
-        lines.append(f"{pad}__action")
+            child_nxs = _child_body_nxs(child, **kwargs)
+            lines.extend("    " + line for line in child_nxs.splitlines())
+        lines.append("  __body")
+        lines.append("__action")
         return "\n".join(lines)
 
 
@@ -1363,31 +1350,29 @@ class PlanBlock(QualifiableBlock):
         qual_str = f",[{self.qualifier}]" if self.qualifier else ""
         return f"Plan{qual_str} with input={self.input}, output={self.output}\n {children_str}"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner = "    " * (indent + 1)
-        inner2 = "    " * (indent + 2)
+    def to_nxs(self, **kwargs) -> str:
         lines = []
         if self.qualifier:
-            lines.append(
-                f"{pad}@completion: {self.qualifier[0].value}->{self.qualifier[1].value}"
-            )
-        lines.append(f"{pad}plan:")
+            q0, q1 = self.qualifier
+            qual_str = q0.value if q0 == q1 else f"{q0.value}->{q1.value}"
+            lines.append(f"@completion: {qual_str}")
+        lines.append("plan:")
         if self.input:
-            lines.append(f"{inner}in:")
+            lines.append("  in:")
             for inp in self.input:
-                lines.append(inner2 + inp.to_nxs(**kwargs))
-            lines.append(f"{inner}__in")
+                lines.append("    " + inp.to_nxs(**kwargs))
+            lines.append("  __in")
         if self.output:
-            lines.append(f"{inner}out:")
+            lines.append("  out:")
             for out in self.output:
-                lines.append(inner2 + out.to_nxs(**kwargs))
-            lines.append(f"{inner}__out")
-        lines.append(f"{inner}body:")
+                lines.append("    " + out.to_nxs(**kwargs))
+            lines.append("  __out")
+        lines.append("  body:")
         for child in self.children:
-            lines.append(_child_body_nxs(child, indent=indent + 2, **kwargs))
-        lines.append(f"{inner}__body")
-        lines.append(f"{pad}__plan")
+            child_nxs = _child_body_nxs(child, **kwargs)
+            lines.extend("    " + line for line in child_nxs.splitlines())
+        lines.append("  __body")
+        lines.append("__plan")
         return "\n".join(lines)
 
 
@@ -1460,26 +1445,26 @@ class Deliberate(QualifiableBlock):
             f"\n   {children_str}"
         )
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner = "    " * (indent + 1)
+    def to_nxs(self, **kwargs) -> str:
         lines = []
         if self.qualifier:
-            lines.append(
-                f"{pad}@completion: {self.qualifier[0].value}->{self.qualifier[1].value}"
-            )
+            q0, q1 = self.qualifier
+            qual_str = q0.value if q0 == q1 else f"{q0.value}->{q1.value}"
+            lines.append(f"@completion: {qual_str}")
         when_nxs = self.when.to_nxs(**kwargs) if self.when else ""
-        lines.append(f"{pad}deliberate {self.name} when {when_nxs}:")
+        lines.append(f"deliberate {self.name} when {when_nxs}:")
         if self.mandate:
-            lines.append(f"{inner}mandate:")
-            lines.append(inner + self.mandate.to_nxs(**kwargs))
-            lines.append(f"{inner}__mandate")
+            lines.append("  mandate:")
+            lines.append("  " + self.mandate.to_nxs(**kwargs))
+            lines.append("  __mandate")
         for action in self.generated_actions:
-            lines.append(action.to_nxs(indent=indent + 1, **kwargs))
+            action_nxs = action.to_nxs(**kwargs)
+            lines.extend("  " + line for line in action_nxs.splitlines())
         plan = self.get_plan()
         if plan:
-            lines.append(plan.to_nxs(indent=indent + 1, **kwargs))
-        lines.append(f"{pad}__deliberate")
+            plan_nxs = plan.to_nxs(**kwargs)
+            lines.extend("  " + line for line in plan_nxs.splitlines())
+        lines.append("__deliberate")
         return "\n".join(lines)
 
 
@@ -1564,11 +1549,10 @@ class Frame(BlockStatement):
         name = f"'{self.name}' " if self.name is not None else ""
         return f"Frame {name}: \n{children_str}"
 
-    def to_nxs(self, indent: int = 0, **kwargs) -> str:
-        pad = "    " * indent
-        inner_pad = "    " * (indent + 1)
-        body = "\n".join(
-            inner_pad + _child_body_nxs(c, indent=indent + 1, **kwargs)
-            for c in self.children
-        )
-        return f"{pad}frame {self.name}:\n{body}\n{pad}__frame"
+    def to_nxs(self, **kwargs) -> str:
+        body_lines: list[str] = []
+        for c in self.children:
+            for line in _child_body_nxs(c, **kwargs).splitlines():
+                body_lines.append("  " + line)
+        body = "\n".join(body_lines)
+        return f"frame {self.name}:\n{body}\n__frame"

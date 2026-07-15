@@ -259,6 +259,19 @@ def test_struct_from_python_scalar_passthrough():
     assert Struct.from_python("hi") == "hi"
 
 
+def test_struct_from_python_is_total_no_conversion_failure():
+    """from_python never raises: an unsupported object passes through unchanged
+    (including when nested). Rejection of non-structures is enforced one layer up,
+    in the interpreter's _coerce_to_struct, not here."""
+    sentinel = object()
+    assert Struct.from_python(sentinel) is sentinel
+
+    nested = Struct.from_python({"x": sentinel, "n": [sentinel]})
+    assert isinstance(nested, Struct)
+    assert nested.get("x") is sentinel
+    assert nested.get("n").get(0) is sentinel
+
+
 def test_struct_from_python_numeric_string_keys_are_named_fields():
     """Numeric-looking JSON keys stay named string fields (no int() mangling),
     mirroring how a struct literal ("0": ..., "01": ...) is built."""

@@ -1834,10 +1834,60 @@ def test_eval_schemed_collection_scalar_json_raises(interpreter_instance):
     interpreter_instance.context.frames["PERSON"] = _person_frame()
     interpreter_instance.context.env.set(var_name="scalar", value="42")
 
-    with pytest.raises(nmx_ex.NemantixRuntimeException):
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r"JSON must be an object or array"
+    ):
         interpreter_instance.eval_schemed_collection(
             _schemed_var("scalar", nmx_nodes.FrameApplyEnum.POST)
         )
+
+
+@pytest.mark.parametrize("bad_value", [42, 3.14, True, None])
+def test_eval_schemed_collection_on_non_struct_value_raises(
+    interpreter_instance, bad_value
+):
+    """A variable holding a non-structure, non-string value (int/float/bool/none)
+    cannot have a frame applied -> runtime error (distinct from the JSON-scalar path)."""
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(var_name="x", value=bad_value)
+
+    # matches the bare "...structure." message, NOT the JSON "(...object or array)" one
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"can only be applied to a structure\.",
+    ):
+        interpreter_instance.eval_schemed_collection(
+            _schemed_var("x", nmx_nodes.FrameApplyEnum.POST)
+        )
+
+
+def test_eval_schemed_collection_lenient_repair_failure_raises(interpreter_instance):
+    """LENIENT mode: when the LLM 'repair' is still invalid JSON, raise 'repair failed'
+    and emit a JSON_PARSE failure with repaired=True."""
+    interpreter_instance.expertise.json_parsing = JsonParsingMode.LENIENT
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(
+        var_name="bad", value='{"name": "x",}'  # trailing comma -> triggers repair
+    )
+    # the "repaired" text the LLM returns is itself still not valid JSON
+    interpreter_instance.proxies.external.invoke = MagicMock(
+        return_value=SimpleNamespace(
+            text="still {not} json",
+            usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            proxy=interpreter_instance.llm,
+        )
+    )
+    interpreter_instance._emit_json_parse = MagicMock()
+
+    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"repair failed"):
+        interpreter_instance.eval_schemed_collection(
+            _schemed_var("bad", nmx_nodes.FrameApplyEnum.POST)
+        )
+
+    interpreter_instance.proxies.external.invoke.assert_called_once()  # repair attempted
+    call = interpreter_instance._emit_json_parse.call_args
+    assert call.args[1] is False  # success
+    assert call.kwargs["repaired"] is True
 
 
 def _person_with_date_frame() -> nmx_runtime.Frame:

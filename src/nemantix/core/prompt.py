@@ -118,8 +118,8 @@ action NormalizeInput >> Demonstrate prompts, variables, calls, structures, and 
         # - ...or an ALREADY-DEFINED VARIABLE (including path access like [x:field]):
         [ [typed_user] = [user]{PERSON} ]      # postfix (loose) on the [user] struct above
         [ [checked_user] = {PERSON}[user] ]    # prefix (strict); the struct or `none`
-        # - ...or a VARIABLE HOLDING A JSON STRING: it is parsed into a struct first
-        #   (minor/"quasi"-JSON errors are auto-repaired), then the frame is applied.
+        # - ...or a VARIABLE HOLDING A JSON STRING: it is parsed into a struct first, then the
+        #   frame is applied.
         [ [json_user] = [raw_json]{PERSON} ]   # [raw_json] is TEXT containing a JSON object
         # - Nested frames are validated automatically: frame-typed slots recurse into nested structs
         #   for literals, variables, and JSON alike.

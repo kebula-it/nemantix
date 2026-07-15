@@ -18,7 +18,7 @@ from nemantix.core import custom_types as nmx_types
 from nemantix.core import exceptions as nmx_ex
 from nemantix.core import node as nmx_nodes
 from nemantix.core import runtime as nmx_runtime
-from nemantix.core.expertise import Expertise
+from nemantix.core.expertise import Expertise, JsonParsingMode
 from nemantix.core.node import (
     BinaryOperationEnum,
     BuiltinFunctionEnum,
@@ -1317,7 +1317,8 @@ class Interpreter:
         """Coerces an already-evaluated value into a Struct for frame application.
         - a Struct is returned as-is;
         - dict/list are converted natively;
-        - a string is parsed as JSON (with an LLM repair fallback for quasi-JSON);
+        - a string is parsed as JSON (strict by default; lenient mode adds an LLM
+          repair fallback for quasi-JSON, per the expertise `json_parsing` setting);
         - anything else raises a runtime error.
         """
         if isinstance(value, nmx_runtime.Struct):
@@ -1327,7 +1328,7 @@ class Interpreter:
             return nmx_runtime.Struct.from_python(value)
 
         if isinstance(value, str):
-            parsed = self._parse_json_lenient(value, statement=statement)
+            parsed = self._parse_json(value, statement=statement)
             if isinstance(parsed, (dict, list)):
                 return nmx_runtime.Struct.from_python(parsed)
 
@@ -1337,15 +1338,25 @@ class Interpreter:
         err_msg = "A frame can only be applied to a structure."
         raise self._runtime_exception(err_msg, statement=statement)
 
-    def _parse_json_lenient(self, text: str, statement: nmx_nodes.Statement) -> Any:
-        """json.loads with a self-healing fallback: on a decode error the text is
-        sent to an LLM asking for corrected, strictly-valid JSON, then reparsed."""
-        error = ""
+    def _parse_json(self, text: str, statement: nmx_nodes.Statement) -> Any:
+        """Parse a JSON-string operand for frame application.
+
+        STRICT mode (default): invalid JSON raises immediately.
+        LENIENT mode: on a decode error the text is sent to an LLM asking for
+        corrected, strictly-valid JSON, which is then reparsed.
+        The mode comes from the expertise `json_parsing` setting.
+        """
         try:
             return json.loads(text)
         except json.JSONDecodeError as e:
             error = str(e)
-            logger.info("Invalid JSON for frame application; attempting LLM repair.")
+
+        mode = getattr(self.expertise, "json_parsing", JsonParsingMode.STRICT)
+        if mode is not JsonParsingMode.LENIENT:
+            err_msg = f"Invalid JSON for frame application: {error}"
+            raise self._runtime_exception(err_msg, statement=statement)
+
+        logger.info("Invalid JSON for frame application; attempting LLM repair.")
 
         repair_prompt = (
             "The following text is meant to be JSON but contains syntax errors. "
@@ -1357,6 +1368,9 @@ class Interpreter:
 
         try:
             response = Builtin.ask_llm(self.proxies.internal, repair_prompt)
+            self._emit_llm(statement, prompt=repair_prompt, llm_response=response,
+                           internal=True)
+
             return json.loads(response.text)
         except Exception:
             err_msg = (

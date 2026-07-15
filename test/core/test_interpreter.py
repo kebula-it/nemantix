@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from nemantix.core import exceptions as nmx_ex
 from nemantix.core import node as nmx_nodes
 from nemantix.core import runtime as nmx_runtime
+from nemantix.core.expertise import JsonParsingMode
 from nemantix.core.interpreter import Interpreter
 from nemantix.core.node import (
     BinaryOperationEnum,
@@ -1722,7 +1723,8 @@ def test_eval_schemed_collection_on_json_string(interpreter_instance):
 
 
 def test_eval_schemed_collection_quasi_json_repaired_by_llm(interpreter_instance):
-    """Invalid JSON is repaired via an LLM call, then applied."""
+    """In LENIENT mode, invalid JSON is repaired via an LLM call, then applied."""
+    interpreter_instance.expertise.json_parsing = JsonParsingMode.LENIENT
     interpreter_instance.context.frames["PERSON"] = _person_frame()
     # trailing comma -> json.loads fails, triggering repair
     interpreter_instance.context.env.set(
@@ -1733,7 +1735,7 @@ def test_eval_schemed_collection_quasi_json_repaired_by_llm(interpreter_instance
         return_value=SimpleNamespace(
             text='{"name": "Ivo", "age": 7}',
             usage=SimpleNamespace(input_tokens=0, output_tokens=0),
-            proxy=None,
+            proxy=interpreter_instance.llm,  # DummyLLM: has get_name() for event emission
         )
     )
 
@@ -1744,6 +1746,24 @@ def test_eval_schemed_collection_quasi_json_repaired_by_llm(interpreter_instance
     assert isinstance(result, nmx_runtime.Struct)
     assert result.get("name") == "Ivo"
     assert result.get("age") == 7
+
+
+def test_eval_schemed_collection_quasi_json_strict_raises(interpreter_instance):
+    """In STRICT mode (default), invalid JSON raises and never calls the LLM."""
+    interpreter_instance.expertise.json_parsing = JsonParsingMode.STRICT
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(
+        var_name="bad", value='{"name": "Ivo", "age": 7,}'  # trailing comma
+    )
+    interpreter_instance.proxies.internal.invoke = MagicMock()
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r"Invalid JSON for frame application"
+    ):
+        interpreter_instance.eval_schemed_collection(
+            _schemed_var("bad", nmx_nodes.FrameApplyEnum.POST)
+        )
+    interpreter_instance.proxies.internal.invoke.assert_not_called()
 
 
 def test_eval_schemed_collection_scalar_json_raises(interpreter_instance):

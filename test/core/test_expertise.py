@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nemantix.core.exceptions import NemantixException
-from nemantix.core.expertise import Expertise, _topo_order
+from nemantix.core.expertise import Expertise, JsonParsingMode, _topo_order
 from nemantix.core.script import ScriptTypeEnum
 from nemantix.core.source_manager import LocalSourceManager
 from nemantix.security.verifier import DebugVerifier
@@ -146,6 +146,26 @@ def test_expertise_init_parses_scripts_and_builds_maps(
     assert exp.script_by_loc[abs_b] is s2
     assert exp.requires_map == {abs_a: [abs_b], abs_b: []}
     mock_get_tools.assert_called_once()
+
+
+@patch("nemantix.core.expertise.Toolset.get_registered_classes", return_value=[])
+def test_expertise_json_parsing_flag(mock_get_tools, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    Path("a.nxs").touch()
+    s = _mk_script(
+        "a.nxs", ScriptTypeEnum.NXS, requires=[], deliberates={}, actions={}
+    )
+    coder = MagicMock()
+
+    # default is STRICT
+    exp = Expertise([s], coder, verifier=DebugVerifier())
+    assert exp.json_parsing is JsonParsingMode.STRICT
+
+    # a string is coerced to the enum
+    exp_lenient = Expertise(
+        [s], coder, verifier=DebugVerifier(), json_parsing="lenient"
+    )
+    assert exp_lenient.json_parsing is JsonParsingMode.LENIENT
 
 
 @patch("nemantix.core.expertise.Toolset.get_registered_classes", return_value=[])

@@ -775,9 +775,10 @@ structure (including path access):
 ```
 
 **On JSON strings** — if the variable holds a string containing JSON, it is parsed into a
-structure before the frame is applied; malformed / "quasi"-JSON is repaired via an LLM call
-first. A string decoding to a JSON scalar (not an object or array) cannot be a structure and
-raises a runtime error.
+structure before the frame is applied. Parsing is **strict by default**: malformed JSON raises a
+runtime error. Enabling **lenient mode** on the expertise/agent (`json_parsing: "lenient"`) adds an
+LLM repair step that first attempts to fix malformed / "quasi"-JSON. In both modes, a string
+decoding to a JSON scalar (not an object or array) cannot be a structure and raises a runtime error.
 
 ```nxs
 [[payload] = "{ \"name\": \"Ada\", \"age\": 36 }"]

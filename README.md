@@ -233,7 +233,7 @@ __action
 
 @breakdown: true  # tells the coder to generate deliberate-private actions
 deliberate SendSupportRequest when >> the user needs to send a support request <<:
-  guidelines:
+  mandate:
     >> Use the request to extract the needed info to open a support request. Then, send the request.
   __
   

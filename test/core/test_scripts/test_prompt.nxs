@@ -129,18 +129,18 @@ __action
 deliberate DemoMain when >>> Run this deliberate when the user asks for a two-action syntax showcase. <<<:
     # deliberate declaration needs a name and a short microprompt showing its purpose
 
-    guidelines:
+    mandate:
         # PROMPTS (LANGUAGE TOKENS):
         # - Inline prompt: `>> ... <<` (single line, explicitly closed)
         # - Block prompt:  `>>> ... <<<` (multiline, explicitly closed)
         # Some prompts are completion prompts (implement their meaning while preserving the original text),
         # others are verification prompts (MUST stay unchanged).
         >> Keep verification prompts unchanged; implement completion prompts without removing their original text. <<
-    __guidelines
+    __mandate
 
     plan:
         # The plan aggregates and coordinates multiple actions to achieve the desired outcome
-        # while following the deliberate guidelines.
+        # while following the deliberate __mandate.
 
         in:
             raw_text (required) >> text input, may contain extra spaces <<

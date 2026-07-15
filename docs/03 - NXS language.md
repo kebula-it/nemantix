@@ -50,15 +50,17 @@ The body can be expressed in two complementary ways:
 
 A `deliberate` provides four key elements:
 1. **Need binding (trigger)**: declares `when` this deliberate should be considered applicable (which user/system need it satisfies).
-2. **`guidelines`**: describes the intended behavior at a semantic level — what must happen and in what order/logic — without necessarily prescribing implementation details.
+2. **`mandate`**: describes the intended behavior at a semantic level — what must happen and in what order/logic — without necessarily prescribing implementation details.
 3. Internal actions: i.e., generated `action` definitions that are private of a specific deliberate.
-4. **`plan`**: a set of statements and `action` calls (either global or private) that implement the behavior described in the guidelines.
+4. **`plan`**: a set of statements and `action` calls (either global or private) that implement the behavior described in the mandate.
 
 
-#### Guidelines
+#### Mandate
 
-The `guidelines` section is a contract for the plan: it specifies expected flow and invariants.
-The Executor/Coder should treat guidelines as the ground truth for what the plan must achieve, even if actions are partially generated or completed at runtime.
+The `mandate` section is a contract for the plan: it specifies expected flow and invariants.
+The Executor/Coder should treat mandate as the ground truth for what the plan must achieve, even if actions are partially generated or completed at runtime.
+
+> **Compatibility note:** The `guidelines` keyword is a deprecated alias for `mandate` and will be removed in a future version. Scripts using `guidelines:` / `__guidelines` continue to work but emit a `DeprecationWarning` at parse time. Migrate to `mandate:` / `__mandate`.
 
 #### Plan
 
@@ -135,11 +137,11 @@ text <<<
 
 ## Block delimiters
 
-Each block has a start delimiter (e.g. `guidelines:`, `in:`, `out:`, `plan:`, `body:`) and can be terminated by:
+Each block has a start delimiter (e.g. `mandate:`, `in:`, `out:`, `plan:`, `body:`) and can be terminated by:
 
 - the generic terminator `__`, or
 - a specific terminator such as:
-  - `__guidelines`
+  - `__mandate` (or `__guidelines`, deprecated)
   - `__in`
   - `__out`
   - `__plan`
@@ -586,7 +588,7 @@ __repeat
 ### Intentable Prefix: Labels and Meta
 
 Many language constructs (`frame`, `slot`, `toolset`,
-`deliberate`, `action`, `guidelines`, `plan`, `body`, `import` and `prompt`)
+`deliberate`, `action`, `mandate`, `plan`, `body`, `import` and `prompt`)
 can be prefixed with an optional **label** and/or one or more **meta declarations**,
 allowing the user to specify a variety of metadata:
 

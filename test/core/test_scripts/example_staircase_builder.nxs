@@ -45,7 +45,7 @@ action run >> assemble everything <<:
 __action
 
 deliberate AssembleStaircase when >> Assemble a staircase <<:
-    guidelines:
+    mandate:
         >> Assemble the staircase respecting all structural constraints
     __
 

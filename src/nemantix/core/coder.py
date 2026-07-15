@@ -1538,19 +1538,19 @@ class Coder:
                 )
 
         except NemantixException as e:
-            logger.warning(f'Extracting retrieve query from guidelines because: "{e}"')
+            logger.warning(f'Extracting retrieve query from mandate because: "{e}"')
 
             if isinstance(node, Deliberate):
-                guidelines = node.guidelines.prompt if node.guidelines else ""
+                mandate = node.mandate.prompt if node.mandate else ""
             elif isinstance(node, ActionBlock):
-                guidelines = node.prompt.prompt if node.prompt else ""
+                mandate = node.prompt.prompt if node.prompt else ""
             else:
                 return ""
 
             kb_prompt = (
                 "You have access to a knowledge base. You must determine a suitable query"
-                " to retrieve chunks that should help implement the following guidelines:\n"
-                f"[guidelines]\n{guidelines}\nOnly output the query, without any commentary,"
+                " to retrieve chunks that should help implement the following mandate:\n"
+                f"[mandate]\n{mandate}\nOnly output the query, without any commentary,"
                 f"next steps, opinions, suggestions, etc."
             )
             response = self.llm_proxy.invoke(kb_prompt)
@@ -1578,9 +1578,7 @@ class Coder:
         semantics = {
             "deliberate_name": deliberate.name,
             "when": deliberate.when.prompt,
-            "guidelines": deliberate.guidelines.prompt
-            if deliberate.guidelines
-            else None,
+            "mandate": deliberate.mandate.prompt if deliberate.mandate else None,
         }
 
         return semantics

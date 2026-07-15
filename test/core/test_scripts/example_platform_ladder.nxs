@@ -59,7 +59,7 @@ __action
 
 deliberate AssemblePlatformLadder when >> the user wants to assemble a platform ladder <<:
 
-    guidelines:
+    mandate:
         >> Assemble the platform ladder ensuring all safety and structural constraints are met.
     __
 
@@ -72,7 +72,7 @@ __deliberate
 
 
 deliberate Constraints when >> constraints verification is required <<:
-    guidelines:
+    mandate:
         >> List and verify active constraints.
     __
 

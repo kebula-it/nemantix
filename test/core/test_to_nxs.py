@@ -753,9 +753,9 @@ def test_plan_block():
 def test_deliberate_round_trip():
     src = (
         "deliberate Foo when >> run when needed <<:\n"
-        "    guidelines:\n"
+        "    mandate:\n"
         "    >> do things <<\n"
-        "    __guidelines\n"
+        "    __mandate\n"
         "    plan:\n"
         "        body:\n"
         "        __body\n"
@@ -1148,7 +1148,7 @@ def test_deliberate_with_generated_actions():
     d = node.Deliberate(
         name="Foo",
         when=node.MicroPrompt(prompt="run when needed", meta=_meta()),
-        guidelines=node.MicroPrompt(prompt="follow guidelines", meta=_meta()),
+        mandate=node.MicroPrompt(prompt="follow mandate", meta=_meta()),
         plan=plan,
         meta=_meta(),
         generated_actions=[action],

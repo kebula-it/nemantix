@@ -85,12 +85,12 @@ class Expertise:
         " fallback: it signals that no other deliberate in this script matches"
         " the user request and that a new deliberate must be synthesised from"
         " the request itself. <<<:\n"
-        "    guidelines:\n"
+        "    mandate:\n"
         "        >>> Serve as a placeholder that will be promoted into a new"
         " deliberate tailored to the current user request. Do not execute this"
         " block directly; it must be replaced by a concrete deliberate before"
         " interpretation. <<<\n"
-        "    __guidelines\n"
+        "    __mandate\n"
         "\n"
         "    plan:\n"
         "        body:\n"
@@ -107,9 +107,9 @@ class Expertise:
         "\n"
         "@completion: _->frozen\n"
         "deliberate {name} when >>> {when} <<<:\n"
-        "    guidelines:\n"
-        "        >>> {guidelines} <<<\n"
-        "    __guidelines\n"
+        "    mandate:\n"
+        "        >>> {mandate} <<<\n"
+        "    __mandate\n"
         "\n"
         "    plan:\n"
         "        body:\n"
@@ -589,16 +589,14 @@ class Expertise:
         return self.fallback_name_by_script_loc.get(script_loc)
 
     def build_promoted_deliberate_block(
-        self, name: str, when: str, guidelines: str
+        self, name: str, when: str, mandate: str
     ) -> str:
         """Build the NXS text for a newly promoted deliberate (empty plan)."""
         safe_when = (when or "").replace("<<<", "<<").replace(">>>", ">>").strip()
-        safe_guidelines = (
-            (guidelines or "").replace("<<<", "<<").replace(">>>", ">>").strip()
-        )
+        safe_mandate = (mandate or "").replace("<<<", "<<").replace(">>>", ">>").strip()
 
         return self.PROMOTED_DELIBERATE_TEMPLATE.format(
-            name=name, when=safe_when, guidelines=safe_guidelines
+            name=name, when=safe_when, mandate=safe_mandate
         )
 
     def append_fallback_deliberate(self, script_loc: str) -> str:

@@ -134,7 +134,7 @@ class DummyDeliberate(DummyStatement):
         self.name = name
         self.qualifier = qualifier
         self.when = DummyWhen("when text")
-        self.guidelines = DummyGuidelines("guidelines text")
+        self.mandate = DummyGuidelines("mandate text")
         self.generated_actions = None
         self._annotations = {}
 

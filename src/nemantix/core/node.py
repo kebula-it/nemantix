@@ -788,12 +788,11 @@ class DoStatement(LeafStatement):
 
         if is_multiline:
             if isinstance(self.prompt, MicroPrompt):
-                code.append(f"__do >> {self.prompt.prompt} <<")
-            else:
-                code.append("__do")
+                code.append(f">> {self.prompt.prompt}")
+            code.append("__do")
         else:
             if isinstance(self.prompt, MicroPrompt):
-                code.append(f">> {self.prompt.prompt} <<")
+                code.append(f">> {self.prompt.prompt}")
 
         return char.join(code)
 

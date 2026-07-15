@@ -1092,7 +1092,7 @@ def test_do_statement_inline():
         meta=_meta(),
     )
     result = stmt.to_nxs()
-    assert "do tool trim" in result and "using" in result and ">> trim it <<" in result
+    assert "do tool trim" in result and "using" in result and ">> trim it" in result
     _parse_as_body(result)
 
 

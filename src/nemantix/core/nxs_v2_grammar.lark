@@ -74,9 +74,9 @@ guidelines: _GUIDELINES ":" (prompt_line | prompt_block)+ (_END_BLOCK | _END_GUI
 
 
 // --- Planning & Actions ---
-UNDEFINED: "undefined"
-DRAFTED: "drafted"
-FROZEN: "frozen"
+UNDEFINED.2: /undefined\b/
+DRAFTED.2: /drafted\b/
+FROZEN.2: /frozen\b/
 plan_type:  UNDEFINED | DRAFTED | FROZEN | none
 plan_qualifier: plan_type ("->" plan_type)?
 plan: intentable_prefix? _PLAN ":" action_ins? action_out? action_body (_END_BLOCK | _END_PLAN)
@@ -201,7 +201,7 @@ condition_expression: prompted_expression
 // --- Function Calls (The 'do' command) ---
 // This handles: do [func] using [args] producing [out] >> [description]
 func_call: inline_func_call | block_func_call
-TOOL : "tool"
+TOOL.2: /tool\b/
 callable_type : ACTION | TOOL
 inline_func_call: intentable_prefix? _DO callable_type? qualified_name? using_clause? producing_clause? prompt_line?
 block_func_call:  intentable_prefix? _DO callable_type? qualified_name? ":" using_clause? producing_clause? prompt_line? (_END_BLOCK | _END_DO)
@@ -440,79 +440,80 @@ PROMPT_LINE_TEXT: />>([^<\n]|<[^<\n])*<?/
 // Matches >> text until right square bracket (for variables)
 PROMPT_LINE_VAR_TEXT: />>[^\n\]]*/
 
-DELIBERATE: "deliberate"
-_WHEN: "when"
-_FROM: "from"
-_TOOLSET: "toolset"
-_USE: "use"
-_MANDATE: "mandate"
-_GUIDELINES: "guidelines"  // deprecated alias for _MANDATE
-_PLAN: "plan"
-ACTION: "action"
-_IN: "in"
-_OUT: "out"
-_BODY: "body"
-_RETURN: "return"
-_BREAK: "break"
-_CONTINUE: "continue"
-_REPEAT: "repeat"
-_EACH: "each"
-_WHERE: "where"
-_AS: "as"
-_TIMES: "times"
-WHILE: "while"
-UNTIL: "until"
-_MAX: "max"
-_IF: "if"
-_ELIF: "elif"
-_ELSE: "else"
-_DO: "do"
-_USING: "using"
-_PRODUCING: "producing"
-_REQUIRED: "required"
-_OPTIONAL: "optional"
-_DEFAULT: "default"
-_REQUIRE: "require"
-_FRAME: "frame"
-_SLOT: "slot"
-_WITH: "with"
+DELIBERATE.2: /deliberate\b/
+_WHEN.2: /when\b/
+_FROM.2: /from\b/
+_TOOLSET.2: /toolset\b/
+_USE.2: /use\b/
+_MANDATE.2: /mandate\b/
+_GUIDELINES.2: /guidelines\b/  // deprecated alias for _MANDATE
+_PLAN.2: /plan\b/
+ACTION.2: /action\b/
+_IN.2: /in\b/
+_OUT.2: /out\b/
+_BODY.2: /body\b/
+_RETURN.2: /return\b/
+_BREAK.2: /break\b/
+_CONTINUE.2: /continue\b/
+_REPEAT.2: /repeat\b/
+_EACH.2: /each\b/
+_WHERE.2: /where\b/
+_AS.2: /as\b/
+_TIMES.2: /times\b/
+WHILE.2: /while\b/
+UNTIL.2: /until\b/
+_MAX.2: /max\b/
+_IF.2: /if\b/
+_ELIF.2: /elif\b/
+_ELSE.2: /else\b/
+_DO.2: /do\b/
+_USING.2: /using\b/
+_PRODUCING.2: /producing\b/
+_REQUIRED.2: /required\b/
+_OPTIONAL.2: /optional\b/
+_DEFAULT.2: /default\b/
+_REQUIRE.2: /require\b/
+_FRAME.2: /frame\b/
+_SLOT.2: /slot\b/
+_WITH.2: /with\b/
 
-INT_TYPE: "INT"
-BOOL_TYPE: "BOOL"
-FLOAT_TYPE: "FLOAT"
-TEXT_TYPE: "TEXT"
-ENUM_TYPE: "ENUM"
-STRUCT_TYPE: "STRUCT"
+INT_TYPE.2: /INT\b/
+BOOL_TYPE.2: /BOOL\b/
+FLOAT_TYPE.2: /FLOAT\b/
+TEXT_TYPE.2: /TEXT\b/
+ENUM_TYPE.2: /ENUM\b/
+STRUCT_TYPE.2: /STRUCT\b/
 
 
 // --- Semantic matching keywords ---
-SIM_FAR:    "far"
-SIM_LOOSE:  "loose"
-SIM_ABOUT:  "about"
-SIM_CLOSE:  "close"
-SIM_STRICT: "strict"
+SIM_FAR.2:    /far\b/
+SIM_LOOSE.2:  /loose\b/
+SIM_ABOUT.2:  /about\b/
+SIM_CLOSE.2:  /close\b/
+SIM_STRICT.2: /strict\b/
 
 
-TRUE: "true"
-FALSE: "false"
-_NONE: "none"
+TRUE.2: /true\b/
+FALSE.2: /false\b/
+_NONE.2: /none\b/
 _SHORT_NONE: "_"
 
-_END_BLOCK: "__"
-_END_DELIBERATE: "__deliberate"
-_END_MANDATE: "__mandate"
-_END_GUIDELINES: "__guidelines"  // deprecated alias for _END_MANDATE
-_END_PLAN: "__plan"
-_END_ACTION: "__action"
-_END_BODY: "__body"
-_END_DO: "__do"
-_END_IN: "__in"
-_END_OUT: "__out"
-_END_REPEAT: "__repeat"
-_END_IF: "__if"
-_END_TOOLSET: "__toolset"
-_END_USE: "__use"
-_END_FRAME: "__frame"
+// NOTE: (?=[ \t]*(?:#[^\n]*)?(?:\n|$))/ the regex allows to match only comments on the same line
+_END_BLOCK.2: /__(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_DELIBERATE.2: /__deliberate(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_MANDATE.2: /__mandate(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_GUIDELINES.2: /__guidelines(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/  // deprecated alias for _END_MANDATE
+_END_PLAN.2: /__plan(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_ACTION.2: /__action(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_BODY.2: /__body(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_DO.2: /__do(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_IN.2: /__in(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_OUT.2: /__out(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_REPEAT.2: /__repeat(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_IF.2: /__if(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_TOOLSET.2: /__toolset(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_USE.2: /__use(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
+_END_FRAME.2: /__frame(?=[ \t]*(?:#[^\n]*)?(?:\n|$))/
 
 
 %import common.CNAME

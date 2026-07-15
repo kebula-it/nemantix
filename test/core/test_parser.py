@@ -783,3 +783,100 @@ def test_missing_end_block(parser):
     # noinspection PyTypeChecker
     with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
         parser.parse_string(code)
+
+
+class TestWhitespaceBoundaries:
+    """
+    Keyword and end-marker boundary enforcement.
+
+    Fix 1: alphabetic keyword terminals require a word boundary (\\b) after the
+    keyword, so glued forms like 'actionfoo' are rejected.
+
+    Fix 2: end-marker terminals require end-of-line after '__*', so concatenated
+    markers ('____') and inline statements ('__[[expr]]') are rejected.
+    """
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _action(body: str) -> str:
+        return f"action a >>desc<<:\nbody:\n{body}\n__\n__\n"
+
+    # ------------------------------------------------------------------
+    # Fix 1 — keyword gluing: must raise
+    # ------------------------------------------------------------------
+    def test_action_keyword_glued_to_name(self, parser):
+        with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+            parser.parse_string("actionfoo >>x<<:\nbody:\n__\n__\n")
+
+    def test_action_keyword_glued_to_keyword_as_name(self, parser):
+        # 'actionaction' — second 'action' was silently used as the name
+        with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+            parser.parse_string("actionaction >>x<<:\nbody:\n__\n__\n")
+
+    def test_frame_keyword_glued_to_name(self, parser):
+        with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+            parser.parse_string("framefoo:\n__\n")
+
+    def test_deliberate_keyword_glued_to_name(self, parser):
+        with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+            parser.parse_string("deliberatefoo when >>c<<:\n__\n")
+
+    def test_do_keyword_glued_to_callee(self, parser):
+        with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+            parser.parse_string(self._action("dofoo\n"))
+
+    def test_do_tool_keywords_glued(self, parser):
+        with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+            parser.parse_string(self._action("dotool foo\n"))
+
+    def test_repeat_keyword_glued_to_each(self, parser):
+        with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+            parser.parse_string(self._action("repeateach [x]:\n__\n"))
+
+    # ------------------------------------------------------------------
+    # Fix 2 — end-marker issues: must raise
+    # ------------------------------------------------------------------
+    def test_double_end_block_concatenated(self, parser):
+        # '____' on one line must not silently close two blocks
+        with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+            parser.parse_string(self._action("if [true]:\n____\n__\n"))
+
+    def test_statement_after_end_block_same_line(self, parser):
+        with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+            parser.parse_string(self._action("__[[var]=3]\n"))
+
+    def test_named_end_marker_with_statement_same_line(self, parser):
+        with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+            parser.parse_string(self._action("if [true]:\n__if[[v]=3]\n__\n"))
+
+    # ------------------------------------------------------------------
+    # Regression — correct forms must still parse
+    # ------------------------------------------------------------------
+    def test_spaced_action_parses(self, parser):
+        result = parser.parse_string("action foo >>x<<:\nbody:\n__\n__\n")
+        assert result
+
+    def test_spaced_frame_parses(self, parser):
+        result = parser.parse_string("frame foo:\n__\n")
+        assert result
+
+    def test_end_block_with_inline_comment(self, parser):
+        # __ followed by an inline comment must still be a valid end-marker
+        result = parser.parse_string(
+            "action a >>desc<<:\nbody:\n__  # end body\n__  # end action\n"
+        )
+        assert result
+
+    def test_named_end_marker_on_own_line(self, parser):
+        # __if on its own line is valid; helper then adds __ (body) + __ (action)
+        result = parser.parse_string(self._action("if [true]:\n__if\n"))
+        assert result
+
+    def test_nested_if_separate_end_markers(self, parser):
+        # two nested ifs each closed on their own line; helper adds body + action closers
+        result = parser.parse_string(
+            self._action("if [true]:\nif [false]:\n__\n__\n")
+        )
+        assert result

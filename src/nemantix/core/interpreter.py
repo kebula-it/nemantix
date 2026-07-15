@@ -32,6 +32,7 @@ from nemantix.core.node import (
 )
 from nemantix.core.parser import AsFrame
 from nemantix.core.prompt import (
+    JSON_REPAIR_PROMPT,
     LEFT_SEM_INCL_PROMPT,
     RIGHT_SEM_INCL_PROMPT,
     SCHEMA_APPLY_PROMPT,
@@ -1357,14 +1358,7 @@ class Interpreter:
             raise self._runtime_exception(err_msg, statement=statement)
 
         logger.info("Invalid JSON for frame application; attempting LLM repair.")
-
-        repair_prompt = (
-            "The following text is meant to be JSON but contains syntax errors. "
-            "Return ONLY the corrected, strictly-valid JSON, with no explanation, "
-            "no markdown fences, and no surrounding text.\n\n"
-            f"{text}"
-            f"\n\nErrors:\n{error}"
-        )
+        repair_prompt = JSON_REPAIR_PROMPT.format(text=text, error=error)
 
         try:
             response = Builtin.ask_llm(self.proxies.internal, repair_prompt)

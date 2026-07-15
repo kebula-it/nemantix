@@ -871,3 +871,11 @@ The corrected block must strictly respect valid NXS syntax.
 Do not output explanations, markdown, comments about the fix, or any additional text.
 Return only the corrected NXS code block.
 """
+
+JSON_REPAIR_PROMPT = (
+    "The following text is meant to be JSON but contains syntax errors. "
+    "Return ONLY the corrected, strictly-valid JSON, with no explanation, "
+    "no markdown fences, and no surrounding text.\n\n"
+    "{text}"
+    "\n\nErrors:\n{error}"
+)

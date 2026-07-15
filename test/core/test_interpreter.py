@@ -1753,7 +1753,8 @@ def test_eval_schemed_collection_quasi_json_strict_raises(interpreter_instance):
     interpreter_instance.expertise.json_parsing = JsonParsingMode.STRICT
     interpreter_instance.context.frames["PERSON"] = _person_frame()
     interpreter_instance.context.env.set(
-        var_name="bad", value='{"name": "Ivo", "age": 7,}'  # trailing comma
+        var_name="bad",
+        value='{"name": "Ivo", "age": 7,}',  # trailing comma
     )
     interpreter_instance.proxies.internal.invoke = MagicMock()
 
@@ -1764,6 +1765,68 @@ def test_eval_schemed_collection_quasi_json_strict_raises(interpreter_instance):
             _schemed_var("bad", nmx_nodes.FrameApplyEnum.POST)
         )
     interpreter_instance.proxies.internal.invoke.assert_not_called()
+
+
+def test_parse_json_emits_success_event(interpreter_instance):
+    """Valid JSON emits a frame_apply success signal."""
+    interpreter_instance._emit_json_parse = MagicMock()
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(
+        var_name="j", value='{"name": "Zoe", "age": 9}'
+    )
+
+    interpreter_instance.eval_schemed_collection(
+        _schemed_var("j", nmx_nodes.FrameApplyEnum.POST)
+    )
+
+    interpreter_instance._emit_json_parse.assert_called_once()
+    call = interpreter_instance._emit_json_parse.call_args
+    assert call.args[1] is True  # success
+    assert call.args[2] == "frame_apply"  # source
+    assert call.kwargs["repaired"] is False
+
+
+def test_parse_json_emits_failure_event_strict(interpreter_instance):
+    """Invalid JSON under strict emits a failure signal (mode='strict')."""
+    interpreter_instance.expertise.json_parsing = JsonParsingMode.STRICT
+    interpreter_instance._emit_json_parse = MagicMock()
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(var_name="bad", value='{"name": "x",}')
+
+    with pytest.raises(nmx_ex.NemantixRuntimeException):
+        interpreter_instance.eval_schemed_collection(
+            _schemed_var("bad", nmx_nodes.FrameApplyEnum.POST)
+        )
+
+    call = interpreter_instance._emit_json_parse.call_args
+    assert call.args[1] is False  # success
+    assert call.kwargs["mode"] == "strict"
+
+
+def test_parse_json_emits_repaired_success_event_lenient(interpreter_instance):
+    """Lenient repair emits a success signal with repaired=True and the LLM name."""
+    interpreter_instance.expertise.json_parsing = JsonParsingMode.LENIENT
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(
+        var_name="bad", value='{"name": "Ivo", "age": 7,}'
+    )
+    interpreter_instance.proxies.external.invoke = MagicMock(
+        return_value=SimpleNamespace(
+            text='{"name": "Ivo", "age": 7}',
+            usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            proxy=interpreter_instance.llm,
+        )
+    )
+    interpreter_instance._emit_json_parse = MagicMock()
+
+    interpreter_instance.eval_schemed_collection(
+        _schemed_var("bad", nmx_nodes.FrameApplyEnum.POST)
+    )
+
+    call = interpreter_instance._emit_json_parse.call_args
+    assert call.args[1] is True  # success
+    assert call.kwargs["repaired"] is True
+    assert call.kwargs["name"] is not None
 
 
 def test_eval_schemed_collection_scalar_json_raises(interpreter_instance):

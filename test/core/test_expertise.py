@@ -152,9 +152,7 @@ def test_expertise_init_parses_scripts_and_builds_maps(
 def test_expertise_json_parsing_flag(mock_get_tools, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     Path("a.nxs").touch()
-    s = _mk_script(
-        "a.nxs", ScriptTypeEnum.NXS, requires=[], deliberates={}, actions={}
-    )
+    s = _mk_script("a.nxs", ScriptTypeEnum.NXS, requires=[], deliberates={}, actions={})
     coder = MagicMock()
 
     # default is STRICT

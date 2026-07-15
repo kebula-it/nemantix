@@ -1347,26 +1347,59 @@ class Interpreter:
         corrected, strictly-valid JSON, which is then reparsed.
         The mode comes from the expertise `json_parsing` setting.
         """
+        mode = getattr(self.expertise, "json_parsing", JsonParsingMode.STRICT)
+
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
+            self._emit_json_parse(
+                statement, True, "frame_apply", mode=mode.value, repaired=False
+            )
+            return parsed
         except json.JSONDecodeError as e:
             error = str(e)
 
-        mode = getattr(self.expertise, "json_parsing", JsonParsingMode.STRICT)
         if mode is not JsonParsingMode.LENIENT:
+            self._emit_json_parse(
+                statement,
+                False,
+                "frame_apply",
+                error=error,
+                mode=mode.value,
+                repaired=False,
+            )
             err_msg = f"Invalid JSON for frame application: {error}"
             raise self._runtime_exception(err_msg, statement=statement)
 
         logger.info("Invalid JSON for frame application; attempting LLM repair.")
         repair_prompt = JSON_REPAIR_PROMPT.format(text=text, error=error)
+        repair_name = self.proxies.internal.get_name()
 
         try:
             response = Builtin.ask_llm(self.proxies.internal, repair_prompt)
-            self._emit_llm(statement, prompt=repair_prompt, llm_response=response,
-                           internal=True)
+            self._emit_llm(
+                statement, prompt=repair_prompt, llm_response=response, internal=True
+            )
 
-            return json.loads(response.text)
-        except Exception:
+            parsed = json.loads(response.text)
+            self._emit_json_parse(
+                statement,
+                True,
+                "frame_apply",
+                mode="lenient",
+                repaired=True,
+                name=repair_name,
+            )
+            return parsed
+        except Exception as e:
+            self._emit_json_parse(
+                statement,
+                False,
+                "frame_apply",
+                error=str(e),
+                mode="lenient",
+                repaired=True,
+                name=repair_name,
+            )
             err_msg = (
                 "Could not parse operand as JSON for frame application (repair failed)."
             )
@@ -2513,6 +2546,25 @@ class Interpreter:
             scope=scope,
             payload=dict(error=str(error), interpreter=self),
             **kwargs,
+        )
+
+    def _emit_json_parse(
+        self,
+        stmt: nmx_nodes.Statement | None,
+        success: bool,
+        source: str,
+        error: str | None = None,
+        name: str | None = None,
+        scope=None,
+        **extra,
+    ):
+        self._emit_event(
+            stmt,
+            event_type=EventType.JSON_PARSE,
+            scope=scope,
+            payload=dict(
+                success=success, source=source, error=error, name=name, **extra
+            ),
         )
 
     def _emit_llm(

@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from nemantix.hub.event_hub import EventHub
+from nemantix.hub.event_hub import EventHub, emit_json_parse
 from nemantix.hub.events import Event, EventType
 from nemantix.hub.debugger import Debugger
 from nemantix.hub.profiler import Profiler
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "EventHub",
+    "emit_json_parse",
     "Event",
     "EventType",
     "Debugger",

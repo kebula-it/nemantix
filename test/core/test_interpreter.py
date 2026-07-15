@@ -1867,7 +1867,8 @@ def test_eval_schemed_collection_lenient_repair_failure_raises(interpreter_insta
     interpreter_instance.expertise.json_parsing = JsonParsingMode.LENIENT
     interpreter_instance.context.frames["PERSON"] = _person_frame()
     interpreter_instance.context.env.set(
-        var_name="bad", value='{"name": "x",}'  # trailing comma -> triggers repair
+        var_name="bad",
+        value='{"name": "x",}',  # trailing comma -> triggers repair
     )
     # the "repaired" text the LLM returns is itself still not valid JSON
     interpreter_instance.proxies.external.invoke = MagicMock(

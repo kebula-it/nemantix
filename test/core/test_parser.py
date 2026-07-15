@@ -876,7 +876,5 @@ class TestWhitespaceBoundaries:
 
     def test_nested_if_separate_end_markers(self, parser):
         # two nested ifs each closed on their own line; helper adds body + action closers
-        result = parser.parse_string(
-            self._action("if [true]:\nif [false]:\n__\n__\n")
-        )
+        result = parser.parse_string(self._action("if [true]:\nif [false]:\n__\n__\n"))
         assert result

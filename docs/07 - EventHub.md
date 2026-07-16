@@ -341,7 +341,9 @@ An example observer report (obtained by calling `observer.print()`) can be like:
 🤖 AGENT METRICS
   ├─ User Requests: 1
   ├─ LLM Invocations: 6
-    ─ OpenAI gpt-5-mini: 6 calls (internal: 2)
+    └─ OpenAI gpt-5-mini: 6 calls (internal: 2)
+  ├─ JSON Parsing (success rate):
+    └─ OpenAI gpt-5-mini: 100.0% (5/5)
   ├─ Runtime codings: 0
   └─ Errors Encountered: 0
  

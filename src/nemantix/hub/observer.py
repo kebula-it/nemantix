@@ -113,6 +113,10 @@ def _llm_dict_factory():
     return defaultdict(lambda: dict(internal=0, external=0))
 
 
+def _json_parse_dict_factory():
+    return defaultdict(lambda: dict(success=0, total=0))
+
+
 @dataclass
 class SystemMetrics:
     """Snapshot of hardware utilization."""
@@ -131,6 +135,9 @@ class AgentMetrics:
     """Snapshot of cognitive and behavioral utilization."""
 
     llm_calls: dict[str, dict[str, int]] = field(default_factory=_llm_dict_factory)
+    json_parses: dict[str, dict[str, int]] = field(
+        default_factory=_json_parse_dict_factory
+    )
     user_requests: int = 0
     runtime_codings: int = 0
     errors: int = 0
@@ -185,6 +192,7 @@ class Observer(Observable, Storable):
 
     def subscribe(self, event_hub: EventHub):
         event_hub.subscribe(EventType.LLM, self.on_llm)
+        event_hub.subscribe(EventType.JSON_PARSE, self.on_json_parse)
         event_hub.subscribe(EventType.CALL_ENTER, self.on_tool_call)
         event_hub.subscribe(EventType.USER_REQUEST, self.on_user_request)
         event_hub.subscribe(EventType.PHASE_START, self.on_runtime_coding)
@@ -256,6 +264,13 @@ class Observer(Observable, Storable):
             self.agent.llm_calls[name]["internal"] += 1
         else:
             self.agent.llm_calls[name]["external"] += 1
+
+    def on_json_parse(self, event: Event):
+        # bucket by the responsible LLM; parses with no LLM go under "unknown"
+        name = event.payload.get("name") or "unknown"
+        self.agent.json_parses[name]["total"] += 1
+        if event.payload.get("success"):
+            self.agent.json_parses[name]["success"] += 1
 
     def on_tool_call(self, event: Event) -> bool:
         if event.payload.get("type", None) == "tool":
@@ -340,6 +355,16 @@ class Observer(Observable, Storable):
         ):
             count = calls["internal"] + calls["external"]
             print(f"    └─ {llm}: {count} calls (internal: {calls['internal']})")
+
+        if self.agent.json_parses:
+            print("  ├─ JSON Parsing (success rate):")
+            for name, stats in sorted(self.agent.json_parses.items()):
+                total = stats["total"]
+                success = stats["success"]
+                pct = (success / total * 100) if total else 0.0
+                print(f"    └─ {name}: {pct:.1f}% ({success}/{total})")
+        else:
+            print("  ├─ JSON Parsing: none")
 
         print(f"  ├─ Knowledge Base Usages: {sum(self.agent.kb_calls.values())}")
         for operation, calls in self.agent.kb_calls.items():

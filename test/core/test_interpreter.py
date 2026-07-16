@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from nemantix.core import exceptions as nmx_ex
 from nemantix.core import node as nmx_nodes
 from nemantix.core import runtime as nmx_runtime
+from nemantix.core.expertise import JsonParsingMode
 from nemantix.core.interpreter import Interpreter
 from nemantix.core.node import (
     BinaryOperationEnum,
@@ -1625,6 +1626,351 @@ def test_eval_schemed_collection_missing_subframe_raises(interpreter_instance):
         interpreter_instance.eval_schemed_collection(
             schemed_col, enclosing_frame=enclosing_frame
         )
+
+
+# =============================================================================
+# Frame application on already-defined operands (variables / JSON strings)
+# =============================================================================
+
+
+def _person_frame() -> nmx_runtime.Frame:
+    f = nmx_runtime.Frame("PERSON")
+    f.add_slot("name", cardinality="1", types=[{"name": nmx_nodes.SlotTypesEnum.TEXT}])
+    f.add_slot("age", cardinality="0..1", types=[{"name": nmx_nodes.SlotTypesEnum.INT}])
+    return f
+
+
+def _schemed_var(var_name, apply_type, path=None):
+    return make_node(
+        nmx_nodes.SchemedCollection,
+        value=make_var(var_name, path=path),
+        dataframe=AsFrame(value="person", meta=make_meta()),
+        apply_type=apply_type,
+        inferred_type=VariableTypeEnum.LIST,
+        meta=make_meta(),
+    )
+
+
+def test_eval_schemed_collection_on_variable_postfix(interpreter_instance):
+    """[my_struct]{Person} — loose application on a variable holding a Struct."""
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    s = nmx_runtime.Struct()
+    s.set("John", key="name")
+    interpreter_instance.context.env.set(var_name="my_struct", value=s)
+
+    result = interpreter_instance.eval_schemed_collection(
+        _schemed_var("my_struct", nmx_nodes.FrameApplyEnum.POST)
+    )
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("name") == "John"
+    assert result.get("age") == 0  # default filled by postfix
+
+
+def test_eval_schemed_collection_on_variable_prefix_strict(interpreter_instance):
+    """{Person}[my_struct] — strict application returns None when slots missing."""
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    complete = nmx_runtime.Struct()
+    complete.set("John", key="name")
+    complete.set(30, key="age")
+    interpreter_instance.context.env.set(var_name="ok", value=complete)
+
+    result = interpreter_instance.eval_schemed_collection(
+        _schemed_var("ok", nmx_nodes.FrameApplyEnum.PRE)
+    )
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("age") == 30
+
+    partial = nmx_runtime.Struct()
+    partial.set("John", key="name")  # missing "age"
+    interpreter_instance.context.env.set(var_name="partial", value=partial)
+    assert (
+        interpreter_instance.eval_schemed_collection(
+            _schemed_var("partial", nmx_nodes.FrameApplyEnum.PRE)
+        )
+        is None
+    )
+
+
+def test_eval_schemed_collection_on_path_access(interpreter_instance):
+    """[outer:inner]{Person} — operand is a nested struct via path access."""
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    inner = nmx_runtime.Struct()
+    inner.set("Ann", key="name")
+    outer = nmx_runtime.Struct()
+    outer.set(inner, key="inner")
+    interpreter_instance.context.env.set(var_name="outer", value=outer)
+
+    result = interpreter_instance.eval_schemed_collection(
+        _schemed_var("outer", nmx_nodes.FrameApplyEnum.POST, path=[make_value("inner")])
+    )
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("name") == "Ann"
+
+
+def test_eval_schemed_collection_on_json_string(interpreter_instance):
+    """[json]{Person} — operand is a string holding valid JSON."""
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(
+        var_name="json", value='{"name": "Zoe", "age": 9}'
+    )
+
+    result = interpreter_instance.eval_schemed_collection(
+        _schemed_var("json", nmx_nodes.FrameApplyEnum.POST)
+    )
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("name") == "Zoe"
+    assert result.get("age") == 9
+
+
+def test_eval_schemed_collection_quasi_json_repaired_by_llm(interpreter_instance):
+    """In LENIENT mode, invalid JSON is repaired via an LLM call, then applied."""
+    interpreter_instance.expertise.json_parsing = JsonParsingMode.LENIENT
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    # trailing comma -> json.loads fails, triggering repair
+    interpreter_instance.context.env.set(
+        var_name="bad", value='{"name": "Ivo", "age": 7,}'
+    )
+
+    interpreter_instance.proxies.external.invoke = MagicMock(
+        return_value=SimpleNamespace(
+            text='{"name": "Ivo", "age": 7}',
+            usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            proxy=interpreter_instance.llm,  # DummyLLM: has get_name() for event emission
+        )
+    )
+
+    result = interpreter_instance.eval_schemed_collection(
+        _schemed_var("bad", nmx_nodes.FrameApplyEnum.POST)
+    )
+    interpreter_instance.proxies.external.invoke.assert_called_once()
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("name") == "Ivo"
+    assert result.get("age") == 7
+
+
+def test_eval_schemed_collection_quasi_json_strict_raises(interpreter_instance):
+    """In STRICT mode (default), invalid JSON raises and never calls the LLM."""
+    interpreter_instance.expertise.json_parsing = JsonParsingMode.STRICT
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(
+        var_name="bad",
+        value='{"name": "Ivo", "age": 7,}',  # trailing comma
+    )
+    interpreter_instance.proxies.internal.invoke = MagicMock()
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r"Invalid JSON for frame application"
+    ):
+        interpreter_instance.eval_schemed_collection(
+            _schemed_var("bad", nmx_nodes.FrameApplyEnum.POST)
+        )
+    interpreter_instance.proxies.internal.invoke.assert_not_called()
+
+
+def test_parse_json_emits_success_event(interpreter_instance):
+    """Valid JSON emits a frame_apply success signal."""
+    interpreter_instance._emit_json_parse = MagicMock()
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(
+        var_name="j", value='{"name": "Zoe", "age": 9}'
+    )
+
+    interpreter_instance.eval_schemed_collection(
+        _schemed_var("j", nmx_nodes.FrameApplyEnum.POST)
+    )
+
+    interpreter_instance._emit_json_parse.assert_called_once()
+    call = interpreter_instance._emit_json_parse.call_args
+    assert call.args[1] is True  # success
+    assert call.args[2] == "frame_apply"  # source
+    assert call.kwargs["repaired"] is False
+
+
+def test_parse_json_emits_failure_event_strict(interpreter_instance):
+    """Invalid JSON under strict emits a failure signal (mode='strict')."""
+    interpreter_instance.expertise.json_parsing = JsonParsingMode.STRICT
+    interpreter_instance._emit_json_parse = MagicMock()
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(var_name="bad", value='{"name": "x",}')
+
+    with pytest.raises(nmx_ex.NemantixRuntimeException):
+        interpreter_instance.eval_schemed_collection(
+            _schemed_var("bad", nmx_nodes.FrameApplyEnum.POST)
+        )
+
+    call = interpreter_instance._emit_json_parse.call_args
+    assert call.args[1] is False  # success
+    assert call.kwargs["mode"] == "strict"
+
+
+def test_parse_json_emits_repaired_success_event_lenient(interpreter_instance):
+    """Lenient repair emits a success signal with repaired=True and the LLM name."""
+    interpreter_instance.expertise.json_parsing = JsonParsingMode.LENIENT
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(
+        var_name="bad", value='{"name": "Ivo", "age": 7,}'
+    )
+    interpreter_instance.proxies.external.invoke = MagicMock(
+        return_value=SimpleNamespace(
+            text='{"name": "Ivo", "age": 7}',
+            usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            proxy=interpreter_instance.llm,
+        )
+    )
+    interpreter_instance._emit_json_parse = MagicMock()
+
+    interpreter_instance.eval_schemed_collection(
+        _schemed_var("bad", nmx_nodes.FrameApplyEnum.POST)
+    )
+
+    call = interpreter_instance._emit_json_parse.call_args
+    assert call.args[1] is True  # success
+    assert call.kwargs["repaired"] is True
+    assert call.kwargs["name"] is not None
+
+
+def test_eval_schemed_collection_scalar_json_raises(interpreter_instance):
+    """A JSON scalar (not object/array) cannot be a struct -> runtime error."""
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(var_name="scalar", value="42")
+
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException, match=r"JSON must be an object or array"
+    ):
+        interpreter_instance.eval_schemed_collection(
+            _schemed_var("scalar", nmx_nodes.FrameApplyEnum.POST)
+        )
+
+
+@pytest.mark.parametrize("bad_value", [42, 3.14, True, None])
+def test_eval_schemed_collection_on_non_struct_value_raises(
+    interpreter_instance, bad_value
+):
+    """A variable holding a non-structure, non-string value (int/float/bool/none)
+    cannot have a frame applied -> runtime error (distinct from the JSON-scalar path)."""
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(var_name="x", value=bad_value)
+
+    # matches the bare "...structure." message, NOT the JSON "(...object or array)" one
+    with pytest.raises(
+        nmx_ex.NemantixRuntimeException,
+        match=r"can only be applied to a structure\.",
+    ):
+        interpreter_instance.eval_schemed_collection(
+            _schemed_var("x", nmx_nodes.FrameApplyEnum.POST)
+        )
+
+
+def test_eval_schemed_collection_lenient_repair_failure_raises(interpreter_instance):
+    """LENIENT mode: when the LLM 'repair' is still invalid JSON, raise 'repair failed'
+    and emit a JSON_PARSE failure with repaired=True."""
+    interpreter_instance.expertise.json_parsing = JsonParsingMode.LENIENT
+    interpreter_instance.context.frames["PERSON"] = _person_frame()
+    interpreter_instance.context.env.set(
+        var_name="bad",
+        value='{"name": "x",}',  # trailing comma -> triggers repair
+    )
+    # the "repaired" text the LLM returns is itself still not valid JSON
+    interpreter_instance.proxies.external.invoke = MagicMock(
+        return_value=SimpleNamespace(
+            text="still {not} json",
+            usage=SimpleNamespace(input_tokens=0, output_tokens=0),
+            proxy=interpreter_instance.llm,
+        )
+    )
+    interpreter_instance._emit_json_parse = MagicMock()
+
+    with pytest.raises(nmx_ex.NemantixRuntimeException, match=r"repair failed"):
+        interpreter_instance.eval_schemed_collection(
+            _schemed_var("bad", nmx_nodes.FrameApplyEnum.POST)
+        )
+
+    interpreter_instance.proxies.external.invoke.assert_called_once()  # repair attempted
+    call = interpreter_instance._emit_json_parse.call_args
+    assert call.args[1] is False  # success
+    assert call.kwargs["repaired"] is True
+
+
+def _person_with_date_frame() -> nmx_runtime.Frame:
+    """PERSON with a nested DATE frame typing its `date` slot.
+
+    frame Person:
+        slot name    as TEXT
+        slot surname as TEXT
+        slot date    as DATE
+        frame Date:
+            slot day   as INT
+            slot month as INT
+            slot year  as INT
+    """
+    person = nmx_runtime.Frame("PERSON")
+    date = nmx_runtime.Frame("DATE")
+    for part in ("day", "month", "year"):
+        date.add_slot(
+            part, cardinality="1", types=[{"name": nmx_nodes.SlotTypesEnum.INT}]
+        )
+    person.add_frame(date)
+    person.add_slot(
+        "name", cardinality="1", types=[{"name": nmx_nodes.SlotTypesEnum.TEXT}]
+    )
+    person.add_slot(
+        "surname", cardinality="1", types=[{"name": nmx_nodes.SlotTypesEnum.TEXT}]
+    )
+    person.add_slot(
+        "date",
+        cardinality="1",
+        types=[{"type": nmx_nodes.SlotTypesEnum.FRAME, "name": "DATE"}],
+    )
+    return person
+
+
+def test_eval_schemed_collection_nested_frame_on_variable(interpreter_instance):
+    """{Person}[var] where var holds a struct with a nested DATE struct."""
+    interpreter_instance.context.frames["PERSON"] = _person_with_date_frame()
+
+    date = nmx_runtime.Struct()
+    date.set(7, key="day")
+    date.set(3, key="month")
+    date.set(1998, key="year")
+    person = nmx_runtime.Struct()
+    person.set("Ada", key="name")
+    person.set("Lovelace", key="surname")
+    person.set(date, key="date")
+    interpreter_instance.context.env.set(var_name="p", value=person)
+
+    result = interpreter_instance.eval_schemed_collection(
+        _schemed_var("p", nmx_nodes.FrameApplyEnum.PRE)  # prefix = strict
+    )
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("name") == "Ada"
+    inner = result.get("date")
+    assert isinstance(inner, nmx_runtime.Struct)
+    assert inner.get("day") == 7
+    assert inner.get("month") == 3
+    assert inner.get("year") == 1998
+
+
+def test_eval_schemed_collection_nested_frame_on_json(interpreter_instance):
+    """[json]{Person} where the JSON string carries a nested DATE object."""
+    interpreter_instance.context.frames["PERSON"] = _person_with_date_frame()
+    interpreter_instance.context.env.set(
+        var_name="payload",
+        value=(
+            '{"name": "Ada", "surname": "Lovelace", '
+            '"date": {"day": 7, "month": 3, "year": 1998}}'
+        ),
+    )
+
+    result = interpreter_instance.eval_schemed_collection(
+        _schemed_var("payload", nmx_nodes.FrameApplyEnum.PRE)  # strict
+    )
+    assert isinstance(result, nmx_runtime.Struct)
+    assert result.get("surname") == "Lovelace"
+    inner = result.get("date")
+    assert isinstance(inner, nmx_runtime.Struct)
+    assert inner.get("day") == 7
+    assert inner.get("month") == 3
+    assert inner.get("year") == 1998
 
 
 # =============================================================================

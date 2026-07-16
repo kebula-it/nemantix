@@ -130,6 +130,37 @@ class Struct(OrderedDict):
         return False
 
     @classmethod
+    def from_python(cls, obj: Any) -> Any:
+        """Recursively builds a Struct from a plain Python object (e.g. the result
+        of json.loads). dicts become named-field structs, lists/tuples become
+        positional structs, and scalars are returned unchanged. Nested dicts/lists
+        become nested Structs so that frame application recurses into them."""
+        if isinstance(obj, Struct):
+            return obj
+
+        if isinstance(obj, dict):
+            struct = cls()
+
+            # Every dict key becomes a named string field — mirroring how a struct
+            # literal ("0": ..., "01": ...) is built. This keeps JSON-built structs
+            # consistent with literals (e.g. "01" stays the field "01", not int 1)
+            # and reachable via a string accessor like [x:"01"].
+            for k, v in obj.items():
+                struct.set(cls.from_python(v), key=str(k))
+
+            return struct
+
+        if isinstance(obj, (list, tuple)):
+            struct = cls()
+
+            for v in obj:
+                struct.set(cls.from_python(v))
+
+            return struct
+
+        return obj
+
+    @classmethod
     def unbox_in(cls, value: list | dict | Any) -> Any:
         if isinstance(value, Struct):
             args, kwargs = value.to_args_and_kwargs()
@@ -370,7 +401,6 @@ class Frame:
         """
         validated_slots = []
         valid_struct = Struct()
-        struct = self._extract_struct(struct)
 
         for k, v in struct.items():
             # skip extra fields
@@ -434,7 +464,6 @@ class Frame:
         Returns a new struct that complies with the frame, even if fields are missing.
         """
         valid_struct = Struct()
-        struct = self._extract_struct(struct)
 
         for k, v in struct.items():
             if isinstance(k, int):
@@ -463,19 +492,6 @@ class Frame:
                     valid_struct.set(value=self._get_default(slot=slot), key=k)
 
         return valid_struct
-
-    @staticmethod
-    def _extract_struct(struct: Struct) -> Struct:
-        # TODO: workaround
-        if len(struct) == 1 and "__" in struct:
-            logger.info('Extracting struct in variable in "__" field.')
-            struct = struct["__"]
-
-            if not isinstance(struct, Struct):
-                logger.warning("Extracted value is not a Struct!")
-                return Struct()
-
-        return struct
 
     def _coerce(self, value, slot: dict):
         kinds = [self._get_type(kind) for kind in slot["types"]]

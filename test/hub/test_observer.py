@@ -145,6 +145,37 @@ def test_agent_metrics_accumulation(observer):
     assert "[ERROR] Line (5, 5): Syntax Error" in observer.agent.logs
 
 
+def test_on_json_parse_accumulates_per_llm(observer, capsys):
+    """JSON_PARSE events aggregate success/total per LLM name (None -> 'unknown')."""
+    observer.on_json_parse(
+        MockEvent(EventType.JSON_PARSE, {"success": True, "name": "gpt-4"})
+    )
+    observer.on_json_parse(
+        MockEvent(EventType.JSON_PARSE, {"success": True, "name": "gpt-4"})
+    )
+    observer.on_json_parse(
+        MockEvent(EventType.JSON_PARSE, {"success": False, "name": "gpt-4"})
+    )
+    observer.on_json_parse(
+        MockEvent(EventType.JSON_PARSE, {"success": True, "name": "gemini"})
+    )
+    observer.on_json_parse(
+        MockEvent(EventType.JSON_PARSE, {"success": False, "name": None})
+    )
+
+    assert observer.agent.json_parses["gpt-4"] == {"success": 2, "total": 3}
+    assert observer.agent.json_parses["gemini"] == {"success": 1, "total": 1}
+    assert observer.agent.json_parses["unknown"] == {"success": 0, "total": 1}
+
+    # the report renders the per-LLM success percentage
+    observer.print()
+    out = capsys.readouterr().out
+    assert "JSON Parsing (success rate)" in out
+    assert "gpt-4: 66.7% (2/3)" in out
+    assert "gemini: 100.0% (1/1)" in out
+    assert "unknown: 0.0% (0/1)" in out
+
+
 def test_on_log_saves_to_db(observer, mock_connector):
     """Tests if logs are appended to memory and written to the DB."""
 

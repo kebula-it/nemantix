@@ -98,3 +98,6 @@ htmlReport/
 nemantix.egg-info/
 **/completed_uncoded.nxs
 build/
+.coverage
+.claude/
+coverage.xml

@@ -231,6 +231,80 @@ def test_frame_nested_frames():
     assert result.get("nested").get("val") == 99
 
 
+def test_struct_from_python_dict():
+    s = Struct.from_python({"name": "John", "age": 30})
+    assert isinstance(s, Struct)
+    assert s.get("name") == "John"
+    assert s.get("age") == 30
+
+
+def test_struct_from_python_list():
+    s = Struct.from_python([10, 20, 30])
+    assert isinstance(s, Struct)
+    assert s.can_be_seen_as_list()
+    assert s.get(0) == 10
+    assert s.get(2) == 30
+
+
+def test_struct_from_python_nested():
+    s = Struct.from_python({"user": {"name": "A"}, "tags": [1, 2]})
+    assert isinstance(s.get("user"), Struct)
+    assert s.get("user").get("name") == "A"
+    assert isinstance(s.get("tags"), Struct)
+    assert s.get("tags").get(1) == 2
+
+
+def test_struct_from_python_scalar_passthrough():
+    assert Struct.from_python(42) == 42
+    assert Struct.from_python("hi") == "hi"
+
+
+def test_struct_from_python_is_total_no_conversion_failure():
+    """from_python never raises: an unsupported object passes through unchanged
+    (including when nested). Rejection of non-structures is enforced one layer up,
+    in the interpreter's _coerce_to_struct, not here."""
+    sentinel = object()
+    assert Struct.from_python(sentinel) is sentinel
+
+    nested = Struct.from_python({"x": sentinel, "n": [sentinel]})
+    assert isinstance(nested, Struct)
+    assert nested.get("x") is sentinel
+    assert nested.get("n").get(0) is sentinel
+
+
+def test_struct_from_python_numeric_string_keys_are_named_fields():
+    """Numeric-looking JSON keys stay named string fields (no int() mangling),
+    mirroring how a struct literal ("0": ..., "01": ...) is built."""
+    s = Struct.from_python({"0": 10, "01": "val", "5": 5})
+
+    # preserved verbatim as named fields (in particular "01" is NOT collapsed to 1)
+    assert s.get("0") == 10
+    assert s.get("01") == "val"
+    assert s.get("5") == 5
+    assert not s.can_be_seen_as_list()  # they are named fields, not positional
+
+
+def test_frame_apply_prefix_on_from_python_nested():
+    """A nested frame validates a Struct built from a plain (JSON-like) dict."""
+    root = Frame("ROOT")
+    child = Frame("CHILD")
+    child.add_slot(
+        "val", cardinality="1", types=[{"name": nmx_nodes.SlotTypesEnum.INT}]
+    )
+    root.add_frame(child)
+    root.add_slot(
+        "nested",
+        cardinality="1",
+        types=[{"type": nmx_nodes.SlotTypesEnum.FRAME, "name": "CHILD"}],
+    )
+
+    s = Struct.from_python({"nested": {"val": 99}})
+    result = root.apply_prefix(s)
+    assert result is not None
+    assert isinstance(result.get("nested"), Struct)
+    assert result.get("nested").get("val") == 99
+
+
 # =============================================================================
 # DocRef Tests
 # =============================================================================

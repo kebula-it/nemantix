@@ -68,6 +68,17 @@ class FallbackEnum(Enum):
     PERSISTENT = 2
 
 
+class JsonParsingMode(Enum):
+    """How a JSON string operand is parsed during frame application.
+
+    - STRICT: json.loads only; invalid JSON raises a clear runtime error.
+    - LENIENT: on a decode error, an LLM is asked to repair the JSON, then reparse.
+    """
+
+    STRICT = "strict"
+    LENIENT = "lenient"
+
+
 class Expertise:
     """Orchestrates nxs/nxc/nxs Script"""
 
@@ -130,9 +141,12 @@ class Expertise:
         experimental_enhance_coding=False,
         experimental_enable_fixer=False,
         experimental_include_action_body_in_semantics=False,
+        json_parsing: JsonParsingMode | str = JsonParsingMode.STRICT,
         search_environments: list[tuple[PathLike, SourceManager]] | None = None,
     ):
         assert isinstance(verifier, BaseVerifier)
+
+        self.json_parsing = JsonParsingMode(json_parsing)
 
         if search_environments is None:
             search_environments = [(".", LocalSourceManager())]
@@ -494,6 +508,7 @@ class Expertise:
             "experimental_include_action_body_in_semantics", False
         )
         experimental_llm_judge = kwargs.pop("experimental_llm_judge", False)
+        json_parsing = kwargs.pop("json_parsing", JsonParsingMode.STRICT)
 
         logger.debug(f"Allow fallback value = {allow_fallback} ")
 
@@ -520,6 +535,7 @@ class Expertise:
             experimental_enhance_coding=enhance_coding,
             experimental_enable_fixer=enable_fixer,
             experimental_include_action_body_in_semantics=include_body_semantics,
+            json_parsing=json_parsing,
             search_environments=[(path, LocalSourceManager()) for path in search_paths],
         )
 

@@ -41,6 +41,40 @@ class EventHub:
             callback(event)
 
 
+def emit_json_parse(
+    success: bool,
+    source: str,
+    *,
+    error: str | None = None,
+    scope: str = "",
+    script=None,
+    lines: tuple[int, int] = (0, 0),
+    statement: str = "",
+    **extra,
+) -> None:
+    """Emit a JSON_PARSE event from any layer.
+
+    Layer-agnostic emitter: no-ops when there is no active hub or no subscriber
+    for JSON_PARSE. `source` labels the parse site (e.g. "frame_apply",
+    "request_inputs", "structured_output"); `extra` may carry
+    `name` (the responsible LLM), `mode`, `repaired`, etc.
+    """
+    hub = context.event_hub.get()
+    if hub is None or not hub.has_subscribers(EventType.JSON_PARSE):
+        return
+
+    hub.emit(
+        Event(
+            type=EventType.JSON_PARSE,
+            lines=lines,
+            scope=scope,
+            script=script,
+            statement=statement,
+            payload=dict(success=success, source=source, error=error, **extra),
+        )
+    )
+
+
 class Observable(ABC):
     @abstractmethod
     def subscribe(self, event_hub: EventHub):

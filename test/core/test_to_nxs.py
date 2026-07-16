@@ -97,6 +97,31 @@ def test_schemed_collection_suffix():
     assert result.endswith("{PersonFrame}") and "[x]" in result
 
 
+def test_schemed_collection_variable_operand_suffix():
+    x = node.Variable(name="my_struct", prompt=None, path=None, meta=_meta())
+    sc = node.SchemedCollection(
+        value=x,  # operand is a bare variable, not a collection literal
+        inferred_type=node.VariableTypeEnum.LIST,
+        dataframe="Person",
+        apply_type=node.FrameApplyEnum.POST,
+        meta=_meta(),
+    )
+    # variable operand: no spurious wrapping parens
+    assert sc.to_nxs() == "[my_struct] {Person}"
+
+
+def test_schemed_collection_variable_operand_prefix():
+    x = node.Variable(name="my_struct", prompt=None, path=None, meta=_meta())
+    sc = node.SchemedCollection(
+        value=x,
+        inferred_type=node.VariableTypeEnum.LIST,
+        dataframe="Person",
+        apply_type=node.FrameApplyEnum.PRE,
+        meta=_meta(),
+    )
+    assert sc.to_nxs() == "{Person} [my_struct]"
+
+
 def test_collection_list():
     x = node.Variable(name="x", prompt=None, path=None, meta=_meta())
     y = node.Variable(name="y", prompt=None, path=None, meta=_meta())

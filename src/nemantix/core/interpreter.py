@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import json
 import math
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Iterable, List, Optional, Type, Union
@@ -17,7 +18,7 @@ from nemantix.core import custom_types as nmx_types
 from nemantix.core import exceptions as nmx_ex
 from nemantix.core import node as nmx_nodes
 from nemantix.core import runtime as nmx_runtime
-from nemantix.core.expertise import Expertise
+from nemantix.core.expertise import Expertise, JsonParsingMode
 from nemantix.core.node import (
     BinaryOperationEnum,
     BuiltinFunctionEnum,
@@ -31,6 +32,7 @@ from nemantix.core.node import (
 )
 from nemantix.core.parser import AsFrame
 from nemantix.core.prompt import (
+    JSON_REPAIR_PROMPT,
     LEFT_SEM_INCL_PROMPT,
     RIGHT_SEM_INCL_PROMPT,
     SCHEMA_APPLY_PROMPT,
@@ -1296,12 +1298,112 @@ class Interpreter:
 
             frame: nmx_runtime.Frame = self.context.frames[frame_name]
 
-        struct = self.eval_collection(collection=collection, frame=frame)
+        if isinstance(collection, nmx_nodes.Collection):
+            # incline struct literal
+            struct = self.eval_collection(collection=collection, frame=frame)
+        else:
+            # operand is a variable (or path access) that must resolve to a struct
+            # or to a string holding JSON
+            value = self.interpret_expression(collection)
+            struct = self._coerce_to_struct(value, statement=schemed_collection)
 
         if schemed_collection.apply_type == nmx_nodes.FrameApplyEnum.PRE:
             return frame.apply_prefix(struct)
 
         return frame.apply_postfix(struct)
+
+    def _coerce_to_struct(
+        self, value: Any, statement: nmx_nodes.Statement
+    ) -> nmx_runtime.Struct:
+        """Coerces an already-evaluated value into a Struct for frame application.
+        - a Struct is returned as-is;
+        - dict/list are converted natively;
+        - a string is parsed as JSON (strict by default; lenient mode adds an LLM
+          repair fallback for quasi-JSON, per the expertise `json_parsing` setting);
+        - anything else raises a runtime error.
+        """
+        if isinstance(value, nmx_runtime.Struct):
+            return value
+
+        if isinstance(value, (dict, list, tuple)):
+            return nmx_runtime.Struct.from_python(value)
+
+        if isinstance(value, str):
+            parsed = self._parse_json(value, statement=statement)
+            if isinstance(parsed, (dict, list)):
+                return nmx_runtime.Struct.from_python(parsed)
+
+            err_msg = "A frame can only be applied to a structure (JSON must be an object or array)."
+            raise self._runtime_exception(err_msg, statement=statement)
+
+        err_msg = "A frame can only be applied to a structure."
+        raise self._runtime_exception(err_msg, statement=statement)
+
+    def _parse_json(self, text: str, statement: nmx_nodes.Statement) -> Any:
+        """Parse a JSON-string operand for frame application.
+
+        STRICT mode (default): invalid JSON raises immediately.
+        LENIENT mode: on a decode error the text is sent to an LLM asking for
+        corrected, strictly-valid JSON, which is then reparsed.
+        The mode comes from the expertise `json_parsing` setting.
+        """
+        mode = getattr(self.expertise, "json_parsing", JsonParsingMode.STRICT)
+
+        try:
+            parsed = json.loads(text)
+            self._emit_json_parse(
+                statement, True, "frame_apply", mode=mode.value, repaired=False
+            )
+            return parsed
+        except json.JSONDecodeError as e:
+            error = str(e)
+
+        if mode is not JsonParsingMode.LENIENT:
+            self._emit_json_parse(
+                statement,
+                False,
+                "frame_apply",
+                error=error,
+                mode=mode.value,
+                repaired=False,
+            )
+            err_msg = f"Invalid JSON for frame application: {error}"
+            raise self._runtime_exception(err_msg, statement=statement)
+
+        logger.info("Invalid JSON for frame application; attempting LLM repair.")
+        repair_prompt = JSON_REPAIR_PROMPT.format(text=text, error=error)
+        repair_name = self.proxies.internal.get_name()
+
+        try:
+            response = Builtin.ask_llm(self.proxies.internal, repair_prompt)
+            self._emit_llm(
+                statement, prompt=repair_prompt, llm_response=response, internal=True
+            )
+
+            parsed = json.loads(response.text)
+            self._emit_json_parse(
+                statement,
+                True,
+                "frame_apply",
+                mode="lenient",
+                repaired=True,
+                name=repair_name,
+            )
+            return parsed
+        except Exception as e:
+            self._emit_json_parse(
+                statement,
+                False,
+                "frame_apply",
+                error=str(e),
+                mode="lenient",
+                repaired=True,
+                name=repair_name,
+            )
+            err_msg = (
+                "Could not parse operand as JSON for frame application (repair failed)."
+            )
+            raise self._runtime_exception(err_msg, statement=statement)
 
     def eval_collection(
         self,
@@ -2444,6 +2546,25 @@ class Interpreter:
             scope=scope,
             payload=dict(error=str(error), interpreter=self),
             **kwargs,
+        )
+
+    def _emit_json_parse(
+        self,
+        stmt: nmx_nodes.Statement | None,
+        success: bool,
+        source: str,
+        error: str | None = None,
+        name: str | None = None,
+        scope=None,
+        **extra,
+    ):
+        self._emit_event(
+            stmt,
+            event_type=EventType.JSON_PARSE,
+            scope=scope,
+            payload=dict(
+                success=success, source=source, error=error, name=name, **extra
+            ),
         )
 
     def _emit_llm(

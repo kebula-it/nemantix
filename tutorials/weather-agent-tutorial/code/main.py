@@ -1,7 +1,8 @@
+from pathlib import Path
+
 import requests
 
-from pathlib import Path
-from nemantix.core import Expertise, Agent
+from nemantix.core import Agent, Expertise
 from nemantix.core.tools import Toolset, tool
 from nemantix.security import Verifier
 
@@ -9,7 +10,10 @@ from nemantix.security import Verifier
 class OpenMeteoTools(Toolset):
     @tool
     def get_weather_by_city(self, city_name: str) -> dict:
-
+        """Fetches the weather for a city:
+        Arguments:
+         - city_name (str): the name of the city to query
+        """
         geocode_url = "https://geocoding-api.open-meteo.com/v1/search"
         geo_params = {"name": city_name, "count": 1, "language": "it", "format": "json"}
 
@@ -58,12 +62,11 @@ class OpenMeteoTools(Toolset):
         except requests.exceptions.RequestException as e:
             return {
                 "status": "error",
-                "error": f"An error occured during the communication with Open-Meteo: {str(e)}",
+                "error": f"An error occurred during the communication with Open-Meteo: {str(e)}",
             }
 
 
 def main() -> None:
-
     current_folder = Path.cwd()
 
     exp = Expertise.from_local_scripts(
@@ -79,7 +82,7 @@ def main() -> None:
         if prompt == ":exit":
             break
 
-        err, out = agent.run(user_request=f"Fetch the current wheather of {prompt}")
+        err, out = agent.run(user_request=f"Fetch the current weather of {prompt}")
 
         if err:
             print(f"An error occurred: {err}")

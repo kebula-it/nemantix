@@ -76,8 +76,11 @@ llm_extra = [
     "outlines~=1.2.13",
     "llama-cpp-python~=0.3.23",
 ]
+aws = [
+    "boto3>=1.34.0",
+]
 all = [
-    "nemantix[embeddings,stl,debug,dev,knowledge,observer]"
+    "nemantix[embeddings,stl,debug,dev,knowledge,observer,aws]"
 ]
 
 [project.scripts]

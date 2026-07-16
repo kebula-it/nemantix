@@ -296,6 +296,95 @@ def anthropic_llm_proxy(mock_anthropic_client, monkeypatch):
     )
 
 
+@pytest.fixture
+def mock_bedrock_client():
+    """Mock factory for boto3.client('bedrock-runtime')."""
+
+    class MockBedrockRuntime:
+        def converse(self, **kwargs):
+            messages = kwargs.get("messages", [])
+            tool_config = kwargs.get("toolConfig", {})
+            tools = tool_config.get("tools", [])
+            tool_choice = tool_config.get("toolChoice")
+
+            prompt = ""
+            if messages:
+                content = messages[0].get("content", [])
+                if isinstance(content, list) and content:
+                    prompt = content[0].get("text", "")
+
+            # invoke_structured: forced tool call
+            if tool_choice and "tool" in tool_choice:
+                forced_name = tool_choice["tool"]["name"]
+                return {
+                    "output": {
+                        "message": {
+                            "content": [
+                                {
+                                    "toolUse": {
+                                        "toolUseId": "id_123",
+                                        "name": forced_name,
+                                        "input": {"city": "Boston", "zip_code": 2101},
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "usage": {"inputTokens": 10, "outputTokens": 5},
+                }
+
+            if tools and ("weather" in prompt.lower() or "stock" in prompt.lower()):
+                return {
+                    "output": {
+                        "message": {
+                            "content": [
+                                {
+                                    "toolUse": {
+                                        "toolUseId": "id_123",
+                                        "name": "get_current_weather",
+                                        "input": {"location": "Boston"},
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "usage": {"inputTokens": 10, "outputTokens": 5},
+                }
+
+            return {
+                "output": {
+                    "message": {"content": [{"text": f"Mock response to: {prompt}"}]}
+                },
+                "usage": {"inputTokens": 10, "outputTokens": 5},
+            }
+
+        def converse_stream(self, **kwargs):
+            def _events():
+                yield {"contentBlockDelta": {"delta": {"text": "Mock "}}}
+                yield {"contentBlockDelta": {"delta": {"text": "stream "}}}
+                yield {"contentBlockDelta": {"delta": {"text": "response."}}}
+
+            return {"stream": _events()}
+
+    def _boto3_client_factory(service_name, **_kwargs):
+        return MockBedrockRuntime()
+
+    return _boto3_client_factory
+
+
+@pytest.fixture
+def bedrock_llm_proxy(mock_bedrock_client, monkeypatch):
+    from nemantix.llm.aws_bedrock_proxy import AWSBedrockLLMProxy
+
+    monkeypatch.setattr("nemantix.llm.aws_bedrock_proxy.boto3.client", mock_bedrock_client)
+    AbstractLLMProxy.set_credentials_manager(Credentials())
+    return AWSBedrockLLMProxy(
+        "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        temperature=0.2,
+        max_output_tokens=42,
+    )
+
+
 @pytest.fixture(autouse=True)
 def clear_env_and_state(monkeypatch):
     # Reset credentials manager between tests

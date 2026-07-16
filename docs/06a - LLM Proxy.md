@@ -26,7 +26,21 @@ llm_proxy = Expertise.get_default_llm(vendor='openai',
 * **OpenAI** (`vendor='openai'`)
 * **Azure OpenAI** (`vendor='azure'`): for accessing OpenAI models hosted on Microsoft Azure cloud.
 * **Google** (`vendor='google'`)
-* **Antrophic** (`vendor='antrophic'`)
+* **Anthropic** (`vendor='anthropic'`)
+* **AWS Bedrock** (`vendor='bedrock'`): access Amazon Bedrock models (Claude, Llama, Mistral, etc.)
+  via the boto3 Converse API. Requires `boto3>=1.34.0`.
+  Authentication follows the standard boto3 credential chain (IAM role, `~/.aws/credentials`, env vars)
+  or accepts explicit `aws_access_key_id`, `aws_secret_access_key`, and `aws_session_token` kwargs.
+  The `region_name` (or `aws_region`) kwarg selects the AWS region.
+
+  ```python
+  llm_proxy = Expertise.get_default_llm(
+      vendor='bedrock',
+      model='us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+      region_name='us-east-1',
+  )
+  ```
+
 * **OpenRouter** (`vendor='open_router'`): the proxy uses OpenAI-compatible APIs.
 * **Local LLM** (`vendor='local'`): use for self-hosted LLM on local machine,
   it uses `llama.cpp` backend for both CPU and GPU inference.

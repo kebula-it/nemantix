@@ -75,7 +75,9 @@ def test_bedrock_bind_tools_schema(bedrock_llm_proxy):
     assert "get_complex_weather" in tool_names
 
     complex_spec = next(
-        t["toolSpec"] for t in proxy._bound_tools if t["toolSpec"]["name"] == "get_complex_weather"
+        t["toolSpec"]
+        for t in proxy._bound_tools
+        if t["toolSpec"]["name"] == "get_complex_weather"
     )
     props = complex_spec["inputSchema"]["json"]["properties"]
 
@@ -217,7 +219,9 @@ def test_bedrock_init_error(monkeypatch):
     monkeypatch.setattr("nemantix.llm.aws_bedrock_proxy.boto3.client", bad_client)
     AbstractLLMProxy.set_credentials_manager(Credentials())
 
-    with pytest.raises(LLMProxyException, match="Failed to initialize AWS Bedrock client"):
+    with pytest.raises(
+        LLMProxyException, match="Failed to initialize AWS Bedrock client"
+    ):
         AWSBedrockLLMProxy("any-model")
 
 

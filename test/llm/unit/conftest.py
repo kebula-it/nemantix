@@ -376,7 +376,9 @@ def mock_bedrock_client():
 def bedrock_llm_proxy(mock_bedrock_client, monkeypatch):
     from nemantix.llm.aws_bedrock_proxy import AWSBedrockLLMProxy
 
-    monkeypatch.setattr("nemantix.llm.aws_bedrock_proxy.boto3.client", mock_bedrock_client)
+    monkeypatch.setattr(
+        "nemantix.llm.aws_bedrock_proxy.boto3.client", mock_bedrock_client
+    )
     AbstractLLMProxy.set_credentials_manager(Credentials())
     return AWSBedrockLLMProxy(
         "us.anthropic.claude-3-5-sonnet-20241022-v2:0",

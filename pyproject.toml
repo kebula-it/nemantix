@@ -54,6 +54,7 @@ debug = [
 ]
 dev = [
     "pytest~=8.4.2",
+    "pytest-cov~=5.0.0",
     "pyftpdlib~=2.2.0",
     "ruff~=0.15.4",
     "mypy~=1.19.1",

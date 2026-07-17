@@ -31,6 +31,7 @@ class EventType(Enum):
     EXTEND = auto()
     GENERALIZE = auto()
     OUTPUT = auto()
+    JSON_PARSE = auto()
 
 
 @dataclass

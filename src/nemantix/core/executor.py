@@ -27,6 +27,7 @@ from nemantix.core.prompt import (
 from nemantix.core.runtime import ExternalVariables, Struct
 from nemantix.core.script import Script
 from nemantix.core.source_manager import LocalSourceManager
+from nemantix.hub.event_hub import emit_json_parse
 from nemantix.hub.events import Event, EventType
 from nemantix.llm import (
     AbstractLLMProxy,
@@ -439,6 +440,12 @@ class Executor:
 
             try:
                 inputs = json.loads(answer)
+                emit_json_parse(
+                    True,
+                    "request_inputs",
+                    scope="executor",
+                    name=self.llm.get_name(),
+                )
                 logger.debug(f'Extracted inputs from request: "{inputs}".')
 
                 if isinstance(inputs, dict):
@@ -477,6 +484,14 @@ class Executor:
                 LarkError,
                 NemantixException,
             ) as e:
+                if isinstance(e, json.JSONDecodeError):
+                    emit_json_parse(
+                        False,
+                        "request_inputs",
+                        error=str(e),
+                        scope="executor",
+                        name=self.llm.get_name(),
+                    )
                 logger.warning(f"[{e.__class__.__name__}]: {e}")
                 correction = (
                     f'Your response was faulty. Adjust to solve the error "{e}". '

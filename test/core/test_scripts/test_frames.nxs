@@ -42,6 +42,13 @@ action apply_frames >> test prefix and postfix frame application <<:
             name: "Bob",
             tags: ("ml","ai")
         ){Person}]
+
+        # frame application on an already-defined structure (variable)
+        [[my_struct] = (name: "Luigi", age: 42)]
+        [[loose]  = [my_struct]{Person}]
+        # postfix (loose)
+        [[strict] = {Person}[my_struct]]
+        # prefix (strict)
     __body
 __action
 

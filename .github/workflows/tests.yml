@@ -2,7 +2,8 @@ name: Tests
 
 on:
   push:
-    branches: [ dev ]
+    branches:
+      - dev
   pull_request:
     branches: [ dev ]
 
@@ -28,10 +29,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install ".[all]"
 
-      - name: Run tests with pytest
+      - name: Run tests with pytest and gather coverage
         run: |
           if [ "${{ matrix.python-version }}" = "3.14" ]; then
-            pytest test --ignore=test/stl
+            pytest test --ignore=test/stl --cov=src
           else
-            pytest test
+            pytest test --cov=src
           fi

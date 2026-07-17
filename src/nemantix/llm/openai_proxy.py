@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type
 from pydantic import BaseModel, TypeAdapter
 
 from nemantix.common import get_package_logger
+from nemantix.hub.event_hub import emit_json_parse
 from nemantix.llm.abstract_proxy import (
     AbstractLLMProxy,
     LLMProxyException,
@@ -232,7 +233,20 @@ class OpenAICompatibleProxy(AbstractLLMProxy):
                 msg = self._call_tools(msg, messages, prompt, request=req)
 
             content = msg.content or "{}"
-            data = json.loads(content)  # guaranteed valid JSON with structured outputs
+            try:
+                data = json.loads(content)  # structured outputs -> valid JSON
+            except json.JSONDecodeError as e:
+                emit_json_parse(
+                    False,
+                    "structured_output",
+                    error=str(e),
+                    scope="llm",
+                    name=self.get_name(),
+                )
+                raise
+            emit_json_parse(
+                True, "structured_output", scope="llm", name=self.get_name()
+            )
 
             return StructuredLLMResponse(
                 result=schema.model_validate(data),

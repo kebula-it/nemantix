@@ -1,25 +1,31 @@
 # NXS as an Intentional Language
 
 NXS is the core **Intentional Language** of Nemantix.
-Its purpose is not to program machines in the traditional sense, but to specify **intentions**: what an agent is supposed to achieve, under which constraints, and within which semantic perimeter.
+Its purpose is not to program machines in the traditional sense, but to specify **intentions**: what an agent is
+supposed to achieve, under which constraints, and within which semantic perimeter.
 
-Where classical programming languages focus on *how* to execute a sequence of operations, NXS focuses on *what* needs to be accomplished and under what behavioral assumptions an AI-enabled system should operate.
+Where classical programming languages focus on *how* to execute a sequence of operations, NXS focuses on *what* needs to
+be accomplished and under what behavioral assumptions an AI-enabled system should operate.
 
 NXS mixes procedural sketches with microprompts:
 
 - **Procedural sketches** outline the intended flow at a high level (plans, actions, control flow, tool calls).
-- **Microprompts** are small, reusable pieces of natural-language guidance embedded inside a larger specification. They inject local semantics—constraints, priorities, definitions, examples, evidence requirements—right where decisions are made, keeping behavior precise without turning the whole spec into low-level code.
+- **Microprompts** are small, reusable pieces of natural-language guidance embedded inside a larger specification. They
+  inject local semantics—constraints, priorities, definitions, examples, evidence requirements—right where decisions are
+  made, keeping behavior precise without turning the whole spec into low-level code.
 
 ---
 
 # NXS Structure
 
 An NXS script is made by a header where you can (optionally):
+
 - `require` other nxs scripts
 - declare additional `toolset`s that will be completed by the agent if needed.
 - declare `frames` (see dedicated section)
 
-The core unit of a NXS script is the `deliberate`. It encapsulates a solution to a specific **need** by defining a `plan`, a structured sequence of `action`s that collectively solves a well-scoped problem.
+The core unit of a NXS script is the `deliberate`. It encapsulates a solution to a specific **need** by defining a
+`plan`, a structured sequence of `action`s that collectively solves a well-scoped problem.
 An NXS script can have one or more deliberates.
 
 <p align="center">
@@ -27,7 +33,8 @@ An NXS script can have one or more deliberates.
 </p>
 
 ### Toolsets and dependencies
-Declares which **toolsets** (and optionally other `deliberate`s, see next) are 
+
+Declares which **toolsets** (and optionally other `deliberate`s, see next) are
 _globally_ available to specified actions and deliberates.
 
 ### Actions
@@ -40,10 +47,13 @@ Each `action` defines:
 
 The body can be expressed in two complementary ways:
 
-- **Microprompt-based logic**: a short natural-language instruction to be completed/compiled by the Coder into executable form (useful when the exact logic depends on context).
-- **Fully specified logic**: expressions, loops, conditions, tool calls, `return`, etc., executed deterministically by the interpreter.
+- **Microprompt-based logic**: a short natural-language instruction to be completed/compiled by the Coder into
+  executable form (useful when the exact logic depends on context).
+- **Fully specified logic**: expressions, loops, conditions, tool calls, `return`, etc., executed deterministically by
+  the interpreter.
 
-> Actions outside the `deliberate` are _globally_ available to other deliberates within the same script. Instead, actions
+> Actions outside the `deliberate` are _globally_ available to other deliberates within the same script. Instead,
+> actions
 > defined within a `deliberate` are not accessible to outside deliberates, being _private_ to it.
 
 ### Deliberate
@@ -65,9 +75,11 @@ The Executor/Coder should treat mandate as the ground truth for what the plan mu
 #### Plan
 
 Similarly to actions, the plan defines:
+
 - **Inputs (`in`)**: required/optional data for the deliberate to run,
 - **Outputs (`out`)**: produced results that the callee can consume,
 - **Body (`body`)**: executable logic, made of statements and calls to private and global actions.
+
 ---
 
 # NXS Syntax
@@ -100,7 +112,6 @@ from toolset SQLToolset as DBToolset with ["DB_URI"] use connect
 - `with` passes arguments (as an expression) to the toolset instance.
 
 > Note: `with` is supported **together with** `as` (i.e., `as Alias with [...]`).
-
 
 ## Comments
 
@@ -157,14 +168,13 @@ Each block has a start delimiter (e.g. `mandate:`, `in:`, `out:`, `plan:`, `body
 
 ---
 
-
-
 ## Plans and actions
 
 ### Plan and action qualifiers
 
-Plans and actions can be qualified with a special annotation `@completion`. 
+Plans and actions can be qualified with a special annotation `@completion`.
 There are three qualifiers:
+
 - `undefined`
 - `drafted`
 - `frozen`
@@ -179,31 +189,39 @@ plan:
   __body
 __plan
 ```
+
 > The plan completion level can be either specified on top of the `plan` declaration, or on
 > the respective deliberate.
 
 The `completion` annotation supports the following syntax:
+
 + `@completion: drafted->frozen`: initial qualifier is `drafted` and requested (final) completion level is `frozen`.
 + `@completion: _->frozen`: use `_` to ignore the initial completion level, and only care about the target completion.
-+ `@completion: drafted->_`: in this case, it evaluates the final completion level according both the start qualifier and the implemented statements, 
-trying to complete as much as possible.
-+ `@completion: frozen`: this is a shorthand for `@completion: frozen->frozen`, when the initial and final levels are the same.
++ `@completion: drafted->_`: in this case, it evaluates the final completion level according both the start qualifier
+  and the implemented statements,
+  trying to complete as much as possible.
++ `@completion: frozen`: this is a shorthand for `@completion: frozen->frozen`, when the initial and final levels are
+  the same.
 
 > If `@completion` is not specified, the qualifier is automatically inferred by default.
 
 ### Qualifiers meaning and impact on NXC coding
+
 Plan and action qualifiers are intended to instruct the developer on the level of completion required.
 
 #### Plan qualifiers
 
-* **Frozen**: The NXS must be fully completed. The resulting NXC will be final, and no additional coding will be required.
+* **Frozen**: The NXS must be fully completed. The resulting NXC will be final, and no additional coding will be
+  required.
 * **Drafted**: The NXS is a draft used to generate a plan that can be modified at runtime if needed.
 * **Undefined**: No actions are specified in the plan. A draft will be generated and modified at runtime.
 
 #### Action qualifiers
 
-* **Frozen**: This action must not be implemented. It must be copied into the NXC exactly as-is and must never be modified.
-* **Drafted**: This action is partially implemented and must be implemented in the NXC, with any remaining parts completed at runtime if necessary.
+* **Frozen**: This action must not be implemented. It must be copied into the NXC exactly as-is and must never be
+  modified.
+* **Drafted**: This action is partially implemented and must be implemented in the NXC, with any remaining parts
+  completed at runtime if necessary.
 * **Undefined**: No instructions are specified in the action body. A draft will be generated and modified at runtime.
 
 Plan and action qualifiers can be combined to achieve the desired coding behavior.
@@ -223,7 +241,6 @@ action ProcessRequest >> process user text request <<:
   __body
 __action
 ```
-
 
 ### Inputs (`in`) and outputs (`out`)
 
@@ -440,14 +457,18 @@ Collections are written as a parenthesized literal. They can behave like lists (
 
 ---
 <a id="dostatement"></a>
+
 ## Tool / action / deliberate calls (`do`)
 
 Calls are expressed with `do` and may be inline or block form.
 
 ### Inline call
+
 The generic form is:
 `do optional_qualifier name using [expr] producing [expr]` where:
-- `optional_qualifier` must be one of `tool` (for tool calls) or `action` (for a specific action in a specific deliberate) or `deliberate` (to execute the entire plan of a deliberate, starting from the main action).
+
+- `optional_qualifier` must be one of `tool` (for tool calls) or `action` (for a specific action in a specific
+  deliberate) or `deliberate` (to execute the entire plan of a deliberate, starting from the main action).
 - `name` is the name of the callable. It can be qualified to specify which toolset/deliberate for tools and action.
 - `using` and `producing` accept an **expression**.
 
@@ -467,23 +488,25 @@ __do
 - `tool` and `action` are optional type specifiers.
 
 ### Builtin functions
+
 Builtin functions are special functions embedded in the language that can
 be called without the `do` statement syntax but just within an expression.
 
 Available builtins:
+
 * `print(*args, **kwargs)`: prints to console the given arguments.
 * `coalesce(*args, **kwargs)`: returns the first non-none (if any) among `args` and `kwargs`.
 * `exists(x)`: returns `True` if `x` is not none; otherwise `False`.
 * `size(*args)`: returns the `len()` of the given `args`.
 * `type(x)`: returns a string describing the type of `x`.
-Possible types are:
-  * `none` for Python `None`;
-  * `num` for integers and floats;
-  * `str` for strings;
-  * `bool` for booleans;
-  * `struct` for Nemantix structures (`Struct`);
-  * `doc` for Nemantix Document references (`DocRef`);
-  * `opaque` for Nemantix `Opaque`.
+  Possible types are:
+    * `none` for Python `None`;
+    * `num` for integers and floats;
+    * `str` for strings;
+    * `bool` for booleans;
+    * `struct` for Nemantix structures (`Struct`);
+    * `doc` for Nemantix Document references (`DocRef`);
+    * `opaque` for Nemantix `Opaque`.
 * `substring(x, start, end)`: returns the substring of the given start and termination indices.
 * `to_num(x)`: strict numeric conversion.
 * `to_bool(x)`: strict Boolean conversion.
@@ -497,21 +520,23 @@ Possible types are:
 * `llm(prompt, **kwargs)`: invokes the internal LLM.
 
 Knowledge base builtins:
+
 - `retrieve(query, top_k=5)`: Used to retrieve information from the knowledge base. Returns a list of `DocRef`.
 - `expand(node_id)`: Given a node id, retrieves its subnodes. Returns a list of `DocRef`.
-- `extend(node_id)`: Given a node id, retrieves its (previous or next) siblings. Returns a list of `DocRef`, 
-if there are no siblings the list will be empty.
+- `extend(node_id)`: Given a node id, retrieves its (previous or next) siblings. Returns a list of `DocRef`,
+  if there are no siblings the list will be empty.
 - `generalize(node_id)`: Given a node id, retrieves its parent node. Returns a single `DocRef`.
-
 
 ### DO LLM Call
 
 The `llm()` builtin function can be used in a do-statement as usual, where the LLM's response is provided as a string
 by default:
+
 ```
 do llm using ["Extract the ticket content: " | [text]]
                    producing [[content]]
 ```
+
 Use the optional `as` syntax working on `frames` to format the output response
 according to the provided schema:
 
@@ -527,7 +552,6 @@ do llm using ["Extract the ticket content: " | [text]]
 
 # [content] is now a struct with "content" and "id" fields.
 ```
-
 
 ---
 
@@ -549,8 +573,8 @@ Conditions are **prompted expressions**: either an expression optionally followe
 
 ## Loops
 
-
 ### Repeat each (iterate a collection)
+
 Iterates over a structure yielding the current iteration number `i` and
 value `item`:
 
@@ -564,7 +588,9 @@ __repeat
 - optional `as [i], [item]`.
 
 ### Repeat N times
+
 Numeric loop:
+
 ```nxs
 repeat 10 times as [i]:
   ...
@@ -572,7 +598,9 @@ __repeat
 ```
 
 ### Conditional repeat (while/until) with optional max iterations
+
 While or repeat until loop:
+
 ```nxs
 repeat while >> condition << max 100:
   ...
@@ -581,9 +609,7 @@ __repeat
 
 ---
 
-
 ## Advanced constructs
-
 
 ### Intentable Prefix: Labels and Meta
 
@@ -608,6 +634,7 @@ allowing the user to specify a variety of metadata:
 Meta values can be: prompts, expressions, strings, numbers, booleans, `none` (`none` or `_`), or qualified names.
 
 Example usages:
+
 ```nxs
 # frame with intetables
 {expl}
@@ -634,12 +661,15 @@ deliberate summarize when >>...<<:
     __plan
 __deliberate
 ```
-There are special annotations like `@completion` and `@breakdown`:
-+ The `@completion` can be only applied on `deliberate`, `plan` and `action` declaration, specifying the desired coding level.
-+ The `@breakdown` is deliberate specific. If enabled, i.e., `@breakdown: true`, it instructs the coder to generate
-deliberate-private actions within its definition. When omitted, this feature is disabled by default.
 
-Moreover, annotations involving the `intent` namespace like `@intent.goal` can be shorthanded to `@goal`, 
+There are special annotations like `@completion` and `@breakdown`:
+
++ The `@completion` can be only applied on `deliberate`, `plan` and `action` declaration, specifying the desired coding
+  level.
++ The `@breakdown` is deliberate specific. If enabled, i.e., `@breakdown: true`, it instructs the coder to generate
+  deliberate-private actions within its definition. When omitted, this feature is disabled by default.
+
+Moreover, annotations involving the `intent` namespace like `@intent.goal` can be shorthanded to `@goal`,
 hence omitting the `intent` namespace.
 
 ## Frames and slots
@@ -656,6 +686,7 @@ __frame
 ```
 
 We can have nested frames as well:
+
 ```
 frame Employee:
 
@@ -714,16 +745,44 @@ Examples:
 
 ## Frame application on structures
 
-A structure can be annotated with a frame (semantic typing) either as prefix or suffix:
-- **Prefix application** requires the Structured Collection to conform to the frame definition;
-- **Postfix application** interprets the structure in the context of the frame, even if it is partial or incomplete.
+A structure can be annotated with a frame (semantic typing) either as **prefix** or **suffix**:
 
-Frame application returns a new structure that respects the frame definition, 
-or `none` if it is not possible to do so.
+- **Prefix application** (`{Frame} x`) requires the structure to conform to the frame definition — every slot must be
+  present and well-typed, otherwise the result is `none` (strict);
+- **Postfix application** (`x {Frame}`) interprets the structure in the context of the frame even if it is partial —
+  missing slots are filled with defaults and values are coerced where possible (loose).
+
+Frame application returns a new structure that respects the frame definition,
+or `none` if it is not possible to do so. Nested frames are validated automatically:
+applying an outer frame recursively applies any frame-typed slots to the corresponding
+nested structures.
+
+**On structure literals**
 
 ```nxs
-[[p] = {Person}(name:"Ada", age:36)]
-[[q] = (name:"Ada"){Person}]
+[[p] = {Person}(name:"Ada", age:36)]   // prefix (strict)
+[[q] = (name:"Ada"){Person}]           // postfix (loose)
+```
+
+**On already-defined structures** — the same notation works on variables that already hold a
+structure (including path access):
+
+```nxs
+[[my_struct] = (1, 2, field:"value")]
+[[strict] = {Person}[my_struct]]       // prefix (strict) -> struct or none
+[[loose]  = [my_struct]{Person}]       // postfix (loose)
+[[inner]  = [my_struct:profile]{Person}]
+```
+
+**On JSON strings** — if the variable holds a string containing JSON, it is parsed into a
+structure before the frame is applied. Parsing is **strict by default**: malformed JSON raises a
+runtime error. Enabling **lenient mode** on the expertise/agent (`json_parsing: "lenient"`) adds an
+LLM repair step that first attempts to fix malformed / "quasi"-JSON. In both modes, a string
+decoding to a JSON scalar (not an object or array) cannot be a structure and raises a runtime error.
+
+```nxs
+[[payload] = "{ \"name\": \"Ada\", \"age\": 36 }"]
+[[person]  = [payload]{Person}]
 ```
 
 ---
@@ -765,10 +824,12 @@ Examples:
 ---
 
 ## DocRef
-A `DocRef` represents a document chunk, retrieved through the Nemantix Knowledge Base 
+
+A `DocRef` represents a document chunk, retrieved through the Nemantix Knowledge Base
 (see the related [docs](./08%20-%20Knowledge%20Base.md) for further info.)
-In practical terms, a `DocRef` is a collection (i.e., a `Struct` supporting the same syntax) 
+In practical terms, a `DocRef` is a collection (i.e., a `Struct` supporting the same syntax)
 with the following fields:
+
 * `node_id`: a string representing the identifier of the document chunk;
 * `score`: a (optional) float retrieval score;
 * `content`: the string content of the chunk;

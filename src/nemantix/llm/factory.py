@@ -82,5 +82,11 @@ class LLMProxyFactory:
             from nemantix.llm.local_proxy import LocalLLMProxy
 
             return LocalLLMProxy(model_name, **kwargs)
+
+        elif vendor in ["bedrock", "aws-bedrock", "aws_bedrock"]:
+            from nemantix.llm.aws_bedrock_proxy import AWSBedrockLLMProxy
+
+            return AWSBedrockLLMProxy(model_name, **kwargs)
+
         else:
             raise LLMProxyException(f"Unsupported LLM vendor: {vendor}")

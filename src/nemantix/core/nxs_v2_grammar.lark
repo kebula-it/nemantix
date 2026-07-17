@@ -251,9 +251,11 @@ ident_list: CNAME ("," CNAME)*
 expression: intentable_prefix? "[" inner_expression "]"
 
 
-// structure = list_literal con frame_apply opzionale (prima o dopo)
+// structure = operand (struct literal or variabile) with frame_apply (before or after)
 ?structure: frame_apply list_literal   -> structure_prefix
         | list_literal frame_apply   -> structure_suffix
+        | frame_apply variable   -> structure_prefix
+        | variable frame_apply   -> structure_suffix
 frame_apply: "{" qualified_name "}"
 
 

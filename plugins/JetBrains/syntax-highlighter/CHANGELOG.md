@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.4]
+### Bugfix
+- Introduced `mandate` as a replacement for the `guidelines`
+keyword - `guidelines` is still kept but deprecated for backward compatibility.
+- Improved the code formatter.
+- Fixed how comments are handled inside a `toolset` block.
+
 ## [1.1.3]
 - General code pasting improvements.
 

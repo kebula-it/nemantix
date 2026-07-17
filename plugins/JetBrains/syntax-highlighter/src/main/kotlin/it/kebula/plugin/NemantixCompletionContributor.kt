@@ -11,7 +11,7 @@ class NemantixCompletionContributor : CompletionContributor() {
     private val KEYWORDS = listOf(
         // Structure
         "require", "deliberate", "toolset", "frame", "slot", "plan",
-        "action", "tool", "guidelines", "body", "in", "out",
+        "action", "tool", "mandate", "body", "in", "out",
 
         // Flow Control
         "if", "elif", "else",
@@ -27,6 +27,8 @@ class NemantixCompletionContributor : CompletionContributor() {
         "undefined", "drafted", "frozen"
     )
 
+    private val DEPRECATED_KEYWORDS = listOf("guidelines")
+
     init {
         // 2. Extend the completion logic
         extend(
@@ -40,6 +42,13 @@ class NemantixCompletionContributor : CompletionContributor() {
                 ) {
                     for (keyword in KEYWORDS) {
                         result.addElement(LookupElementBuilder.create(keyword))
+                    }
+                    for (keyword in DEPRECATED_KEYWORDS) {
+                        result.addElement(
+                            LookupElementBuilder.create(keyword)
+                                .withTailText(" deprecated → use mandate", true)
+                                .withStrikeoutness(true)
+                        )
                     }
                 }
             }

@@ -159,7 +159,11 @@
       "patterns": [
         {
           "name": "keyword.control.nemantix",
-          "match": "\\b(action|deliberate|tool|require|required|when|plan|optional|default|slot|guidelines|in|out|body|do|using|producing|return|as|if|else|elif|repeat|each|while|until|from|use|with|times|break|continue)\\b"
+          "match": "\\b(action|deliberate|tool|require|required|when|plan|optional|default|slot|mandate|in|out|body|do|using|producing|return|as|if|else|elif|repeat|each|while|until|from|use|with|times|break|continue)\\b"
+        },
+        {
+          "name": "invalid.deprecated.nemantix",
+          "match": "\\b(guidelines)\\b"
         },
         {
           "name": "storage.type.nemantix",
@@ -167,7 +171,11 @@
         },
         {
           "name": "keyword.control.end.nemantix",
-          "match": "\\b__(plan|in|out|body|guidelines|do|action|deliberate|toolset|repeat|if|use)?\\b"
+          "match": "\\b__(plan|in|out|body|mandate|do|action|deliberate|toolset|repeat|if|use)?\\b"
+        },
+        {
+          "name": "invalid.deprecated.nemantix",
+          "match": "\\b(__guidelines)\\b"
         },
         {
           "name": "constant.language.nemantix",

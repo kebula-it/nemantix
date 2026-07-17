@@ -33,5 +33,7 @@
         <lang.foldingBuilder
                 language="Nemantix"
                 implementationClass="it.kebula.plugin.NemantixFoldingBuilder"/>
+        <editorActionHandler action="CommentByLineComment"
+                implementationClass="it.kebula.plugin.NemantixCommentHandler"/>
     </extensions>
 </idea-plugin>

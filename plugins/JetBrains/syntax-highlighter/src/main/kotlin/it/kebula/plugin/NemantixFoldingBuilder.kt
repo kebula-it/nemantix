@@ -26,7 +26,7 @@ class NemantixFoldingBuilder : FoldingBuilderEx(), DumbAware {
         val openBlocks = mutableListOf<OpenBlock>()
 
         // foldable block names definition
-        val foldableBlocks = setOf("deliberate", "plan", "action", "guidelines", "toolset", "frame")
+        val foldableBlocks = setOf("deliberate", "plan", "action", "mandate", "guidelines", "toolset", "frame")
         var expectingNameFor: OpenBlock? = null
 
         for (token in allTokens) {
@@ -49,20 +49,22 @@ class NemantixFoldingBuilder : FoldingBuilderEx(), DumbAware {
                 expectingNameFor = null
             }
 
+            val isAnyKeyword = type == NemantixTypes.KEYWORD || type == NemantixTypes.DEPRECATED_KEYWORD
+
             // A. Check for START keywords
-            if (type == NemantixTypes.KEYWORD) {
+            if (isAnyKeyword) {
                 if (text in foldableBlocks) {
                     val block = OpenBlock(text, token.textRange.endOffset)
                     openBlocks.add(block)
 
-                    if (text in setOf("deliberate", "action", "guidelines", "frame", "toolset")) {
+                    if (text in setOf("deliberate", "action", "mandate", "guidelines", "frame", "toolset")) {
                         expectingNameFor = block
                     }
                 }
             }
 
             // B. Check for END keywords
-            if (type == NemantixTypes.KEYWORD && text.startsWith("__")) {
+            if (isAnyKeyword && text.startsWith("__")) {
                 val endName = text.substring(2) // remove "__" -> "deliberate"
 
                 // Find the LAST matching start block (standard nesting logic)

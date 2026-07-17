@@ -101,11 +101,14 @@ class NemantixPasteProcessor : CopyPastePostProcessor<TextBlockTransferableData>
             isFirstOutputLine = false
         }
 
-        val startBlockRegex = Regex("^(?:@[a-zA-Z0-9_:-]+\\s*)*(?:(?:frozen|drafted|undefined)\\s+)?(?:plan:|action\\b|body:|in:|out:|guidelines:|deliberate\\b|toolset\\b|use:|if\\b|elif\\b|else\\b|repeat\\b|while\\b|until\\b|for\\b|>>>)")
+        val startBlockRegex = Regex("^(?:@[a-zA-Z0-9_:-]+\\s*)*(?:(?:frozen|drafted|undefined)\\s+)?(?:plan:|action\\b|body:|in:|out:|mandate:|guidelines:|deliberate\\b|toolset\\b|use:|if\\b|elif\\b|else\\b|repeat\\b|while\\b|until\\b|for\\b|>>>)")
+
+        val continuationKeywordRegex = Regex("^(elif|else)\\b")
 
         // Helper function to process standard lines and boundary lines identically
         fun processLineFormatting(textLine: String) {
-            if (textLine.startsWith("__") || textLine.startsWith("<<<")) {
+            val isContinuation = continuationKeywordRegex.containsMatchIn(textLine)
+            if (textLine.startsWith("__") || textLine.startsWith("<<<") || isContinuation) {
                 relativeIndentLevel = maxOf(0, relativeIndentLevel - 1)
             }
 

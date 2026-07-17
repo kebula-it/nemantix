@@ -18,6 +18,9 @@ object NemantixTypes {
     @JvmField
     public val COMMENT = NemantixTokenType("COMMENT")
 
+    @JvmField
+    val DEPRECATED_KEYWORD = NemantixTokenType("DEPRECATED_KEYWORD")
+
     // do and plan qualifiers
     @JvmField
     public val PLAN_QUALIFIER = NemantixTokenType("PLAN_QUALIFIER")

@@ -14,9 +14,9 @@
     "prefix": "del",
     "body": [
       "deliberate ${1:name} when >> ${2:microprompt} <<:",
-      "\tguidelines:",
+      "\tmandate:",
       "\t>>> ${3:instructions} <<<",
-      "\t__guidelines",
+      "\t__mandate",
       "",
       "\t@completion: ${4:_->frozen}",
       "\tplan:",

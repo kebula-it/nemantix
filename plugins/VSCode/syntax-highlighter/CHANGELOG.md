@@ -1,5 +1,9 @@
 # Change Log
 
+## [1.0.10] - 2026-07-16
+### Changes
+- The `mandate` keyword now replaces the `guidelines` one, which is now deprecated but still present for backward compatibility
+
 ## [1.0.9] - 2026-06-11
 ### Changes
 - Changed highlight color type of `tool` qualifier (e.g., used in `do` statements.)

@@ -70,7 +70,8 @@ RANGE_CARDINALITY=[0-9]+\.\.(\*|[0-9]+)
   "action"           { return NemantixTypes.KEYWORD; }
   "plan"             { return NemantixTypes.KEYWORD; }
   "tool"             { return NemantixTypes.KEYWORD; }
-  "guidelines"       { return NemantixTypes.KEYWORD; }
+  "mandate"          { return NemantixTypes.KEYWORD; }
+  "guidelines"       { return NemantixTypes.DEPRECATED_KEYWORD; }
 
   // Logic & Control Flow
   "if"               { return NemantixTypes.KEYWORD; }
@@ -133,7 +134,8 @@ RANGE_CARDINALITY=[0-9]+\.\.(\*|[0-9]+)
   // End markers (treated as keywords for highlighting)
   "__"               { return NemantixTypes.KEYWORD; }
   "__deliberate"     { return NemantixTypes.KEYWORD; }
-  "__guidelines"     { return NemantixTypes.KEYWORD; }
+  "__mandate"        { return NemantixTypes.KEYWORD; }
+  "__guidelines"     { return NemantixTypes.DEPRECATED_KEYWORD; }
   "__plan"           { return NemantixTypes.KEYWORD; }
   "__action"         { return NemantixTypes.KEYWORD; }
   "__body"           { return NemantixTypes.KEYWORD; }

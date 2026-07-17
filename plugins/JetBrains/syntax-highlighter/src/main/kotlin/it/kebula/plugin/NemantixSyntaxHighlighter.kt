@@ -18,6 +18,10 @@ class NemantixSyntaxHighlighter : SyntaxHighlighterBase() {
 
     // We reuse standard IntelliJ keys where possible so it looks good in Dark/Light themes automatically
     private val KEYWORD_KEY = TextAttributesKey.createTextAttributesKey("NXS_KEYWORD", DefaultLanguageHighlighterColors.KEYWORD)
+    private val DEPRECATED_KEYWORD_KEY = TextAttributesKey.createTextAttributesKey(
+        "NXS_DEPRECATED_KEYWORD",
+        TextAttributesKey.createTextAttributesKey("DEPRECATED_ATTRIBUTES")
+    )
     private val ID_KEY = TextAttributesKey.createTextAttributesKey("NXS_ID", DefaultLanguageHighlighterColors.IDENTIFIER)
     private val NUMBER_KEY = TextAttributesKey.createTextAttributesKey("NXS_NUMBER", DefaultLanguageHighlighterColors.NUMBER)
     private val STRING_KEY = TextAttributesKey.createTextAttributesKey("NXS_STRING", DefaultLanguageHighlighterColors.STRING)
@@ -35,6 +39,7 @@ class NemantixSyntaxHighlighter : SyntaxHighlighterBase() {
     override fun getTokenHighlights(tokenType: IElementType): Array<TextAttributesKey> {
         return when (tokenType) {
             NemantixTypes.KEYWORD, NemantixTypes.BOOLEAN -> arrayOf(KEYWORD_KEY)
+            NemantixTypes.DEPRECATED_KEYWORD -> arrayOf(DEPRECATED_KEYWORD_KEY)
             NemantixTypes.IDENTIFIER -> arrayOf(ID_KEY)
             NemantixTypes.NUMBER -> arrayOf(NUMBER_KEY)
             NemantixTypes.STRING -> arrayOf(STRING_KEY)

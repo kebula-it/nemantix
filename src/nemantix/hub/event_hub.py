@@ -1,21 +1,21 @@
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from typing import Callable
 
 from nemantix.common import context
-from nemantix.hub.events import Event, EventType
+from nemantix.hub.events import BaseEventType, Event, EventType
 
 
 class EventHub:
     def __init__(self):
         self._events = []
-        self._events_by_type = {event_type: [] for event_type in EventType}
-
-        self._subscribers: dict[EventType, list[Callable[[Event], None]]] = {
-            event_type: [] for event_type in EventType
-        }
+        self._events_by_type: dict[BaseEventType, list[Event]] = defaultdict(list)
+        self._subscribers: dict[
+            BaseEventType, list[Callable[[Event], None]]
+        ] = defaultdict(list)
 
     @staticmethod
-    def get_active_hub(event_type: EventType) -> "EventHub | None":
+    def get_active_hub(event_type: BaseEventType) -> "EventHub | None":
         """Returns an EventHub instance (of current context) if it exists and if it subscribes to
         the provided event type.
         """
@@ -25,11 +25,11 @@ class EventHub:
 
         return None
 
-    def subscribe(self, event_type: EventType, callback: Callable[[Event], None]):
+    def subscribe(self, event_type: BaseEventType, callback: Callable[[Event], None]):
         """Registers a callback to be triggered on a specific event type."""
         self._subscribers[event_type].append(callback)
 
-    def has_subscribers(self, event_type: EventType) -> bool:
+    def has_subscribers(self, event_type: BaseEventType) -> bool:
         return len(self._subscribers[event_type]) > 0
 
     def emit(self, event: Event):

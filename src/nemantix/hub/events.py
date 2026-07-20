@@ -7,7 +7,16 @@ if TYPE_CHECKING:
     from nemantix.core.script import Script
 
 
-class EventType(Enum):
+class BaseEventType(Enum):
+    """Abstract base for all event-type enumerations.
+
+    Has no members so it can be subclassed. Define domain-specific event types
+    by subclassing this class — no members may be added to ``BaseEventType``
+    itself, and ``EventType`` (core) may not be further subclassed.
+    """
+
+
+class EventType(BaseEventType):
     LINE = auto()
     CALL_ENTER = auto()
     CALL_EXIT = auto()
@@ -31,12 +40,11 @@ class EventType(Enum):
     EXTEND = auto()
     GENERALIZE = auto()
     OUTPUT = auto()
-    POLICY = auto()
 
 
 @dataclass
 class Event:
-    type: EventType
+    type: BaseEventType
     lines: tuple[int, int]
     scope: str
     script: "Script | None"

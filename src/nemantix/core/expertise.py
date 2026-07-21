@@ -459,12 +459,9 @@ class Expertise:
         return self.script_by_loc[script_location]
 
     def get_required_scripts(self, script: Script) -> list[Script]:
+        requirements = self.requires_map.get(script.get_location(), [])
         try:
-            reqs = [
-                self.script_by_loc[loc]
-                for loc in self.requires_map[script.get_location()]
-            ]
-            return reqs
+            return [self.script_by_loc[loc] for loc in requirements]
         except KeyError as e:
             raise NemantixException(
                 f"Could not find required script: {str(e)}.\n Script required by '{script.get_location()}'."

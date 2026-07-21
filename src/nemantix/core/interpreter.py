@@ -1882,7 +1882,6 @@ class Interpreter:
         """Updates the interpretation context."""
         if script is not None:
             self._discover_actions(script, should_update=True)
-            self.context.add_script(script)
 
         if deliberate is not None:
             self._discover_deliberate_actions(deliberate, should_update=True)

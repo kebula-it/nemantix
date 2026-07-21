@@ -3676,7 +3676,6 @@ def test_update_context_with_script(interpreter_instance):
     interpreter_instance.update_context(script=mock_script)
 
     # 3. Assertions
-    assert "dynamic_script.nxs" in interpreter_instance.context._seen_scripts
     assert "dynamic_global_action" in interpreter_instance.context.actions
     assert (
         interpreter_instance.context.actions["dynamic_global_action"]["is_global"]
@@ -3749,7 +3748,6 @@ def test_update_context_with_both_script_and_deliberate(interpreter_instance):
 
     interpreter_instance.update_context(script=mock_script, deliberate=mock_deliberate)
 
-    assert "combo_script.nxs" in interpreter_instance.context._seen_scripts
     assert "combo_deliberate" in interpreter_instance.context._seen_deliberates
 
 

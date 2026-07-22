@@ -28,8 +28,8 @@ from nemantix.core.node import (
     BinaryOperationEnum,
     CallableTypeEnum,
     MicroPrompt,
-    SchemedCollection,
     FrameApplyEnum,
+    SchemedVariable,
 )
 from nemantix.core.parser import ParserLark
 
@@ -710,18 +710,18 @@ def test_frame_apply_on_variable(parser):
     body = parser.parse_string(code)[0].children
 
     loose = body[0].value
-    assert isinstance(loose, SchemedCollection)
+    assert isinstance(loose, SchemedVariable)
     assert loose.apply_type == FrameApplyEnum.POST
     assert isinstance(loose.value, Variable)
     assert loose.value.name == "my_struct"
 
     strict = body[1].value
-    assert isinstance(strict, SchemedCollection)
+    assert isinstance(strict, SchemedVariable)
     assert strict.apply_type == FrameApplyEnum.PRE
     assert isinstance(strict.value, Variable)
 
     nested = body[2].value
-    assert isinstance(nested, SchemedCollection)
+    assert isinstance(nested, SchemedVariable)
     assert isinstance(nested.value, Variable)
     assert nested.value.name == "my_struct"
     assert len(nested.value.path) == 1

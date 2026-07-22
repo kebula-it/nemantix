@@ -17,7 +17,7 @@ from nemantix.cli.format import handle_format, register
 _CLEAN_NXS = "action foo >> foo <<:\n  body:\n    >> x <<\n  __body\n__action"
 _DIRTY_NXS = (
     "action foo >> foo <<:\n"
-    "    body:\n"           # 4-space indent → NXF001
+    "    body:\n"  # 4-space indent → NXF001
     "        >> x <<\n"
     "    __body\n"
     "__action"
@@ -149,7 +149,9 @@ def test_nxv_file_never_modified(tmp_path: Path):
     assert f.read_text() == _DIRTY_NXS
 
 
-def test_nxv_file_check_mode_reports_violations(tmp_path: Path, capsys: pytest.CaptureFixture):
+def test_nxv_file_check_mode_reports_violations(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+):
     f = tmp_path / "signed.nxv"
     f.write_text(_DIRTY_NXS)
     args = _args(check=False, files=[str(f)])
@@ -169,7 +171,11 @@ def test_missing_file_exits_one(tmp_path: Path, capsys: pytest.CaptureFixture):
     rc = handle_format(args)
     assert rc == 1
     err = capsys.readouterr().err
-    assert "not found" in err.lower() or "no such" in err.lower() or "nonexistent" in err.lower()
+    assert (
+        "not found" in err.lower()
+        or "no such" in err.lower()
+        or "nonexistent" in err.lower()
+    )
 
 
 def test_permissive_flag_preserves_bare_closers(tmp_path: Path):
@@ -184,7 +190,36 @@ def test_permissive_flag_preserves_bare_closers(tmp_path: Path):
     assert lines[-1] == "__"
 
 
-def test_multiple_files_reports_violations_from_each(tmp_path: Path, capsys: pytest.CaptureFixture):
+def test_syntax_error_prints_message_and_exits_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    f = tmp_path / "broken.nxs"
+    f.write_text(
+        "action foo >> foo <<:\n  body:\n    >> x <<\n  __body\n# missing closer"
+    )
+    args = _args(check=True, files=[str(f)])
+    rc = handle_format(args)
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "broken.nxs" in err
+
+
+def test_syntax_error_continues_to_next_file(tmp_path: Path):
+    broken = tmp_path / "broken.nxs"
+    broken.write_text(
+        "action foo >> foo <<:\n  body:\n    >> x <<\n  __body\n# missing closer"
+    )
+    clean = tmp_path / "clean.nxs"
+    clean.write_text(_CLEAN_NXS)
+    args = _args(check=True, files=[str(broken), str(clean)])
+    rc = handle_format(args)
+    assert rc == 1  # broken causes rc=1
+    assert clean.read_text() == _CLEAN_NXS  # clean file was still checked, not aborted
+
+
+def test_multiple_files_reports_violations_from_each(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+):
     f1 = tmp_path / "a.nxs"
     f2 = tmp_path / "b.nxs"
     f1.write_text(_DIRTY_NXS)

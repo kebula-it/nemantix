@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from nemantix.core.parser import AsFrame
 
 from nemantix.core.exceptions import NemantixException
 
@@ -413,52 +417,99 @@ class Collection(Value):
         return ", ".join(buf)
 
 
-class SchemedCollection(Collection):
-    def __init__(
-        self,
+class SchemedBase(ABC):
+    """Mixin for frame-application nodes; carries application direction and factory."""
+
+    apply_type: FrameApplyEnum
+
+    @classmethod
+    def create(
+        cls,
         value: list[Expression] | dict[str, Expression] | Variable,
         inferred_type: VariableTypeEnum,
-        dataframe: str,
+        dataframe: AsFrame | Collection | str,
         apply_type: FrameApplyEnum,
         meta: dict[str, Meta | None],
-    ):
-        # value is either a struct literal (list/dict of expressions) or a
-        # Variable reference that must resolve to a struct / JSON string at runtime.
-        super().__init__(value, inferred_type, meta)
-        self.dataframe = dataframe
-        self.apply_type = apply_type
+    ) -> SchemedCollection | SchemedVariable:
+        if isinstance(value, Variable):
+            if isinstance(dataframe, Collection):
+                raise TypeError(
+                    "dataframe cannot be a Collection when value is a Variable"
+                )
+            return SchemedVariable(value, inferred_type, dataframe, apply_type, meta)
+        return SchemedCollection(value, inferred_type, dataframe, apply_type, meta)
 
-    def __str__(self):
-        pos_str = self.apply_type.value
-        if isinstance(self.value, list):
-            val_str = [str(v) for v in self.value]
-        else:
-            val_str = str(self.value)
+    @abstractmethod
+    def _frame_str(self) -> str: ...
 
-        if hasattr(self.dataframe, "value"):
-            dataframe = str(self.dataframe.value)
-        else:
-            dataframe = str(self.dataframe)
-
-        return f"SchemedCollection {{{dataframe}}}[{pos_str}]: {val_str})"
-
-    def to_nxs(self, **kwargs) -> str:
-        if isinstance(self.value, Variable):
-            operand_nxs = self.value.to_nxs(**kwargs)
-        else:
-            inner = super().to_nxs(**kwargs)
-            operand_nxs = (
-                inner if inner.startswith("(") and inner.endswith(")") else f"({inner})"
-            )
-        dataframe = (
-            self.dataframe.value
-            if hasattr(self.dataframe, "value")
-            else str(self.dataframe)
-        )
-        frame_nxs = f"{{{dataframe}}}"
+    def _frame_nxs(self, operand_nxs: str) -> str:
+        frame_nxs = self._frame_str()
         if self.apply_type == FrameApplyEnum.PRE:
             return f"{frame_nxs} {operand_nxs}"
         return f"{operand_nxs} {frame_nxs}"
+
+
+class SchemedCollection(Collection, SchemedBase):
+    def __init__(
+        self,
+        value: list[Expression] | dict[str, Expression],
+        inferred_type: VariableTypeEnum,
+        dataframe: AsFrame | Collection | str,
+        apply_type: FrameApplyEnum,
+        meta: dict[str, Meta | None],
+    ):
+        super().__init__(value, inferred_type, meta)
+        self.dataframe: AsFrame | Collection | str = dataframe
+        self.apply_type = apply_type
+
+    def _frame_str(self) -> str:
+        if isinstance(self.dataframe, str):
+            return f"{{{self.dataframe}}}"
+        if isinstance(self.dataframe, Collection):
+            return f"{{{self.dataframe.to_nxs()}}}"
+        return f"{{{self.dataframe.value}}}"  # AsFrame
+
+    def __str__(self) -> str:
+        val_str = (
+            [str(v) for v in self.value]
+            if isinstance(self.value, list)
+            else str(self.value)
+        )
+        return (
+            f"SchemedCollection {self._frame_str()}[{self.apply_type.value}]: {val_str}"
+        )
+
+    def to_nxs(self, **kwargs) -> str:
+        inner = super().to_nxs(**kwargs)
+        operand_nxs = (
+            inner if inner.startswith("(") and inner.endswith(")") else f"({inner})"
+        )
+        return self._frame_nxs(operand_nxs)
+
+
+class SchemedVariable(Value, SchemedBase):
+    def __init__(
+        self,
+        value: Variable,
+        inferred_type: VariableTypeEnum,
+        dataframe: AsFrame | str,
+        apply_type: FrameApplyEnum,
+        meta: dict[str, Meta | None],
+    ):
+        super().__init__(value, inferred_type, meta)
+        self.dataframe: AsFrame | str = dataframe
+        self.apply_type = apply_type
+
+    def _frame_str(self) -> str:
+        if isinstance(self.dataframe, str):
+            return f"{{{self.dataframe}}}"
+        return f"{{{self.dataframe.value}}}"  # AsFrame
+
+    def __str__(self) -> str:
+        return f"SchemedVariable {self._frame_str()}[{self.apply_type.value}]: {self.value}"
+
+    def to_nxs(self, **kwargs) -> str:
+        return self._frame_nxs(self.value.to_nxs(**kwargs))
 
 
 class Assignment(Expression):
@@ -956,7 +1007,11 @@ class RepeatTimesBlock(RepeatBlock):
         return f"RepeatTimesBlock(times={self.times} as_vars={self.as_vars})\n{children_str})"
 
     def to_nxs(self, **kwargs) -> str:
-        as_str = f" as [{self.as_vars}]" if self.as_vars is not None else ""
+        as_str = (
+            (" as " + ", ".join(f"[{v}]" for v in self.as_vars))
+            if self.as_vars is not None
+            else ""
+        )
         body_lines: list[str] = []
         for c in self.children:
             for line in _child_body_nxs(c, **kwargs).splitlines():

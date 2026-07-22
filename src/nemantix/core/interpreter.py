@@ -1108,7 +1108,7 @@ class Interpreter:
         if isinstance(expression, nmx_nodes.Assignment):
             return self.interpret_assignment(assignment=expression)
 
-        elif isinstance(expression, nmx_nodes.SchemedCollection):
+        elif isinstance(expression, nmx_nodes.SchemedBase):
             return self.eval_schemed_collection(schemed_collection=expression)
 
         elif isinstance(expression, nmx_nodes.Collection):
@@ -1272,7 +1272,7 @@ class Interpreter:
 
     def eval_schemed_collection(
         self,
-        schemed_collection: nmx_nodes.SchemedCollection,
+        schemed_collection: nmx_nodes.SchemedBase,
         enclosing_frame: Optional[nmx_runtime.Frame] = None,
     ) -> Struct | None:
         if isinstance(schemed_collection.dataframe, nmx_nodes.Collection):
@@ -1421,7 +1421,7 @@ class Interpreter:
         for value in collection.value:
             if isinstance(value, dict):
                 for k, v in value.items():
-                    if isinstance(v, nmx_nodes.SchemedCollection):
+                    if isinstance(v, nmx_nodes.SchemedBase):
                         v = self.eval_schemed_collection(
                             schemed_collection=v, enclosing_frame=frame
                         )
@@ -1432,7 +1432,7 @@ class Interpreter:
 
                     struct.set(value=v, key=k)
             else:
-                if isinstance(value, nmx_nodes.SchemedCollection):
+                if isinstance(value, nmx_nodes.SchemedBase):
                     value_ = self.eval_schemed_collection(
                         schemed_collection=value, enclosing_frame=frame
                     )
@@ -2268,7 +2268,7 @@ class Interpreter:
 
     def _unpack_user_inputs(self, expression: nmx_nodes.Expression | None = None):
         assert not isinstance(
-            expression, (nmx_nodes.SchemedCollection, nmx_nodes.MetaExpression)
+            expression, (nmx_nodes.SchemedBase, nmx_nodes.MetaExpression)
         )
         inputs = self.interpret_expression(expression)
 

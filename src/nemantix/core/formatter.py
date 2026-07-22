@@ -1,23 +1,12 @@
 from __future__ import annotations
 
-import math
-import re
-from dataclasses import dataclass
+import difflib
 
+from nemantix.core.formatting import NXFViolation, apply_edits
+from nemantix.core.formatting._edit import NXFEdit
+from nemantix.core.formatting._helpers import indent_level, is_closer, is_section_header
+from nemantix.core.formatting.rules import ALL_RULES
 from nemantix.core.parser import ParserLark
-
-_REDUNDANT_QUALIFIER_RE = re.compile(r"@completion:\s*(\w+)\s*->\s*(\w+)")
-_MICROPROMPT_OPEN_RE = re.compile(r"(?<!>)>>(?![ >])")
-_MICROPROMPT_CLOSE_RE = re.compile(r"(?<![ <])<<(?!<)")
-
-_SECTION_KEYWORDS = frozenset({"body", "in", "out", "guidelines", "plan"})
-
-
-@dataclass
-class NXFViolation:
-    rule: str
-    line: int
-    message: str
 
 
 class Formatter:
@@ -25,8 +14,8 @@ class Formatter:
 
     format() parses the source into an AST and re-serializes it, so any
     indentation error (wrong unit, missing levels, flat output) is corrected
-    structurally.  check() runs text-level analysis and returns violations
-    without modifying the source.
+    structurally.  check() runs each registered NXFRule against the source
+    and returns all violations without modifying it.
 
     strict=True enforces NXF101: all closers are emitted in their explicit form
     (__body, __action, etc.).  strict=False (default) preserves the closer style
@@ -37,138 +26,89 @@ class Formatter:
         self._strict = strict
 
     def format(self, source: str) -> str:
+        # AST round-trip: fixes NXF001, NXF101, NXF201, NXF401, NXF502, NXF003/004/005.
         stmts = ParserLark().parse(source, "<formatter>")
         serialized = "\n\n".join(stmt.to_nxs() for stmt in stmts)
         lines: list[str] = list(serialized.splitlines())
         lines = self._enforce_section_blank_lines(lines)
         result = "\n".join(lines)
+        if source.endswith("\n"):
+            result += "\n"
         if not self._strict:
             result = self._restore_closer_style(source, result)
+
+        # Text-level rule fixes (e.g. NXF402: block do → inline).
+        # Re-parse so FileMeta offsets match the round-tripped source.
+        stmts2 = ParserLark().parse(result, "<formatter>")
+        fixes = [
+            v.fix
+            for rule in ALL_RULES
+            for v in rule.detect(stmts2, result.splitlines())
+            if v.fix is not None
+        ]
+        if fixes:
+            result = apply_edits(result, fixes)
+
         return result
 
     def check(self, source: str) -> list[NXFViolation]:
-        ParserLark().parse(source, "<formatter>")
-        violations: list[NXFViolation] = []
+        stmts = ParserLark().parse(source, "<formatter>")
         lines = source.splitlines()
-        violations.extend(self._check_indentation(lines))
-        violations.extend(self._check_line_lengths(lines))
-        violations.extend(self._check_blank_lines(lines))
-        violations.extend(self._check_annotation_style(lines))
-        violations.extend(self._check_microprompt_spacing(lines))
+        violations: list[NXFViolation] = []
+        for rule in ALL_RULES:
+            violations.extend(rule.detect(stmts, lines))
+        existing_nxf001 = {v.line for v in violations if v.rule == "NXF001"}
+        violations.extend(
+            self._structural_indent_violations(source, lines, stmts, existing_nxf001)
+        )
         return violations
 
-    # ------------------------------------------------------------------
-    # NXF502 — redundant completion qualifier
-    # ------------------------------------------------------------------
-
-    def _check_annotation_style(self, lines: list[str]) -> list[NXFViolation]:
+    def _structural_indent_violations(
+        self, source: str, orig_lines: list[str], stmts: list, existing_nxf001: set[int]
+    ) -> list[NXFViolation]:
+        """Detect lines where the AST round-trip corrects only the indentation level."""
+        serialized = "\n\n".join(stmt.to_nxs() for stmt in stmts)
+        rt_lines = self._enforce_section_blank_lines(list(serialized.splitlines()))
+        if not self._strict:
+            rt_source = self._restore_closer_style(source, "\n".join(rt_lines))
+            rt_lines = rt_source.splitlines()
         violations: list[NXFViolation] = []
-        for i, line in enumerate(lines, start=1):
-            m = _REDUNDANT_QUALIFIER_RE.search(line)
-            if m and m.group(1) == m.group(2):
-                q = m.group(1)
-                violations.append(
-                    NXFViolation(
-                        "NXF502",
-                        i,
-                        f"Redundant qualifier: use '@completion: {q}' instead of"
-                        f" '@completion: {q}->{q}'",
-                    )
-                )
-        return violations
-
-    # ------------------------------------------------------------------
-    # NXF202 — microprompt delimiter spacing
-    # ------------------------------------------------------------------
-
-    def _check_microprompt_spacing(self, lines: list[str]) -> list[NXFViolation]:
-        violations: list[NXFViolation] = []
-        for i, line in enumerate(lines, start=1):
-            if line.lstrip().startswith("#"):
+        matcher = difflib.SequenceMatcher(None, orig_lines, rt_lines, autojunk=False)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag != "replace" or (i2 - i1) != (j2 - j1):
                 continue
-            if _MICROPROMPT_OPEN_RE.search(line) or _MICROPROMPT_CLOSE_RE.search(line):
-                violations.append(
-                    NXFViolation(
-                        "NXF202",
-                        i,
-                        "Microprompt delimiters must be surrounded by one space: '>> content <<'",
-                    )
+            for di in range(i2 - i1):
+                orig = orig_lines[i1 + di]
+                expected = rt_lines[j1 + di]
+                if orig.lstrip() != expected.lstrip():
+                    continue  # content change — covered by other rules
+                orig_indent = len(orig) - len(orig.lstrip())
+                exp_indent = len(expected) - len(expected.lstrip())
+                if orig_indent == exp_indent:
+                    continue
+                line_no = i1 + di + 1
+                if line_no in existing_nxf001:
+                    continue
+                fix = NXFEdit(
+                    start_line=line_no,
+                    start_col=0,
+                    end_line=line_no,
+                    end_col=orig_indent,
+                    replacement=" " * exp_indent,
                 )
-        return violations
-
-    # ------------------------------------------------------------------
-    # NXF001 — indentation (check only; format() delegates to to_nxs())
-    # ------------------------------------------------------------------
-
-    def _detect_indent_unit(self, lines: list[str]) -> int:
-        sizes = set()
-        for line in lines:
-            stripped = line.lstrip(" ")
-            leading = len(line) - len(stripped)
-            if leading > 0:
-                sizes.add(leading)
-        if not sizes:
-            return 0
-        unit = sizes.pop()
-        for s in sizes:
-            unit = math.gcd(unit, s)
-        return unit
-
-    def _check_indentation(self, lines: list[str]) -> list[NXFViolation]:
-        unit = self._detect_indent_unit(lines)
-        if unit == 0 or unit == 2:
-            return []
-        violations = []
-        for i, line in enumerate(lines, start=1):
-            stripped = line.lstrip(" ")
-            leading = len(line) - len(stripped)
-            if leading > 0 and leading % 2 != 0:
                 violations.append(
                     NXFViolation(
                         "NXF001",
-                        i,
-                        f"Indentation is not a multiple of 2 spaces (found {leading})",
-                    )
-                )
-        if unit != 2:
-            violations.append(
-                NXFViolation(
-                    "NXF001", 1, f"Indentation unit is {unit} spaces; expected 2"
-                )
-            )
-        return violations
-
-    # ------------------------------------------------------------------
-    # NXF002 — line length
-    # ------------------------------------------------------------------
-
-    def _check_line_lengths(self, lines: list[str]) -> list[NXFViolation]:
-        violations = []
-        for i, line in enumerate(lines, start=1):
-            if len(line) > 120:
-                violations.append(
-                    NXFViolation(
-                        "NXF002", i, f"Line exceeds 120 characters ({len(line)})"
+                        line_no,
+                        f"Wrong indentation level (found {orig_indent} spaces, expected {exp_indent})",
+                        fix=fix,
                     )
                 )
         return violations
 
     # ------------------------------------------------------------------
-    # NXF003, NXF004, NXF005 — blank lines
+    # format() helpers
     # ------------------------------------------------------------------
-
-    def _is_closer(self, line: str) -> bool:
-        return line.lstrip().startswith("__")
-
-    def _is_section_header(self, line: str) -> bool:
-        stripped = line.strip()
-        keyword = stripped.rstrip(":").strip()
-        return stripped.endswith(":") and keyword in _SECTION_KEYWORDS
-
-    def _indent_level(self, line: str, unit: int = 2) -> int:
-        stripped = line.lstrip(" ")
-        leading = len(line) - len(stripped)
-        return leading // unit if unit else 0
 
     def _restore_closer_style(self, original: str, formatted: str) -> str:
         """Order-based mapping: preserve each closer's bare/explicit style from original."""
@@ -184,8 +124,8 @@ class Formatter:
         for line in formatted.splitlines():
             if line.strip().startswith("__") and idx < len(orig_styles):
                 if orig_styles[idx]:
-                    indent = len(line) - len(line.lstrip())
-                    result_lines.append(" " * indent + "__")
+                    ind = len(line) - len(line.lstrip())
+                    result_lines.append(" " * ind + "__")
                     idx += 1
                     continue
                 idx += 1
@@ -197,11 +137,11 @@ class Formatter:
         result: list[str] = []
         for i, line in enumerate(lines):
             result.append(line)
-            if self._is_closer(line) and self._indent_level(line) == 1:
+            if is_closer(line) and indent_level(line) == 1:
                 j = i + 1
                 while j < len(lines) and lines[j].strip() == "":
                     j += 1
-                if j < len(lines) and self._is_section_header(lines[j]):
+                if j < len(lines) and is_section_header(lines[j]):
                     blanks = j - (i + 1)
                     if blanks == 0:
                         result.append("")
@@ -217,69 +157,3 @@ class Formatter:
             result.append(line)
             prev_blank = is_blank
         return result
-
-    def _check_blank_lines(self, lines: list[str]) -> list[NXFViolation]:
-        violations: list[NXFViolation] = []
-
-        # NXF005: blank line before a closer
-        for i, line in enumerate(lines):
-            if (
-                line.strip() == ""
-                and i + 1 < len(lines)
-                and self._is_closer(lines[i + 1])
-            ):
-                violations.append(
-                    NXFViolation("NXF005", i + 1, "Blank line before block closer")
-                )
-
-        # NXF003: top-level block separation
-        for i, line in enumerate(lines):
-            if line.strip() == "" or self._indent_level(line) != 0:
-                continue
-            if i > 0:
-                prev = lines[i - 1]
-                if (
-                    prev.strip() != ""
-                    and self._indent_level(prev) == 0
-                    and self._is_closer(prev)
-                ):
-                    violations.append(
-                        NXFViolation(
-                            "NXF003",
-                            i + 1,
-                            "Missing blank line between top-level blocks",
-                        )
-                    )
-            blank_count = 0
-            j = i - 1
-            while j >= 0 and lines[j].strip() == "":
-                blank_count += 1
-                j -= 1
-            if blank_count > 1:
-                violations.append(
-                    NXFViolation(
-                        "NXF003",
-                        i + 1,
-                        f"Multiple blank lines ({blank_count}) before top-level block",
-                    )
-                )
-
-        # NXF004: section separator
-        for i, line in enumerate(lines):
-            if not (self._is_closer(line) and self._indent_level(line) == 1):
-                continue
-            j = i + 1
-            while j < len(lines) and lines[j].strip() == "":
-                j += 1
-            if j < len(lines) and self._is_section_header(lines[j]):
-                blanks = j - (i + 1)
-                if blanks == 0:
-                    violations.append(
-                        NXFViolation(
-                            "NXF004",
-                            i + 1,
-                            "Missing blank line between internal sections",
-                        )
-                    )
-
-        return violations

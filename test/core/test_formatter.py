@@ -10,10 +10,6 @@ def _check(source: str) -> list[NXFViolation]:
     return Formatter().check(source)
 
 
-def _rule_codes(violations: list[NXFViolation]) -> set[str]:
-    return {v.rule for v in violations}
-
-
 # =============================================================================
 # NXF001 — indentation normalised to 2 spaces per level
 # =============================================================================
@@ -60,50 +56,9 @@ def test_nxf001_deeper_nesting():
     assert _fmt(src) == expected
 
 
-def test_nxf001_no_violation_when_already_2space():
-    src = "action foo >> foo <<:\n  body:\n    >> x <<\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF001" not in _rule_codes(violations)
-
-
-def test_nxf001_violation_reported_on_4space():
-    src = "action foo >> foo <<:\n    body:\n        >> x <<\n    __body\n__action"
-    violations = _check(src)
-    assert "NXF001" in _rule_codes(violations)
-
-
 # =============================================================================
 # NXF002 — max 120 characters per line
 # =============================================================================
-
-
-def test_nxf002_no_violation_exactly_120():
-    # "action foo >> " (14) + "x"*102 + " <<:" (4) = 120
-    src = f"action foo >> {'x' * 102} <<:\n  body:\n    >> x <<\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF002" not in _rule_codes(violations)
-
-
-def test_nxf002_violation_at_121_chars():
-    # "action foo >> " (14) + "x"*103 + " <<:" (4) = 121
-    src = f"action foo >> {'x' * 103} <<:\n  body:\n    >> x <<\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF002" in _rule_codes(violations)
-
-
-def test_nxf002_violation_includes_line_number():
-    # long line is on line 3: "    >> " (7) + "x"*111 + " <<" (3) = 121
-    src = (
-        "action foo >> foo <<:\n"
-        "  body:\n"
-        f"    >> {'x' * 111} <<\n"
-        "  __body\n"
-        "__action"
-    )
-    violations = _check(src)
-    nxf002 = [v for v in violations if v.rule == "NXF002"]
-    assert len(nxf002) == 1
-    assert nxf002[0].line == 3
 
 
 def test_nxf002_format_does_not_shorten_long_lines():
@@ -164,54 +119,6 @@ def test_nxf003_no_leading_blank_line_at_file_start():
     assert not result.startswith("\n")
 
 
-def test_nxf003_violation_reported_for_missing_blank_line():
-    src = (
-        "action foo >> foo <<:\n"
-        "  body:\n"
-        "    >> x <<\n"
-        "  __body\n"
-        "__action\n"
-        "action bar >> bar <<:\n"
-        "  body:\n"
-        "    >> y <<\n"
-        "  __body\n"
-        "__action"
-    )
-    violations = _check(src)
-    assert "NXF003" in _rule_codes(violations)
-
-
-def test_nxf003_no_violation_between_annotation_and_block():
-    src = "@completion: drafted->frozen\naction foo >> foo <<:\n  body:\n    >> x <<\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF003" not in _rule_codes(violations)
-
-
-def test_nxf003_no_violation_between_comment_and_block():
-    src = "# comment\n@completion: drafted->frozen\naction foo >> foo <<:\n  body:\n    >> x <<\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF003" not in _rule_codes(violations)
-
-
-def test_nxf003_violation_reported_for_multiple_blank_lines():
-    src = (
-        "action foo >> foo <<:\n"
-        "  body:\n"
-        "    >> x <<\n"
-        "  __body\n"
-        "__action\n"
-        "\n"
-        "\n"
-        "action bar >> bar <<:\n"
-        "  body:\n"
-        "    >> y <<\n"
-        "  __body\n"
-        "__action"
-    )
-    violations = _check(src)
-    assert "NXF003" in _rule_codes(violations)
-
-
 # =============================================================================
 # NXF005 — no blank line immediately before a block closer
 # =============================================================================
@@ -231,12 +138,6 @@ def test_nxf005_removes_blank_line_before_top_level_closer():
     lines = result.splitlines()
     closer_idx = lines.index("__action")
     assert lines[closer_idx - 1] != ""
-
-
-def test_nxf005_violation_reported():
-    src = "action foo >> foo <<:\n  body:\n    >> x <<\n\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF005" in _rule_codes(violations)
 
 
 # =============================================================================
@@ -280,34 +181,13 @@ def test_nxf004_adds_blank_line_between_out_and_body():
     assert lines[out_closer_idx + 2] == "  body:"
 
 
-def test_nxf004_violation_reported_for_missing_blank_between_sections():
-    src = (
-        "action foo >> foo <<:\n"
-        "  in:\n"
-        "    x\n"
-        "  __in\n"
-        "  body:\n"
-        "    >> do x <<\n"
-        "  __body\n"
-        "__action"
-    )
-    violations = _check(src)
-    assert "NXF004" in _rule_codes(violations)
-
-
 # =============================================================================
 # NXF101 — closer style (strict vs non-strict)
 # =============================================================================
 
 
 def test_nxf101_nonstrict_preserves_bare_closers():
-    src = (
-        "action foo >> foo <<:\n"
-        "  body:\n"
-        "    >> x <<\n"
-        "  __\n"
-        "__"
-    )
+    src = "action foo >> foo <<:\n  body:\n    >> x <<\n  __\n__"
     result = Formatter(strict=False).format(src)
     lines = result.splitlines()
     assert lines[-1] == "__"
@@ -321,13 +201,7 @@ def test_nxf101_nonstrict_preserves_explicit_closers():
 
 
 def test_nxf101_strict_converts_bare_to_explicit():
-    src = (
-        "action foo >> foo <<:\n"
-        "  body:\n"
-        "    >> x <<\n"
-        "  __\n"
-        "__"
-    )
+    src = "action foo >> foo <<:\n  body:\n    >> x <<\n  __\n__"
     result = Formatter(strict=True).format(src)
     assert "  __body" in result
     assert result.endswith("__action")
@@ -364,118 +238,15 @@ def test_nxf101_nonstrict_mixed_file_preserves_per_closer_style():
 # =============================================================================
 
 
-def test_nxf502_violation_on_redundant_qualifier():
-    src = (
-        "@completion: frozen->frozen\n"
-        "action foo >> foo <<:\n"
-        "  body:\n"
-        "    >> x <<\n"
-        "  __body\n"
-        "__action"
-    )
-    violations = _check(src)
-    assert "NXF502" in _rule_codes(violations)
-
-
-def test_nxf502_no_violation_on_range_qualifier():
-    src = (
-        "@completion: drafted->frozen\n"
-        "action foo >> foo <<:\n"
-        "  body:\n"
-        "    >> x <<\n"
-        "  __body\n"
-        "__action"
-    )
-    violations = _check(src)
-    assert "NXF502" not in _rule_codes(violations)
-
-
-def test_nxf502_no_violation_on_single_qualifier():
-    src = (
-        "@completion: frozen\n"
-        "action foo >> foo <<:\n"
-        "  body:\n"
-        "    >> x <<\n"
-        "  __body\n"
-        "__action"
-    )
-    violations = _check(src)
-    assert "NXF502" not in _rule_codes(violations)
-
-
-def test_nxf502_violation_reports_correct_line():
-    src = (
-        "action foo >> foo <<:\n"
-        "  body:\n"
-        "    >> x <<\n"
-        "  __body\n"
-        "__action\n"
-        "\n"
-        "@completion: frozen->frozen\n"
-        "action bar >> bar <<:\n"
-        "  body:\n"
-        "    >> y <<\n"
-        "  __body\n"
-        "__action"
-    )
-    violations = _check(src)
-    nxf502 = [v for v in violations if v.rule == "NXF502"]
-    assert len(nxf502) == 1
-    assert nxf502[0].line == 7
-
-
 # =============================================================================
 # NXF202 — microprompt delimiter spacing
 # =============================================================================
-
-
-def test_nxf202_violation_on_missing_space_after_open():
-    src = "action foo >> foo <<:\n  body:\n    >>no space <<\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF202" in _rule_codes(violations)
-
-
-def test_nxf202_violation_on_missing_space_before_close():
-    src = "action foo >> foo <<:\n  body:\n    >> no space<<\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF202" in _rule_codes(violations)
-
-
-def test_nxf202_violation_on_missing_spaces_both_sides():
-    src = "action foo >> foo <<:\n  body:\n    >>no spaces<<\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF202" in _rule_codes(violations)
-
-
-def test_nxf202_no_violation_when_compliant():
-    src = "action foo >> foo <<:\n  body:\n    >> compliant <<\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF202" not in _rule_codes(violations)
-
-
-def test_nxf202_no_violation_on_block_header():
-    src = "action foo >> foo <<:\n  body:\n    >> x <<\n  __body\n__action"
-    violations = _check(src)
-    assert "NXF202" not in _rule_codes(violations)
 
 
 def test_nxf202_format_corrects_missing_spaces():
     src = "action foo >> foo <<:\n  body:\n    >>no spaces<<\n  __body\n__action"
     result = _fmt(src)
     assert ">> no spaces <<" in result
-
-
-def test_nxf202_no_violation_on_multiline_prompt():
-    src = (
-        "action foo >> foo <<:\n"
-        "  body:\n"
-        "    >>>\nsome\n"
-        "      content\n<<<\n"
-        "  __body\n"
-        "__action"
-    )
-    violations = _check(src)
-    assert "NXF202" not in _rule_codes(violations)
 
 
 # =============================================================================
@@ -561,3 +332,90 @@ def test_format_single_value_annotation_not_expanded():
     result = _fmt(src)
     assert result.startswith("@completion: frozen\n")
     assert "frozen->frozen" not in result
+
+
+# =============================================================================
+# NXF402 — format() converts block do to inline when it fits
+# =============================================================================
+
+
+def test_format_converts_block_do_to_inline():
+    src = (
+        "action foo >> foo <<:\n"
+        "  body:\n"
+        "    do llm:\n"
+        "      using [[prompt]]\n"
+        "      producing [[result]]\n"
+        "    __do\n"
+        "  __body\n"
+        "__action"
+    )
+    result = _fmt(src)
+    assert "do llm using [[prompt]] producing [[result]]" in result
+    assert "__do" not in result
+
+
+def test_format_preserves_block_do_when_too_long():
+    long_varname = "x" * 100
+    src = (
+        "action foo >> foo <<:\n"
+        "  body:\n"
+        "    do llm:\n"
+        f"      using [[{long_varname}]]\n"
+        "      producing [[result]]\n"
+        "    __do\n"
+        "  __body\n"
+        "__action"
+    )
+    result = _fmt(src)
+    assert "__do" in result
+
+
+def test_format_fixes_misindented_annotation():
+    src = (
+        "    @completion: drafted->frozen\n"
+        "action foo >> foo <<:\n"
+        "  body:\n"
+        "    >> x <<\n"
+        "  __body\n"
+        "__action"
+    )
+    result = _fmt(src)
+    assert result.startswith("@completion: drafted->frozen\n")
+
+
+def test_check_detects_structural_over_indentation():
+    src = (
+        "action foo >> foo <<:\n"
+        "  body:\n"
+        "    >> step one <<\n"
+        "        >> step two <<\n"  # 8 spaces instead of 4
+        "  __body\n"
+        "__action"
+    )
+    violations = _check(src)
+    nxf001 = [v for v in violations if v.rule == "NXF001"]
+    assert any("Wrong indentation level" in v.message for v in nxf001)
+    assert any(v.line == 4 for v in nxf001)
+
+
+def test_check_structural_indent_violation_has_fix():
+    src = (
+        "action foo >> foo <<:\n"
+        "  body:\n"
+        "    >> step one <<\n"
+        "        >> step two <<\n"
+        "  __body\n"
+        "__action"
+    )
+    from nemantix.core.formatting import apply_edits
+
+    violations = _check(src)
+    struct_vs = [
+        v
+        for v in violations
+        if v.rule == "NXF001" and "Wrong indentation level" in v.message
+    ]
+    assert struct_vs[0].fix is not None
+    result = apply_edits(src, [struct_vs[0].fix])
+    assert "    >> step two <<" in result

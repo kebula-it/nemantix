@@ -97,9 +97,9 @@ def test_schemed_collection_suffix():
     assert result.endswith("{PersonFrame}") and "[x]" in result
 
 
-def test_schemed_collection_variable_operand_suffix():
+def test_schemed_variable_operand_suffix():
     x = node.Variable(name="my_struct", prompt=None, path=None, meta=_meta())
-    sc = node.SchemedCollection(
+    sv = node.SchemedVariable(
         value=x,  # operand is a bare variable, not a collection literal
         inferred_type=node.VariableTypeEnum.LIST,
         dataframe="Person",
@@ -107,19 +107,19 @@ def test_schemed_collection_variable_operand_suffix():
         meta=_meta(),
     )
     # variable operand: no spurious wrapping parens
-    assert sc.to_nxs() == "[my_struct] {Person}"
+    assert sv.to_nxs() == "[my_struct] {Person}"
 
 
-def test_schemed_collection_variable_operand_prefix():
+def test_schemed_variable_operand_prefix():
     x = node.Variable(name="my_struct", prompt=None, path=None, meta=_meta())
-    sc = node.SchemedCollection(
+    sv = node.SchemedVariable(
         value=x,
         inferred_type=node.VariableTypeEnum.LIST,
         dataframe="Person",
         apply_type=node.FrameApplyEnum.PRE,
         meta=_meta(),
     )
-    assert sc.to_nxs() == "{Person} [my_struct]"
+    assert sv.to_nxs() == "{Person} [my_struct]"
 
 
 def test_collection_list():
@@ -522,6 +522,15 @@ def test_repeat_times_block():
     rb.children = [node.Break(meta=_meta())]
     result = rb.to_nxs()
     assert result.startswith("repeat 3 times") and "__repeat" in result
+    _parse_as_body(result)
+
+
+def test_repeat_times_block_with_as_vars():
+    rb = node.RepeatTimesBlock(times=3, as_vars=["i"], meta=_meta())
+    rb.children = [node.Break(meta=_meta())]
+    result = rb.to_nxs()
+    assert "repeat 3 times as [i]:" in result
+    assert "[['i']]" not in result
     _parse_as_body(result)
 
 

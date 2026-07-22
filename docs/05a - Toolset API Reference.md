@@ -23,6 +23,9 @@ This document provide the API reference for both the base Toolset class and all 
 * **[`MathSolverToolset`](#class-mathsolvertoolset)**: Advanced symbolic mathematical calculations using the SymPy library.
 * **[`SqlExplorerToolset`](#class-sqlexplorertoolset)**: Schema inspection and query execution on SQL databases using SQLAlchemy.
 
+#### Time & Scheduling
+* **[`DateTimeToolset`](#class-datetimetoolset)**: Date, time, and timezone operations over UNIX timestamps.
+
 #### Media Processing
 * **[`AudioProcessorToolset`](#audioprocessortoolset)**: Audio processing using MoviePy (FFMPEG-based).
 * **[`MediaToolset`](#class-mediatoolset)**: Media processing for images and videos.
@@ -1955,6 +1958,153 @@ Example call: send_message(  chat_id="123456789",  text="Hello! This is a messag
 
 
 
+
+---
+
+## <kbd>class</kbd> `DateTimeToolset`
+A toolset for date, time, and timezone operations.
+
+Unlike the builtin toolsets, this must be imported explicitly, because `get_now` reads the system clock and is therefore non-deterministic. Timestamps are POSIX/UNIX timestamps (floats: seconds since 1970-01-01T00:00:00 UTC). A UNIX timestamp is an absolute instant and carries no timezone of its own; timezones only matter when rendering (`format_time`) or reinterpreting a wall-clock reading (`convert_tz`). Timezone names use the IANA database (e.g. "UTC", "Europe/Rome", "America/New_York").
+
+
+
+
+---
+
+### <kbd>function</kbd> `get_now`
+
+```python
+get_now(timezone: str = 'UTC') → float
+```
+
+Returns the current time as a UNIX timestamp (seconds since the epoch).
+
+
+
+**Args:**
+
+ - <b>`timezone`</b> (str):  An IANA timezone name. Accepted for convenience; the returned timestamp is an absolute instant and does not depend on it. Defaults to "UTC".
+
+
+
+**Returns:**
+
+ - <b>`float`</b>:  The current UNIX timestamp.
+
+Example call (NXS): do tool DateTimeToolset.get_now producing [[now]]
+
+---
+
+### <kbd>function</kbd> `format_time`
+
+```python
+format_time(
+    timestamp: float,
+    format: str = '%Y-%m-%d %H:%M:%S',
+    timezone: str = 'UTC'
+) → str
+```
+
+Formats a UNIX timestamp as a string in the given timezone.
+
+
+
+**Args:**
+
+ - <b>`timestamp`</b> (float):  The UNIX timestamp to format.
+ - <b>`format`</b> (str):  A strftime format string. Defaults to "%Y-%m-%d %H:%M:%S".
+ - <b>`timezone`</b> (str):  The IANA timezone to render the instant in. Defaults to "UTC".
+
+
+
+**Returns:**
+
+ - <b>`str`</b>:  The formatted date/time string.
+
+Example call (NXS): do tool DateTimeToolset.format_time using [[timestamp] = [now], [format] = "%Y-%m-%d", [timezone] = "Europe/Rome"] producing [[label]]
+
+---
+
+### <kbd>function</kbd> `parse_time`
+
+```python
+parse_time(date_string: str, format: str = '%Y-%m-%d %H:%M:%S') → float
+```
+
+Parses a date/time string (interpreted as UTC) into a UNIX timestamp.
+
+
+
+**Args:**
+
+ - <b>`date_string`</b> (str):  The date/time string to parse.
+ - <b>`format`</b> (str):  The strftime format the string is in. Defaults to "%Y-%m-%d %H:%M:%S".
+
+
+
+**Returns:**
+
+ - <b>`float`</b>:  The parsed time as a UNIX timestamp.
+
+Example call (NXS): do tool DateTimeToolset.parse_time using [[date_string] = [raw], [format] = "%Y-%m-%d"] producing [[epoch]]
+
+---
+
+### <kbd>function</kbd> `convert_tz`
+
+```python
+convert_tz(timestamp: float, from_tz: str, to_tz: str) → float
+```
+
+Reinterprets a wall-clock reading from one timezone into another. Reads the instant's wall-clock components in `from_tz` and returns the UNIX timestamp of that same reading in `to_tz` (e.g. a reading of 12:00 in "UTC" converted to "America/New_York" yields the timestamp at which it is 12:00 in New York — a different instant).
+
+
+
+**Args:**
+
+ - <b>`timestamp`</b> (float):  The source UNIX timestamp.
+ - <b>`from_tz`</b> (str):  The IANA timezone the reading is currently in.
+ - <b>`to_tz`</b> (str):  The IANA timezone to reinterpret the reading in.
+
+
+
+**Returns:**
+
+ - <b>`float`</b>:  The resulting UNIX timestamp.
+
+Example call (NXS): do tool DateTimeToolset.convert_tz using [[timestamp] = [now], [from_tz] = "UTC", [to_tz] = "Asia/Tokyo"] producing [[shifted]]
+
+---
+
+### <kbd>function</kbd> `add_delta`
+
+```python
+add_delta(
+    timestamp: float,
+    days: int = 0,
+    hours: int = 0,
+    minutes: int = 0
+) → float
+```
+
+Adds a time delta to a UNIX timestamp.
+
+
+
+**Args:**
+
+ - <b>`timestamp`</b> (float):  The base UNIX timestamp.
+ - <b>`days`</b> (int):  The number of days to add (may be negative). Defaults to 0.
+ - <b>`hours`</b> (int):  The number of hours to add (may be negative). Defaults to 0.
+ - <b>`minutes`</b> (int):  The number of minutes to add (may be negative). Defaults to 0.
+
+
+
+**Returns:**
+
+ - <b>`float`</b>:  The resulting UNIX timestamp.
+
+Example call (NXS): do tool DateTimeToolset.add_delta using [[timestamp] = [now], [days] = 7] producing [[deadline]]
 
 ---
 

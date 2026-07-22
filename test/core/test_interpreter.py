@@ -2314,6 +2314,74 @@ def test_do_statement_builtin_print(interpreter_instance, capsys):
     assert "Hello Builtin\n" in captured.out
 
 
+class DummyKnowledgeBase:
+    """Minimal duck-typed KB stub for the retrieve/expand/extend/generalize builtins."""
+
+    def __init__(self):
+        self.calls = []
+
+    def retrieve(self, **kwargs):
+        self.calls.append(("retrieve", kwargs))
+        return []
+
+    def expand(self, **kwargs):
+        self.calls.append(("expand", kwargs))
+        return {"node_id": kwargs["node_id"], "content": "c", "breadcrumbs": ""}
+
+    def extend(self, **kwargs):
+        self.calls.append(("extend", kwargs))
+        return {"previous_sibling": None, "next_sibling": None}
+
+    def generalize(self, **kwargs):
+        self.calls.append(("generalize", kwargs))
+        return {"node_id": kwargs["node_id"], "content": "c", "breadcrumbs": ""}
+
+
+@pytest.mark.parametrize(
+    "builtin_name, kwarg_name, kwarg_value",
+    [
+        ("retrieve", "query", "search terms"),
+        ("expand", "node_id", "node_1"),
+        ("extend", "node_id", "node_1"),
+        ("generalize", "node_id", "node_1"),
+    ],
+)
+def test_do_statement_kb_builtin_keyword_only_arg_no_index_error(
+    interpreter_instance, builtin_name, kwarg_name, kwarg_value
+):
+    """Regression test: passing the KB builtin's argument only as a keyword must not raise IndexError.
+
+    Reproduces a bug where `kwargs_.get(key, args_[0])` eagerly evaluated `args_[0]`
+    even when `key` was already present in kwargs_, crashing when the argument arrived
+    purely as a keyword (e.g. `do retrieve using [ [query] = [q] ] producing [ [hits] ]`).
+    """
+    interpreter_instance.knowledge_base = DummyKnowledgeBase()
+
+    using_assign = make_node(
+        nmx_nodes.Assignment,
+        var=make_var(kwarg_name),
+        value=make_value(kwarg_value),
+        meta=make_meta(),
+    )
+
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name=builtin_name,
+        callable_type=None,
+        using=using_assign,
+        producing=make_var("out"),
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    interpreter_instance.interpret_do_statement(do_stmt)
+
+    call_name, call_kwargs = interpreter_instance.knowledge_base.calls[0]
+    assert call_name == builtin_name
+    assert call_kwargs[kwarg_name] == kwarg_value
+
+
 def test_do_statement_tool_exception_wraps_in_nemantix_exception(interpreter_instance):
     """Test that a crashing Python tool is caught and wrapped in a NemantixRuntimeException."""
 

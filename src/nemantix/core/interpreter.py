@@ -819,7 +819,7 @@ class Interpreter:
                             self._emit_retrieve(
                                 stmt=do,
                                 knowledge_base=self.knowledge_base,
-                                query=kwargs_.get("query", args_[0]),
+                                query=kwargs_.get("query", args_[0] if args_ else None),
                             )
 
                             return Builtin.retrieve(
@@ -834,7 +834,9 @@ class Interpreter:
                             self._emit_expand(
                                 stmt=do,
                                 knowledge_base=self.knowledge_base,
-                                node_id=kwargs_.get("node_id", args_[0]),
+                                node_id=kwargs_.get(
+                                    "node_id", args_[0] if args_ else None
+                                ),
                             )
 
                             return Builtin.expand(
@@ -849,7 +851,9 @@ class Interpreter:
                             self._emit_extend(
                                 stmt=do,
                                 knowledge_base=self.knowledge_base,
-                                node_id=kwargs_.get("node_id", args_[0]),
+                                node_id=kwargs_.get(
+                                    "node_id", args_[0] if args_ else None
+                                ),
                             )
 
                             return Builtin.extend(
@@ -864,7 +868,9 @@ class Interpreter:
                             self._emit_generalize(
                                 stmt=do,
                                 knowledge_base=self.knowledge_base,
-                                node_id=kwargs_.get("node_id", args_[0]),
+                                node_id=kwargs_.get(
+                                    "node_id", args_[0] if args_ else None
+                                ),
                             )
 
                             return Builtin.generalize(

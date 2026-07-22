@@ -61,7 +61,7 @@ from nemantix.core.node import (
     RepeatWhileBlock,
     Require,
     Return,
-    SchemedCollection,
+    SchemedBase,
     SimilarityEnum,
     SimilarityOperation,
     SingleValue,
@@ -1131,7 +1131,7 @@ class AstTransformer(Transformer):
     def structure_prefix(self, meta, items):
         frame_name = items[0]
         val = items[1]
-        return SchemedCollection(
+        return SchemedBase.create(
             value=val,
             inferred_type=VariableTypeEnum.LIST,
             dataframe=frame_name,
@@ -1143,7 +1143,7 @@ class AstTransformer(Transformer):
     def structure_suffix(self, meta, items):
         frame_name = items[1]
         val = items[0]
-        return SchemedCollection(
+        return SchemedBase.create(
             value=val,
             inferred_type=VariableTypeEnum.LIST,
             dataframe=frame_name,
@@ -1512,7 +1512,7 @@ class AstTransformer(Transformer):
         return None
 
     def loop_times_index(self, items):
-        return "index", items[0]
+        return "index", [items[0]]
 
     @v_args(meta=True)
     def loop_times(self, meta, items):

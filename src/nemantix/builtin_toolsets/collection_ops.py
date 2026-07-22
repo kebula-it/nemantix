@@ -89,7 +89,7 @@ class CollectionToolset(Toolset):
         return item in container
 
     @tool
-    def index_of(self, items, item) -> int:
+    def index(self, items, item) -> int:
         """
         Returns the index of the first occurrence of an item, or -1 if absent.
 
@@ -101,7 +101,7 @@ class CollectionToolset(Toolset):
             int: The zero-based index of the first match, or -1 when not found.
 
         Example call (NXS):
-            do index_of using [[items] = [names], [item] = "Bob"] producing [[pos]]
+            do index using [[items] = [names], [item] = "Bob"] producing [[pos]]
         """
         items = list(items)
 
@@ -182,3 +182,71 @@ class CollectionToolset(Toolset):
             do range using [[start] = 0, [end] = 5] producing [[indices]]
         """
         return list(range(int(start), int(end), int(step)))
+
+    @tool
+    def unique(self, items) -> list:
+        """
+        Returns the list with duplicate values removed, preserving order.
+
+        Args:
+            items (list): The list to deduplicate.
+
+        Returns:
+            list: A new list with the first occurrence of each value.
+
+        Example call (NXS):
+            do unique using [[items] = [tags]] producing [[distinct]]
+        """
+        result = []
+        for value in items:
+            if value not in result:
+                result.append(value)
+
+        return result
+
+    @tool
+    def merge(self, a, b):
+        """
+        Merges two collections.
+
+        Args:
+            a (list | dict): The first collection.
+            b (list | dict): The second collection.
+
+        Returns:
+            The merged collection: two named structs are merged field-by-field
+            (values from ``b`` win on conflicts); otherwise the two are
+            concatenated as lists.
+
+        Example call (NXS):
+            do merge using [[a] = [defaults], [b] = [overrides]] producing [[config]]
+        """
+        if isinstance(a, dict) and isinstance(b, dict):
+            merged = dict(a)
+            merged.update(b)
+            return merged
+
+        return list(a) + list(b)
+
+    @tool
+    def is_empty(self, value) -> bool:
+        """
+        Checks whether a value is empty (none, or a zero-length collection/string).
+
+        Args:
+            value: The value to check.
+
+        Returns:
+            bool: True for none or an empty string/list/struct; False otherwise
+            (numbers and booleans are never considered empty).
+
+        Example call (NXS):
+            do is_empty using [[value] = [results]] producing [[nothing_found]]
+        """
+        if value is None:
+            return True
+
+        if isinstance(value, (str, list, dict, tuple)):
+            return len(value) == 0
+
+        return False

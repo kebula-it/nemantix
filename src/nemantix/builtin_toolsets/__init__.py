@@ -17,7 +17,15 @@ LLM in the coding prompts).
 from nemantix.builtin_toolsets.collection_ops import (
     CollectionToolset as CollectionToolset,
 )
+from nemantix.builtin_toolsets.json_ops import JsonToolset as JsonToolset
 from nemantix.builtin_toolsets.number_ops import NumberToolset as NumberToolset
+from nemantix.builtin_toolsets.regex_ops import RegexToolset as RegexToolset
 from nemantix.builtin_toolsets.string_ops import StringToolset as StringToolset
 
-BUILTIN_TOOLSETS = [StringToolset, CollectionToolset, NumberToolset]
+BUILTIN_TOOLSETS = [
+    StringToolset,
+    CollectionToolset,
+    NumberToolset,
+    JsonToolset,
+    RegexToolset,
+]

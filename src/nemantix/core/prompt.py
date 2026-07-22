@@ -34,10 +34,15 @@ NXS has no `.method()` calls on values. Translate common Python idioms as follow
 - sep.join(parts)      -> do join using [[parts] = [parts], [sep] = [sep]] producing [[line]]
 - text.upper()         -> do upper using [[text] = [text]] producing [[u]]
 - text.lower()         -> do lower using [[text] = [text]] producing [[low]]
-- text.strip()         -> do trim using [[text] = [text]] producing [[clean]]
+- text.strip()         -> do strip using [[text] = [text]] producing [[clean]]
 - text.replace(a, b)   -> do replace using [[text] = [text], [old] = [a], [new] = [b]] producing [[r]]
 - sorted(items)        -> do sort using [[items] = [items]] producing [[ordered]]
 - x in items           -> do contains using [[container] = [items], [item] = [x]] producing [[found]]
+- sum(values)          -> do sum using [[values] = [values]] producing [[total]]
+- json.loads(text)     -> do tool JsonToolset.loads using [[text] = [text]] producing [[data]]
+- json.dumps(value)    -> do tool JsonToolset.dumps using [[value] = [value]] producing [[body]]
+- re.findall(p, text)  -> do regex_findall using [[text] = [text], [pattern] = [p]] producing [[matches]]
+- re.sub(p, r, text)   -> do regex_sub using [[text] = [text], [pattern] = [p], [replacement] = [r]] producing [[out]]
 - items[0]             -> [items:0]        (accessor, not a tool)
 - len(x)               -> size([x])        (language builtin)
 """

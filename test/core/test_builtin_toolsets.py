@@ -62,8 +62,8 @@ def test_builtin_tools_have_docstrings():
         ("StringToolset.join", ({"x": "a", "y": "b"},), {"sep": "/"}, "a/b"),
         ("StringToolset.upper", ("aB",), {}, "AB"),
         ("StringToolset.lower", ("aB",), {}, "ab"),
-        ("StringToolset.trim", ("  hi  ",), {}, "hi"),
-        ("StringToolset.trim", ("xxhixx",), {"chars": "x"}, "hi"),
+        ("StringToolset.strip", ("  hi  ",), {}, "hi"),
+        ("StringToolset.strip", ("xxhixx",), {"chars": "x"}, "hi"),
         ("StringToolset.replace", ("a.b.c",), {"old": ".", "new": "/"}, "a/b/c"),
         ("StringToolset.starts_with", ("https://x",), {"prefix": "https"}, True),
         ("StringToolset.ends_with", ("f.nxs",), {"suffix": ".nxs"}, True),
@@ -93,8 +93,8 @@ def test_string_ops(tool_name, args, kwargs, expected):
         ("CollectionToolset.contains", ("abc",), {"item": "b"}, True),
         ("CollectionToolset.contains", ({"k": 1},), {"item": "k"}, True),
         ("CollectionToolset.contains", ([1],), {"item": 9}, False),
-        ("CollectionToolset.index_of", (["a", "b"],), {"item": "b"}, 1),
-        ("CollectionToolset.index_of", ([1],), {"item": 9}, -1),
+        ("CollectionToolset.index", (["a", "b"],), {"item": "b"}, 1),
+        ("CollectionToolset.index", ([1],), {"item": 9}, -1),
         ("CollectionToolset.sort", ([3, 1, 2],), {}, [1, 2, 3]),
         ("CollectionToolset.sort", ([1, 3, 2],), {"descending": True}, [3, 2, 1]),
         ("CollectionToolset.reverse", ([1, 2, 3],), {}, [3, 2, 1]),
@@ -102,6 +102,14 @@ def test_string_ops(tool_name, args, kwargs, expected):
         ("CollectionToolset.slice", ("abcd",), {"start": 0, "end": 2}, "ab"),
         ("CollectionToolset.range", (0, 3), {}, [0, 1, 2]),
         ("CollectionToolset.range", (1, 6), {"step": 2}, [1, 3, 5]),
+        ("CollectionToolset.unique", ([1, 1, 2, 3, 2],), {}, [1, 2, 3]),
+        ("CollectionToolset.merge", ([1, 2], [3]), {}, [1, 2, 3]),
+        ("CollectionToolset.merge", ({"a": 1}, {"b": 2, "a": 9}), {}, {"a": 9, "b": 2}),
+        ("CollectionToolset.is_empty", ("",), {}, True),
+        ("CollectionToolset.is_empty", ([],), {}, True),
+        ("CollectionToolset.is_empty", (None,), {}, True),
+        ("CollectionToolset.is_empty", ([1],), {}, False),
+        ("CollectionToolset.is_empty", (0,), {}, False),
     ],
 )
 def test_collection_ops(tool_name, args, kwargs, expected):
@@ -129,9 +137,81 @@ def test_append_does_not_mutate_input():
         ("NumberToolset.ceil", (2.1,), {}, 3),
         ("NumberToolset.min", ([3, 1, 2],), {}, 1),
         ("NumberToolset.max", ([3, 1, 2],), {}, 3),
-        ("NumberToolset.mod", (7, 3), {}, 1),
-        ("NumberToolset.pow", (2, 3), {}, 8),
+        ("NumberToolset.sum", ([1, 2, 3],), {}, 6),
+        ("NumberToolset.sum", ([],), {}, 0),
     ],
 )
 def test_number_ops(tool_name, args, kwargs, expected):
+    assert _call(tool_name, *args, **kwargs) == expected
+
+
+# =============================================================================
+# JsonToolset
+# =============================================================================
+
+
+def test_json_loads_object_and_array():
+    assert _call("JsonToolset.loads", '{"a": 1, "b": [2, 3]}') == {
+        "a": 1,
+        "b": [2, 3],
+    }
+    assert _call("JsonToolset.loads", "[1, 2, 3]") == [1, 2, 3]
+
+
+def test_json_dumps_compact_and_pretty():
+    assert _call("JsonToolset.dumps", {"a": 1, "b": [2, 3]}) == '{"a": 1, "b": [2, 3]}'
+    pretty = _call("JsonToolset.dumps", {"a": 1}, pretty=True)
+    assert "\n" in pretty and '"a": 1' in pretty
+
+
+def test_json_dumps_serializes_structs():
+    from nemantix.core.runtime import Struct
+
+    positional = Struct()
+    positional.set(1)
+    positional.set(2)
+    assert _call("JsonToolset.dumps", positional) == "[1, 2]"
+
+    named = Struct()
+    named.set("bar", key="foo")
+    assert _call("JsonToolset.dumps", named) == '{"foo": "bar"}'
+
+
+def test_json_roundtrip():
+    original = {"name": "Alice", "tags": ["x", "y"], "age": 30}
+    text = _call("JsonToolset.dumps", original)
+    assert _call("JsonToolset.loads", text) == original
+
+
+# =============================================================================
+# RegexToolset
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    "tool_name,args,kwargs,expected",
+    [
+        ("RegexToolset.regex_search", ("abc123",), {"pattern": r"\d+"}, True),
+        ("RegexToolset.regex_search", ("abc",), {"pattern": r"\d+"}, False),
+        (
+            "RegexToolset.regex_findall",
+            ("a1b22c333",),
+            {"pattern": r"\d+"},
+            ["1", "22", "333"],
+        ),
+        (
+            "RegexToolset.regex_sub",
+            ("a  b   c",),
+            {"pattern": r"\s+", "replacement": " "},
+            "a b c",
+        ),
+        (
+            "RegexToolset.regex_split",
+            ("a, b,c",),
+            {"pattern": r",\s*"},
+            ["a", "b", "c"],
+        ),
+    ],
+)
+def test_regex_ops(tool_name, args, kwargs, expected):
     assert _call(tool_name, *args, **kwargs) == expected

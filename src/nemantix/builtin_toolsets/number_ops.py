@@ -109,35 +109,17 @@ class NumberToolset(Toolset):
         return max(values)
 
     @tool
-    def mod(self, a, b) -> float:
+    def sum(self, values) -> float:
         """
-        Returns the remainder of the division of ``a`` by ``b``.
+        Returns the sum of a list of numbers.
 
         Args:
-            a (num): The dividend.
-            b (num): The divisor.
+            values (list): The list of numbers.
 
         Returns:
-            num: The remainder ``a % b``.
+            num: The sum (0 for an empty list).
 
         Example call (NXS):
-            do mod using [[a] = [count], [b] = 2] producing [[rest]]
+            do sum using [[values] = [amounts]] producing [[total]]
         """
-        return a % b
-
-    @tool
-    def pow(self, base, exp) -> float:
-        """
-        Raises ``base`` to the power of ``exp``.
-
-        Args:
-            base (num): The base.
-            exp (num): The exponent.
-
-        Returns:
-            num: ``base ** exp``.
-
-        Example call (NXS):
-            do pow using [[base] = 2, [exp] = 10] producing [[kib]]
-        """
-        return base**exp
+        return sum(values)

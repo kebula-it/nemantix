@@ -79,20 +79,20 @@ class StringToolset(Toolset):
         return str(text).lower()
 
     @tool
-    def trim(self, text: str, chars: str = None) -> str:
+    def strip(self, text: str, chars: str = None) -> str:
         """
         Removes leading and trailing whitespace (or the given characters).
 
         Args:
-            text (str): The string to trim.
+            text (str): The string to strip.
             chars (str, optional): The set of characters to strip. Defaults to
                 whitespace.
 
         Returns:
-            str: The trimmed string.
+            str: The stripped string.
 
         Example call (NXS):
-            do trim using [[text] = [raw]] producing [[clean]]
+            do strip using [[text] = [raw]] producing [[clean]]
         """
         return str(text).strip(chars)
 

@@ -95,6 +95,12 @@ class Agent:
         self.knowledge_base = None
         self.state = AgentState()
 
+        if kb_config is not None and not use_knowledge_base:
+            logger.warning(
+                "'kb_config' was provided but 'use_knowledge_base' is False; "
+                "the Knowledge Base will NOT be initialized and 'kb_config' will be ignored."
+            )
+
         if use_embedder:
             from nemantix.knowledge_base.models.embedding import (
                 SentenceTransformerWrapper,

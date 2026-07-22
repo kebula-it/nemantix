@@ -105,6 +105,48 @@ def test_agent_run_nemantix_exception(mock_executor_class, mock_nxs_file):
     assert outputs is None
 
 
+# Test Knowledge Base configuration mismatches
+
+
+@patch("nemantix.core.agent.Executor")
+def test_agent_warns_when_kb_config_provided_without_use_knowledge_base(
+    mock_executor_class,
+):
+    """A kb_config passed alongside use_knowledge_base=False is silently ignored;
+    this should be flagged with a warning so the misconfiguration isn't missed."""
+    with patch("nemantix.core.agent.logger.warning") as mock_warning:
+        agent = Agent(
+            expertise=MagicMock(),
+            llm_proxy=MagicMock(),
+            use_knowledge_base=False,
+            kb_config=MagicMock(),
+        )
+
+    assert agent.knowledge_base is None
+    assert any(
+        "kb_config" in call.args[0] and "use_knowledge_base" in call.args[0]
+        for call in mock_warning.call_args_list
+    )
+
+
+@patch("nemantix.core.agent.Executor")
+def test_agent_no_kb_warning_when_config_and_flag_are_consistent(mock_executor_class):
+    """No kb-related warning should fire when kb_config and use_knowledge_base agree
+    (both left at their defaults)."""
+    with patch("nemantix.core.agent.logger.warning") as mock_warning:
+        Agent(
+            expertise=MagicMock(),
+            llm_proxy=MagicMock(),
+            use_knowledge_base=False,
+            kb_config=None,
+        )
+
+    assert not any(
+        "kb_config" in call.args[0] and "use_knowledge_base" in call.args[0]
+        for call in mock_warning.call_args_list
+    )
+
+
 # Test Output Formatting
 class TestOutputFormat:
     def test_run_with_dict(self, mock_agent):

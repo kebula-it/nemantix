@@ -8,8 +8,43 @@ CORE CONCEPTS
 - The `plan` of a `deliberate` is the orchestration logic that aggregates and coordinates multiple `action` call to achieve the desired outcome following the `mandate`. Like an `action`, it can declare inputs (`in:`), outputs (`out:`), and a `body:`.
 """
 
+BUILTIN_TOOLSETS_GUIDANCE = """
+BUILTIN TOOLSETS (ALWAYS AVAILABLE)
+Some toolsets are always available in every script: you do NOT import them (never
+write a `from toolset ... use *` for them). They cover common string, collection,
+and number operations. Their tools are advertised, together with the imported
+tools, in the "TOOLS YOU CAN USE" section.
+
+HOW TO CALL THEM
+- Call them with the ordinary `do` form, exactly like any other tool, e.g.:
+    do split using [[text] = [sentence], [sep] = " "] producing [[words]]
+    do tool StringToolset.split using [[text] = [sentence]] producing [[words]]
+- Multiple arguments go in ONE `using [...]` bracket, comma-separated (named as
+  `[[param] = [value], [other] = [value]]`), not in several bracket groups.
+- They are TOOLS, not language builtins. You CANNOT call them inline inside an
+  expression. `[words] = split([sentence], " ")` is INVALID. Always route the
+  result through `producing [[...]]`.
+- A tool that returns a list produces an NXS struct: index it with `[words:0]`
+  and iterate it with the `each` loop.
+
+DO NOT USE PYTHON METHOD SYNTAX
+NXS has no `.method()` calls on values. Translate common Python idioms as follows
+(left: Python you must NOT write; right: correct NXS):
+- text.split(sep)      -> do split using [[text] = [text], [sep] = [sep]] producing [[parts]]
+- sep.join(parts)      -> do join using [[parts] = [parts], [sep] = [sep]] producing [[line]]
+- text.upper()         -> do upper using [[text] = [text]] producing [[u]]
+- text.lower()         -> do lower using [[text] = [text]] producing [[low]]
+- text.strip()         -> do trim using [[text] = [text]] producing [[clean]]
+- text.replace(a, b)   -> do replace using [[text] = [text], [old] = [a], [new] = [b]] producing [[r]]
+- sorted(items)        -> do sort using [[items] = [items]] producing [[ordered]]
+- x in items           -> do contains using [[container] = [items], [item] = [x]] producing [[found]]
+- items[0]             -> [items:0]        (accessor, not a tool)
+- len(x)               -> size([x])        (language builtin)
+"""
+
 CODING_SYSTEM_PROMPT = (
     PROLOGUE
+    + BUILTIN_TOOLSETS_GUIDANCE
     + """
 PROMPTS INSIDE CODE (CRITICAL)
 NXS may contain natural-language prompts delimited as:

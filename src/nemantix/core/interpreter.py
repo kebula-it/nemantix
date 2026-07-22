@@ -1924,7 +1924,42 @@ class Interpreter:
                 frame = self.interpret_frame(frame=frame)
                 self.context.frames[frame_key] = frame
 
+    def _seed_builtin_toolsets(self):
+        """Auto-import the always-available builtin toolsets into the current
+        context.
+
+        Their tools become usable through the ordinary ``do`` form (both bare,
+        e.g. ``do split ...``, and qualified, e.g. ``do tool StringToolset.split
+        ...``) without the script needing a ``from toolset ... use *`` import.
+        The builtin toolsets live outside ``nemantix.stl`` and are imported
+        lazily here to avoid pulling optional dependencies and to sidestep import
+        cycles. Seeding is idempotent: a toolset already present in the context
+        is skipped.
+        """
+        from nemantix.builtin_toolsets import BUILTIN_TOOLSETS
+
+        for toolset_cls in BUILTIN_TOOLSETS:
+            class_name = toolset_cls.__name__
+
+            already_seeded = any(
+                key.startswith(f"{class_name}.") for key in self.context.tools
+            )
+            if already_seeded:
+                continue
+
+            import_stmt = nmx_nodes.ImportToolsetStatement(
+                name=class_name,
+                elements=["*"],
+                args=None,
+                alias=None,
+                meta=dict(),
+            )
+            self.interpret_imports(imports=[import_stmt])
+
     def _discover_toolsets_and_imports(self, script: Script):
+        # Builtin toolsets are always available, with no explicit import.
+        self._seed_builtin_toolsets()
+
         script_loc = script.get_location()
 
         for toolset_decl in script.toolsets_decl:

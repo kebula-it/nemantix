@@ -4100,3 +4100,191 @@ def test_unbox_variable_access_expr_index_field(interpreter_instance):
 
     result = interpreter_instance.unbox_value(struct_var)
     assert result == "ciao"
+
+
+# =============================================================================
+# Builtin toolsets (auto-available, invoked via `do`)
+# =============================================================================
+
+
+def _make_do(name, using, producing, callable_type=None):
+    return make_node(
+        nmx_nodes.DoStatement,
+        name=name,
+        callable_type=callable_type,
+        using=using,
+        prompt=None,
+        producing=producing,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+
+def test_seed_builtin_toolsets_registers_bare_and_qualified(interpreter_instance):
+    interpreter_instance._seed_builtin_toolsets()
+
+    tools = interpreter_instance.context.tools
+    # bare names are usable via `do split ...`
+    assert "split" in tools
+    assert "join" in tools
+    assert "sort" in tools
+    assert "round" in tools
+    # qualified names are usable via `do tool StringToolset.split ...`
+    assert "StringToolset.split" in tools
+    assert "CollectionToolset.sort" in tools
+    assert "NumberToolset.round" in tools
+
+
+def test_do_bare_builtin_toolset_call_returns_struct(interpreter_instance):
+    """A script needs no import: `do split using "a b c" producing [words]`."""
+    interpreter_instance._seed_builtin_toolsets()
+
+    do_stmt = _make_do(
+        name="split",
+        using=make_value("a b c", _STRING_TYPE),
+        producing=make_var("words"),
+    )
+    interpreter_instance.interpret_do_statement(do=do_stmt)
+
+    words = interpreter_instance.context.env.get("words")
+    assert isinstance(words, nmx_runtime.Struct)
+    assert words.get(0) == "a"
+    assert words.get(2) == "c"
+    assert len(words) == 3
+
+
+def test_do_qualified_builtin_toolset_call(interpreter_instance):
+    interpreter_instance._seed_builtin_toolsets()
+
+    do_stmt = _make_do(
+        name="StringToolset.split",
+        using=make_value("x-y", _STRING_TYPE),
+        producing=make_var("parts"),
+        callable_type="tool",
+    )
+    interpreter_instance.interpret_do_statement(do=do_stmt)
+
+    parts = interpreter_instance.context.env.get("parts")
+    assert isinstance(parts, nmx_runtime.Struct)
+    # default separator is a space, so "x-y" stays a single element
+    assert parts.get(0) == "x-y"
+
+
+def test_seed_builtin_toolsets_is_idempotent(interpreter_instance):
+    interpreter_instance._seed_builtin_toolsets()
+    # a second seeding must not raise nor break resolution
+    interpreter_instance._seed_builtin_toolsets()
+
+    do_stmt = _make_do(
+        name="split",
+        using=make_value("a b", _STRING_TYPE),
+        producing=make_var("w"),
+    )
+    interpreter_instance.interpret_do_statement(do=do_stmt)
+    assert len(interpreter_instance.context.env.get("w")) == 2
+
+
+def test_user_action_shadows_builtin_toolset_bare_name(interpreter_instance):
+    """Dispatch order is actions -> tools -> builtins, so a user action named
+    like a builtin tool wins for the bare name."""
+    interpreter_instance._seed_builtin_toolsets()
+
+    sentinel = object()
+    interpreter_instance.context.actions["split"] = {
+        "closure": lambda *a, **k: sentinel,
+        "scope": None,
+    }
+
+    do_stmt = _make_do(
+        name="split",
+        using=make_value("a b c", _STRING_TYPE),
+        producing=make_var("out"),
+    )
+    interpreter_instance.interpret_do_statement(do=do_stmt)
+    # the action ran (returned the sentinel), not the builtin tool
+    assert interpreter_instance.context.env.get("out") is not None
+
+
+def _import_stmt(name, elements, alias=None):
+    return make_node(
+        nmx_nodes.ImportToolsetStatement,
+        name=name,
+        elements=elements,
+        args=None,
+        alias=alias,
+        meta=make_meta(),
+    )
+
+
+def test_explicit_import_of_builtin_toolset_does_not_raise(interpreter_instance):
+    interpreter_instance._seed_builtin_toolsets()
+
+    # explicit `from toolset StringToolset use *` must be an idempotent no-op
+    interpreter_instance.interpret_imports([_import_stmt("StringToolset", ["*"])])
+    # a specific-tool import of an already-available tool is also tolerated
+    interpreter_instance.interpret_imports([_import_stmt("StringToolset", ["upper"])])
+
+    assert "split" in interpreter_instance.context.tools
+    assert "upper" in interpreter_instance.context.tools
+
+
+def test_aliased_import_of_builtin_toolset(interpreter_instance):
+    interpreter_instance._seed_builtin_toolsets()
+
+    interpreter_instance.interpret_imports(
+        [_import_stmt("StringToolset", ["*"], alias="S")]
+    )
+    assert "S.split" in interpreter_instance.context.tools
+
+
+def test_typo_import_of_builtin_toolset_raises(interpreter_instance):
+    interpreter_instance._seed_builtin_toolsets()
+
+    with pytest.raises(nmx_ex.NemantixException):
+        interpreter_instance.interpret_imports(
+            [_import_stmt("StringToolset", ["does_not_exist"])]
+        )
+
+
+def test_do_builtin_toolset_with_kwargs_using_clause(interpreter_instance):
+    """End-to-end: a real `do ... using [[a]=[x], [b]=[y]]` clause is parsed and
+    it is named arguments reach the builtin toolset tool."""
+    src = (
+        "deliberate demo when >> demo <<:\n"
+        "  plan:\n"
+        "      in:\n"
+        '        s (default ["a,b,c"])\n'
+        "      __in\n"
+        "      out:\n"
+        "        w\n"
+        "      __out\n"
+        "      body:\n"
+        "          do split using [[text] = [s], [sep] = "
+        '","] producing [[w]]\n'
+        "          return [w]\n"
+        "      __body\n"
+        "  __plan\n"
+        "__deliberate\n"
+    )
+    script = Script("_t.nxs", None, content=src)
+    script.parse()
+    plan = next(iter(script.deliberates.values())).get_plan()
+
+    found = []
+
+    def _collect(node):
+        for child in getattr(node, "children", []) or []:
+            if isinstance(child, nmx_nodes.DoStatement):
+                found.append(child)
+            _collect(child)
+
+    _collect(plan)
+    assert [d.name for d in found] == ["split"]
+
+    interpreter_instance._seed_builtin_toolsets()
+    interpreter_instance.context.env.set("s", "a,b,c")
+    interpreter_instance.interpret_do_statement(do=found[0])
+
+    words = interpreter_instance.context.env.get("w")
+    assert isinstance(words, nmx_runtime.Struct)
+    assert [words.get(0), words.get(1), words.get(2)] == ["a", "b", "c"]

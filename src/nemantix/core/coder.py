@@ -49,9 +49,9 @@ from nemantix.core.prompt import (
     FIX_GENERATION,
     GEN_FRAME_PROMPT,
     GEN_TOOLSET_PROMPT,
-    USER_REQUEST,
-    LLM_JUDGE_PROMPT,
     JUDGE_CORRECTION_PROMPT,
+    LLM_JUDGE_PROMPT,
+    USER_REQUEST,
 )
 from nemantix.core.runtime import get_globals
 from nemantix.core.script import Script
@@ -1361,6 +1361,7 @@ class Coder:
         toolset_info_map = self._extract_toolset_docs_map(
             imported_tools, script.toolsets_decl
         )
+        toolset_info_map = {**self._builtin_toolset_docs_map(), **toolset_info_map}
         available_tools = json.dumps(toolset_info_map, indent=2, ensure_ascii=False)
 
         # Actions
@@ -1465,6 +1466,7 @@ class Coder:
         # Tools
         imported_tools = list(script.toolset_imports.values())
         toolset_info_map = self._extract_toolset_docs_map(imported_tools)
+        toolset_info_map = {**self._builtin_toolset_docs_map(), **toolset_info_map}
         available_tools = json.dumps(toolset_info_map, indent=2, ensure_ascii=False)
 
         # Actions
@@ -1643,7 +1645,9 @@ class Coder:
                 logger.warning(f"Checking produced wrong syntax: {exc_str}")
 
                 # create prompt for fixing
-                fix_prompt = FIX_GENERATION + exc_str
+                fix_prompt = (
+                    FIX_GENERATION + exc_str + self._builtin_toolset_fix_hint(exc_str)
+                )
                 messages.append(
                     {
                         "role": "user",
@@ -1678,6 +1682,41 @@ class Coder:
                     f"Deliberate '{deliberate.name}' does not have a plan block."
                     "All deliberates must have a plan block."
                 )
+
+    @staticmethod
+    def _builtin_toolset_docs_map() -> dict:
+        """Docstrings of the always-available builtin toolsets.
+
+        These are advertised to the LLM in every coding prompt even though a
+        script never imports them, so the model knows they exist and how to call
+        them (via the `do` form).
+        """
+        from nemantix.builtin_toolsets import BUILTIN_TOOLSETS
+
+        return {cls.__name__: cls.get_tool_descriptions() for cls in BUILTIN_TOOLSETS}
+
+    @staticmethod
+    def _builtin_toolset_fix_hint(error_message: str) -> str:
+        """Targeted repair hint when the model calls a builtin toolset tool
+        inline (which the parser rejects as an "Undefined builtin function")."""
+        import re
+
+        from nemantix.builtin_toolsets import BUILTIN_TOOLSETS
+
+        match = re.search(r'Undefined builtin function:\s*"([^"(]+)', error_message)
+        if not match:
+            return ""
+
+        name = match.group(1).strip()
+        for cls in BUILTIN_TOOLSETS:
+            if name in cls.get_tool_names():
+                return (
+                    f'\n\nHINT: "{name}" is a builtin toolset tool, not a language '
+                    "builtin. It cannot be called inline in an expression. Invoke it "
+                    "with the `do` form instead, e.g. "
+                    f"`do {name} using [[...]] producing [[result]]`."
+                )
+        return ""
 
     def _extract_toolset_docs_map(
         self,

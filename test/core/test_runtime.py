@@ -148,6 +148,55 @@ def test_external_variables_get_names():
     assert "db_pass" in names
 
 
+def test_external_variables_update_is_noop():
+    """`.update()` must not mutate the read-only structure."""
+    ext_vars = ExternalVariables(api_key="123")
+    ext_vars.update({"new_key": "should_not_appear"})
+    assert ext_vars.get("new_key") is None
+
+
+def test_external_variables_update_field_is_noop():
+    """`.update_field()` routes through the read-only `.set()` and must not mutate."""
+    ext_vars = ExternalVariables(api_key="123")
+    ext_vars.update_field("api_key", "changed")
+    assert ext_vars.get("api_key") == "123"
+
+
+def test_external_variables_read_only_shape_helpers():
+    """Shape-related helpers are hardcoded to hide the underlying content."""
+    ext_vars = ExternalVariables(api_key="123", secrets={"db_pass": "abc"})
+
+    assert ext_vars.as_flat_list() == []
+    assert ext_vars.to_args_and_kwargs() == ([], {})
+    assert ext_vars.can_be_seen_as_list() is False
+
+
+def test_external_variables_secrets_non_dict_is_wrapped():
+    """A non-dict `secrets` value is coerced into a single secret named 'secrets'."""
+    ext_vars = ExternalVariables(secrets="topsecret")
+
+    secret_val = ext_vars.get("secrets")
+    assert isinstance(secret_val, Secret)
+    assert secret_val.unbox() == "topsecret"
+
+
+def test_external_variables_secrets_collision_overwrites_plain_value():
+    """A key present both as a plain kwarg and inside `secrets` is overwritten
+    by the boxed secret (with a warning logged)."""
+    ext_vars = ExternalVariables(
+        db_pass="plain_value", secrets={"db_pass": "secret_value"}
+    )
+
+    secret_val = ext_vars.get("db_pass")
+    assert isinstance(secret_val, Secret)
+    assert secret_val.unbox() == "secret_value"
+
+
+def test_external_variables_repr():
+    ext_vars = ExternalVariables(api_key="123")
+    assert repr(ext_vars) == f"ExternalVariables(num_vars={len(ext_vars)})"
+
+
 # =============================================================================
 # Frame Tests
 # =============================================================================
@@ -362,6 +411,25 @@ def test_builtin_size():
     assert Builtin.size(1, 2, 3) == 3
 
 
+def test_builtin_size_opaque():
+    """An Opaque wrapping None has size 0; any other wrapped value has size 1."""
+    assert Builtin.size(Opaque(None)) == 0
+    assert Builtin.size(Opaque("hidden")) == 1
+    assert (
+        Builtin.size(Opaque(0)) == 1
+    )  # a falsy-but-not-None payload still counts as 1
+
+
+def test_builtin_size_docref():
+    """A DocRef always has size 1, regardless of its content.
+
+    Regression test: DocRef subclasses Struct, so the DocRef-specific branch
+    must be checked before the Struct branch, or it becomes unreachable.
+    """
+    doc = DocRef(node_id="1", score=0.9, breadcrumbs="a", content="Hello")
+    assert Builtin.size(doc) == 1
+
+
 def test_builtin_substring():
     assert Builtin.substring("nemantix", 0, 3) == "nem"
     assert Builtin.substring("nemantix", 3) == "antix"
@@ -390,6 +458,67 @@ def test_builtin_to_str():
     assert Builtin.to_str(True) == "true"
     assert Builtin.to_str(12.5) == "12.5"
     assert Builtin.to_str(None) == "none"
+
+
+def test_builtin_bool_implicit():
+    """Test the implicit (soft) `bool` builtin, distinct from `to_bool`."""
+    assert Builtin.bool(None) is None
+
+    # Struct: truthy iff non-empty
+    empty_struct = Struct()
+    non_empty_struct = Struct()
+    non_empty_struct.set(1)
+    assert Builtin.bool(empty_struct) is False
+    assert Builtin.bool(non_empty_struct) is True
+
+    # DocRef: truthy iff node_id is non-empty.
+    # Regression test: DocRef subclasses Struct, so the DocRef-specific branch
+    # must be checked before the Struct branch, or it becomes unreachable.
+    doc = DocRef(node_id="1", score=0.9, breadcrumbs="a", content="Hello")
+    empty_doc = DocRef(node_id="", score=0.0, breadcrumbs="", content="")
+    assert Builtin.bool(doc) is True
+    assert Builtin.bool(empty_doc) is False
+
+    # Opaque: truthy iff identifier is non-negative (memory addresses always are;
+    # force a negative one to exercise the False branch)
+    opaque = Opaque("hidden")
+    assert Builtin.bool(opaque) is True
+    opaque.identifier = -1
+    assert Builtin.bool(opaque) is False
+
+    # Fallthrough delegates to `to_bool`
+    assert Builtin.bool(True) is True
+    assert Builtin.bool("false") is False
+
+
+def test_builtin_num_implicit():
+    """Test the implicit (soft) `num` builtin, distinct from `to_num`."""
+    assert Builtin.num(None) is None
+
+    # Collections are never implicitly numeric
+    assert Builtin.num((1, 2)) is None
+    assert Builtin.num([1, 2]) is None
+    assert Builtin.num({"a": 1}) is None
+    assert Builtin.num({1, 2}) is None
+    assert Builtin.num(Struct()) is None
+    assert (
+        Builtin.num(DocRef(node_id="1", score=0.9, breadcrumbs="a", content="Hi"))
+        is None
+    )
+    assert Builtin.num(Opaque(42)) is None
+
+    # Fallthrough delegates to `to_num`
+    assert Builtin.num("42") == 42
+    assert Builtin.num(True) == 1
+
+
+def test_builtin_str_implicit():
+    """Test the implicit (soft) `str` builtin, distinct from `to_str`."""
+    assert Builtin.str(None) is None
+
+    # Fallthrough delegates to `to_str`
+    assert Builtin.str(True) == "true"
+    assert Builtin.str(12.5) == "12.5"
 
 
 def test_builtin_math():

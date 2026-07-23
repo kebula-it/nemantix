@@ -879,7 +879,10 @@ class Builtin:
         return "opaque"
 
     @staticmethod
-    def size(*args, **__) -> int:
+    def size(x=None, *args, **__) -> int:
+        if x is not None:
+            args = (x, *args)
+
         if len(args) == 0:
             return 0
 
@@ -888,14 +891,14 @@ class Builtin:
         else:
             return len(args)
 
+        if isinstance(x, DocRef):
+            return 1
+
         if isinstance(x, (str, Struct)):
             return len(x)
 
         if isinstance(x, Opaque):
             return 0 if x.unbox() is None else 1
-
-        if isinstance(x, DocRef):
-            return 1
 
         return 0
 
@@ -1002,11 +1005,11 @@ class Builtin:
         if x is None:
             return None
 
-        if isinstance(x, Struct):
-            return len(x) > 0
-
         if isinstance(x, DocRef):
             return len(x.node_id) > 0
+
+        if isinstance(x, Struct):
+            return len(x) > 0
 
         if isinstance(x, Opaque):
             return x.identifier >= 0

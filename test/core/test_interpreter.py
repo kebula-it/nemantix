@@ -2314,6 +2314,41 @@ def test_do_statement_builtin_print(interpreter_instance, capsys):
     assert "Hello Builtin\n" in captured.out
 
 
+def test_do_statement_builtin_size_with_named_using(interpreter_instance):
+    """Test `do size using [ [x] = [ids] ] producing [ [count] ]` returns the real size.
+
+    Regression test: `_extract_args_and_kwargs` turns a named `using` clause
+    into a keyword argument (`x=<Struct>`), so `Builtin.size` must accept
+    `x` as a keyword, not only positionally.
+    """
+    my_struct = nmx_runtime.Struct()
+    my_struct.set(1)
+    my_struct.set(2)
+    my_struct.set(3)
+    interpreter_instance.context.env.set("ids", my_struct)
+
+    using_assign = make_node(
+        nmx_nodes.Assignment,
+        var=make_var("x"),
+        value=make_var("ids"),
+        meta=make_meta(),
+    )
+    do_stmt = make_node(
+        nmx_nodes.DoStatement,
+        name="size",
+        callable_type=None,
+        using=using_assign,
+        producing=make_var("count"),
+        prompt=None,
+        producing_schema=None,
+        meta=make_meta(),
+    )
+
+    interpreter_instance.interpret_do_statement(do_stmt)
+
+    assert interpreter_instance.context.env.get("count") == 3
+
+
 class DummyKnowledgeBase:
     """Minimal duck-typed KB stub for the retrieve/expand/extend/generalize builtins."""
 
@@ -3364,6 +3399,23 @@ def test_interpret_builtin_size(interpreter_instance):
         )
         == 3
     )
+
+
+def test_builtin_size_accepts_keyword_argument():
+    """Regression: `size` must accept its argument as keyword `x=`, not only positionally.
+
+    The `do ... using [ [x] = [struct] ] producing [ [count] ]` syntax dispatches
+    builtins via `callable_fn(**kwargs)`, so `Builtin.size` must resolve `x` from
+    keyword arguments the same way it resolves it positionally.
+    """
+    my_struct = nmx_runtime.Struct()
+    my_struct.set(1)
+    my_struct.set(2)
+    my_struct.set(3)
+
+    assert nmx_runtime.Builtin.size(x=my_struct) == 3
+    assert nmx_runtime.Builtin.size(my_struct) == 3
+    assert nmx_runtime.Builtin.size() == 0
 
 
 def test_interpret_builtin_substring(interpreter_instance):

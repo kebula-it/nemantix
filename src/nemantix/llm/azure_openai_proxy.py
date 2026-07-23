@@ -2,6 +2,7 @@
 import inspect
 import json
 import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Type
 
@@ -19,6 +20,21 @@ from nemantix.llm.abstract_proxy import (
 )
 
 logger = get_package_logger(__name__)
+
+
+def _strip_for_openai(grammar: str) -> str:
+    # OpenAI's Lark implementation does not support:
+    #   - terminal priority notation (.N)       e.g. ACTION.2: /action\b/
+    #   - lookaround assertions in regex        e.g. \b  or  (?=...)
+    # The local parser reads the file directly and is unaffected.
+    #
+    # Step 1: remove .N priority suffix from ALL-CAPS terminal definitions.
+    grammar = re.sub(r"(?m)^(\s*_?[A-Z][A-Z0-9_]*)\.\d+(\s*:)", r"\1\2", grammar)
+    # Step 2: convert /word\b/ regex → "word" string literal (keyword terminals).
+    grammar = re.sub(r"/([a-zA-Z][a-zA-Z0-9_]*)\\b/", r'"\1"', grammar)
+    # Step 3: convert /__word(?=...)/ regex → "__word" string literal (end-markers).
+    grammar = re.sub(r"/(_{1,2}[a-zA-Z0-9_]*)\(\?=[^/]*/", r'"\1"', grammar)
+    return grammar
 
 
 try:
@@ -102,7 +118,7 @@ class AzureOpenAILLMProxy(AbstractLLMProxy):
 
         if grammar_path is not None:
             with open(grammar_path, "r") as f:
-                self._grammar = f.read()
+                self._grammar = _strip_for_openai(f.read())
 
     # ----------------------------- helpers -----------------------------
     @staticmethod

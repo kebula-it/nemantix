@@ -122,7 +122,7 @@ no-op and never raises.
 
 ## Adding a builtin toolset
 
-Builtin toolsets live in the light-weight package `nemantix.builtin_toolsets` (kept separate from
+Builtin toolsets live in the light-weight package `nemantix.core.toolsets` (kept separate from
 `nemantix.stl`, which pulls in optional heavy dependencies). To add one:
 
 1. Write a normal `Toolset` subclass with `@tool` methods (see [Toolsets](<05 - Toolsets.md>) and the
@@ -130,7 +130,7 @@ Builtin toolsets live in the light-weight package `nemantix.builtin_toolsets` (k
    includes an NXS `do`-form example — this text is shown to the Coder.
 2. Keep the flat tool names unique across all builtin toolsets, and prefer polymorphic tools over
    per-type duplicates.
-3. Add the class to `BUILTIN_TOOLSETS` in `nemantix/builtin_toolsets/__init__.py`.
+3. Add the class to `BUILTIN_TOOLSETS` in `nemantix/core/toolsets/__init__.py`.
 
 The interpreter auto-seeds every class in `BUILTIN_TOOLSETS`, and the Coder automatically advertises
 their tools.

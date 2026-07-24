@@ -1072,3 +1072,302 @@ def test_code_script_frames_max_retries_raises(monkeypatch, isolated_event_hub):
 
     assert len(error_events) == 1
     assert "Cannot code frame" in error_events[0].payload["error"]
+
+
+# =============================================================================
+# Builtin toolsets (advertised in every coding prompt)
+# =============================================================================
+
+
+def test_builtin_toolset_docs_map_contains_all_builtin_toolsets():
+    from nemantix.core.toolsets import BUILTIN_TOOLSETS
+
+    docs = Coder._builtin_toolset_docs_map()
+
+    for toolset_cls in BUILTIN_TOOLSETS:
+        assert toolset_cls.__name__ in docs
+        # every tool has a non-empty docstring advertised to the LLM
+        for name, doc in docs[toolset_cls.__name__].items():
+            assert doc and doc.strip()
+
+    # spot-check a well-known tool is present
+    assert "split" in docs["StringToolset"]
+
+
+def test_system_prompt_advertises_builtin_toolsets_and_cheatsheet():
+    from nemantix.core.prompt import CODING_SYSTEM_PROMPT
+
+    assert "BUILTIN TOOLSETS (ALWAYS AVAILABLE)" in CODING_SYSTEM_PROMPT
+    # the do-form and the "no inline / no python method" guidance are present
+    assert "do split using" in CODING_SYSTEM_PROMPT
+    assert "DO NOT USE PYTHON METHOD SYNTAX" in CODING_SYSTEM_PROMPT
+
+
+def test_builtin_toolset_fix_hint_for_inline_call():
+    err = 'NemantixParserException: Undefined builtin function: "split(...)"!'
+    hint = Coder._builtin_toolset_fix_hint(err)
+
+    assert "split" in hint
+    assert "do split" in hint
+    assert "builtin toolset" in hint
+
+
+def test_builtin_toolset_fix_hint_ignores_unrelated_errors():
+    assert Coder._builtin_toolset_fix_hint("some unrelated parse error") == ""
+    # a genuinely unknown function (not a builtin toolset tool) gets no hint
+    err = 'Undefined builtin function: "definitely_not_a_tool(...)"!'
+    assert Coder._builtin_toolset_fix_hint(err) == ""
+
+
+# =============================================================================
+# Prompt building + end-to-end coding (real parsing, faked LLM)
+# =============================================================================
+
+_ACTION_DELIB_SRC = """@completion: drafted->frozen
+action greet >> greet a user by name <<:
+    in:
+        name (required)
+    __in
+    out:
+        message
+    __out
+    body:
+        >> build a greeting for [name]
+    __body
+__action
+
+deliberate Runner when >> run it <<:
+    mandate:
+    >> greet the user <<
+    __mandate
+    @completion: drafted->frozen
+    plan:
+        in:
+          name (default ["x"])
+        __in
+        out:
+          message
+        __out
+        body:
+        __
+    __plan
+__deliberate
+"""
+
+_BREAKDOWN_SRC = """deliberate BigOne when >> big <<:
+    mandate:
+    >> do a lot <<
+    __mandate
+    @breakdown: true
+    @completion: drafted->frozen
+    plan:
+        body:
+        __
+    __plan
+__deliberate
+"""
+
+_CODED_ACTION = """action greet >> greet a user by name <<:
+    in:
+        name (required)
+    __in
+    out:
+        message
+    __out
+    body:
+        [[message] = "hello " | [name]]
+        return [message]
+    __body
+__action"""
+
+_CODED_PLAN = """    plan:
+        in:
+          name (default ["x"])
+        __in
+        out:
+          message
+        __out
+        body:
+            do action greet using [[name]=[name]] producing [[message]]
+            return [message]
+        __body
+    __plan"""
+
+
+def _parsed_script(src):
+    script = Script("_t.nxs", None, content=src)
+    script.parse()
+    return script
+
+
+def _make_coder(responses):
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=list(responses)))
+    coder.external_vars_names = []
+    # KB querying is orthogonal to coding and pulls optional deps; stub it out.
+    coder.query_knowledge_base = lambda node: ""
+    return coder
+
+
+@pytest.mark.parametrize(
+    "level",
+    [
+        CodeOperationEnum.DRAFT,
+        CodeOperationEnum.COMPLETE,
+        CodeOperationEnum.EVALUATE,
+    ],
+)
+def test_build_action_coding_prompt_advertises_builtin_toolsets(level):
+    coder = _make_coder([])
+    script = _parsed_script(_ACTION_DELIB_SRC)
+    action = script.actions["greet"]
+
+    messages = coder._build_action_coding_prompt(
+        script.read_as_list(), action, level, None, script, []
+    )
+
+    system_text = messages[0]["content"][0]["text"]
+    task_text = messages[1]["content"][0]["text"]
+    assert "BUILTIN TOOLSETS (ALWAYS AVAILABLE)" in system_text
+    # builtin toolsets are advertised even though the script imports nothing
+    assert "StringToolset" in task_text
+    assert "split" in task_text
+
+
+@pytest.mark.parametrize(
+    "level",
+    [
+        CodeOperationEnum.DRAFT,
+        CodeOperationEnum.COMPLETE,
+        CodeOperationEnum.EVALUATE,
+    ],
+)
+def test_build_deliberate_coding_prompt_advertises_builtin_toolsets(level):
+    coder = _make_coder([])
+    script = _parsed_script(_ACTION_DELIB_SRC)
+    deliberate = script.deliberates["Runner"]
+
+    messages = coder._build_deliberate_coding_prompt(
+        script.read_as_list(), deliberate, level, "please code", script, []
+    )
+
+    task_text = messages[1]["content"][0]["text"]
+    assert "StringToolset" in task_text
+    assert "NumberToolset" in task_text
+    assert "please code" in task_text  # user request appended
+
+
+def test_build_deliberate_coding_prompt_breakdown_branch():
+    coder = _make_coder([])
+    script = _parsed_script(_BREAKDOWN_SRC)
+    deliberate = script.deliberates["BigOne"]
+
+    messages = coder._build_deliberate_coding_prompt(
+        script.read_as_list(), deliberate, CodeOperationEnum.COMPLETE, None, script, []
+    )
+
+    task_text = messages[1]["content"][0]["text"]
+    assert "StringToolset" in task_text
+
+
+def test_code_action_end_to_end_produces_parsable_action():
+    script = _parsed_script(_ACTION_DELIB_SRC)
+    coder = _make_coder([_CODED_ACTION])
+
+    result = coder.code_action(CodeOperationEnum.COMPLETE, "greet", script, [])
+
+    assert "action greet" in result
+    assert "hello" in result  # the faked body survived
+
+
+def test_code_deliberate_end_to_end_produces_parsable_deliberate():
+    script = _parsed_script(_ACTION_DELIB_SRC)
+    coder = _make_coder([_CODED_PLAN])
+
+    result = coder.code_deliberate(CodeOperationEnum.COMPLETE, "Runner", script, [])
+
+    assert "deliberate Runner" in result
+    assert "do action greet" in result
+
+
+# =============================================================================
+# code_action / code_deliberate: judge and summary paths + full coding()
+# =============================================================================
+
+from nemantix.core.coder import Judge  # noqa: E402
+
+
+def _fake_summarizer():
+    return FakeLLMProxy(responses=[], raw_responses=["a concise summary"])
+
+
+def test_code_action_with_llm_judge():
+    script = _parsed_script(_ACTION_DELIB_SRC)
+    coder = Coder(
+        llm_proxy=FakeLLMProxy(
+            responses=[_CODED_ACTION],
+            raw_responses=['{"value": 0.9, "reason": "ok"}'],
+        ),
+        judge=Judge.LLM,
+    )
+    coder.external_vars_names = []
+    coder.query_knowledge_base = lambda node: ""
+
+    result = coder.code_action(CodeOperationEnum.COMPLETE, "greet", script, [])
+    assert "action greet" in result
+
+
+def test_code_action_with_summary():
+    script = _parsed_script(_ACTION_DELIB_SRC)
+    coder = Coder(
+        llm_proxy=FakeLLMProxy(responses=[_CODED_ACTION]),
+        create_summary=True,
+        summarizer_proxy=_fake_summarizer(),
+    )
+    coder.external_vars_names = []
+    coder.query_knowledge_base = lambda node: ""
+
+    result = coder.code_action(CodeOperationEnum.COMPLETE, "greet", script, [])
+    assert "@intent.summary" in result
+
+
+def test_code_deliberate_with_llm_judge():
+    script = _parsed_script(_ACTION_DELIB_SRC)
+    coder = Coder(
+        llm_proxy=FakeLLMProxy(
+            responses=[_CODED_PLAN],
+            raw_responses=['{"value": 0.9, "reason": "ok"}'],
+        ),
+        judge=Judge.LLM,
+    )
+    coder.external_vars_names = []
+    coder.query_knowledge_base = lambda node: ""
+
+    result = coder.code_deliberate(CodeOperationEnum.COMPLETE, "Runner", script, [])
+    assert "deliberate Runner" in result
+
+
+def test_code_deliberate_with_summary():
+    script = _parsed_script(_ACTION_DELIB_SRC)
+    coder = Coder(
+        llm_proxy=FakeLLMProxy(responses=[_CODED_PLAN]),
+        create_summary=True,
+        summarizer_proxy=_fake_summarizer(),
+    )
+    coder.external_vars_names = []
+    coder.query_knowledge_base = lambda node: ""
+
+    result = coder.code_deliberate(CodeOperationEnum.COMPLETE, "Runner", script, [])
+    assert "@intent.summary" in result
+
+
+def test_coding_full_pipeline():
+    """Drive the whole coding() pipeline: actions, then deliberates, then frames."""
+    script = _parsed_script(_ACTION_DELIB_SRC)
+    coder = Coder(llm_proxy=FakeLLMProxy(responses=[_CODED_ACTION, _CODED_PLAN]))
+    coder.external_vars_names = []
+    coder.query_knowledge_base = lambda node: ""
+
+    out = coder.coding(script, [])
+    assert "action greet" in out
+    assert "deliberate Runner" in out
+    assert "do action greet" in out

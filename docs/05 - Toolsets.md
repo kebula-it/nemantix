@@ -6,6 +6,8 @@ A **toolset**, then, is a logical collection of these tools grouped together. To
 
 In Nemantix, the **Standard Toolset Library (STL)** is the built-in collection of these toolsets, and it is exactly what makes an Agent capable of acting in the world out-of-the-box.
 
+> A special family of **builtin toolsets** (common string, collection, and number operations) is always available in every script without any import. See [Builtin Toolsets](<05b - Builtin Toolsets.md>).
+
 By declaring toolsets within an NXS `deliberate` block, you define exactly which actions the agent is permitted to use. This approach provides several key benefits:
 
 * It constrains actions to known integration points.

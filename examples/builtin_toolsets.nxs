@@ -1,0 +1,58 @@
+# Builtin toolsets are always available: this script imports nothing, yet it can
+# call string, collection, and number operations through the `do` form.
+
+deliberate builtin_toolsets_example when >> Show the always-available builtin toolsets <<:
+
+  @completion: frozen
+  plan:
+      in:
+        sentence (default ["the quick brown fox"])
+      __in
+
+      out:
+        report
+      __out
+
+      body:
+          # --- string ---
+          # split a sentence into words (the result is a struct)
+          do split using [[text] = [sentence], [sep] = " "] producing [[words]]
+          do StringToolset.split using [[text] = [sentence], [sep] = " "] producing [[words]]
+
+          # index the resulting struct like any other struct
+          [[first] = [words:0]]
+          do upper using [[text] = [first]] producing [[first_upper]]
+
+          # --- collection ---
+          # how many words, sorted alphabetically
+          [[count] = size([words])]
+          do sort using [[items] = [words]] producing [[sorted_words]]
+
+          # --- number ---
+          [[x] = -33]
+          do abs using [[x]] producing [[x_abs]]
+
+          [[y] = 0.123456]
+          do NumberToolset.round:
+            using [[y], [ndigits] = 2]
+            producing [[y_round]]
+          __
+
+          # --- json ---
+          [[dict] = (a: 1, b: 2)]
+          do JsonToolset.dumps using [[dict]] producing [[dict_json]]
+
+          # --- string: build the final report ---
+          do join using [[parts] = [sorted_words], [sep] = ", "] producing [[joined]]
+
+          [[report] = "first word: " | [first_upper]
+              | " | words: " | to_str([count])
+              | " | abs([x]): " | to_str([x_abs])
+              | " | rounding([y]): " | to_str([y_round])
+              | " | json.dumps([dict]): " | to_str([dict_json])
+              | " | sorted: " | [joined]]
+
+          return [report]
+      __body
+  __plan
+__deliberate

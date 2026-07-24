@@ -1936,7 +1936,7 @@ class Interpreter:
         cycles. Seeding is idempotent: a toolset already present in the context
         is skipped.
         """
-        from nemantix.builtin_toolsets import BUILTIN_TOOLSETS
+        from nemantix.core.toolsets import BUILTIN_TOOLSETS
 
         for toolset_cls in BUILTIN_TOOLSETS:
             class_name = toolset_cls.__name__

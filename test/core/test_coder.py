@@ -1080,7 +1080,7 @@ def test_code_script_frames_max_retries_raises(monkeypatch, isolated_event_hub):
 
 
 def test_builtin_toolset_docs_map_contains_all_builtin_toolsets():
-    from nemantix.builtin_toolsets import BUILTIN_TOOLSETS
+    from nemantix.core.toolsets import BUILTIN_TOOLSETS
 
     docs = Coder._builtin_toolset_docs_map()
 

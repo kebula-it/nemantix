@@ -7,8 +7,8 @@ idempotent-import behavior is covered in ``test_interpreter.py``.
 
 import pytest
 
-from nemantix.builtin_toolsets import BUILTIN_TOOLSETS
 from nemantix.core.tools import Toolset
+from nemantix.core.toolsets import BUILTIN_TOOLSETS
 
 
 def _call(tool_name, *args, **kwargs):

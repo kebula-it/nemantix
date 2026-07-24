@@ -1691,7 +1691,7 @@ class Coder:
         script never imports them, so the model knows they exist and how to call
         them (via the `do` form).
         """
-        from nemantix.builtin_toolsets import BUILTIN_TOOLSETS
+        from nemantix.core.toolsets import BUILTIN_TOOLSETS
 
         return {cls.__name__: cls.get_tool_descriptions() for cls in BUILTIN_TOOLSETS}
 
@@ -1701,7 +1701,7 @@ class Coder:
         inline (which the parser rejects as an "Undefined builtin function")."""
         import re
 
-        from nemantix.builtin_toolsets import BUILTIN_TOOLSETS
+        from nemantix.core.toolsets import BUILTIN_TOOLSETS
 
         match = re.search(r'Undefined builtin function:\s*"([^"(]+)', error_message)
         if not match:
